@@ -102,4 +102,5 @@ ENV/
 
 # training model files
 *.bin
-*.p*
+*.p
+*.p.*

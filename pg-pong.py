@@ -34,13 +34,12 @@ if resume:
 else:
 	# "Xavier" initialization
 	model = {}
-	model['W1'] = np.random.randn(H, D) / np.sqrt(D/2)
-	model['W2'] = np.random.randn(H) / np.sqrt(H/2)
+	model['W1'] = np.random.randn(H, D) / np.sqrt(D/2.0)
+	model['W2'] = np.random.randn(H) / np.sqrt(H/2.0)
 
 # update buffers that add up gradients over a batch
 grad_buffer = {k: np.zeros_like(v) for k, v in model.items()}
-rmsprop_cache = {k: np.zeros_like(v)
-                 for k, v in model.items()}  # rmsprop memory
+rmsprop_cache = {k: np.zeros_like(v) for k, v in model.items()}  # rmsprop memory
 
 
 def sigmoid(x):
@@ -116,7 +115,7 @@ while True:
 	hs.append(h)  # hidden state
 	y = 1 if action == 2 else 0  # a "fake label"
 	# grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
-	dlogps.append(y - aprob)
+	dlogps.append((y - aprob) * aprob * (1 - aprob))
 
 	# step the environment and get new measurements
 	observation, reward, done, info = env.step(action)
@@ -159,10 +158,8 @@ while True:
 				grad_buffer[k] = np.zeros_like(v)  # reset batch gradient buffer
 
 		# boring book-keeping
-		running_reward = reward_sum if running_reward is None else running_reward * \
-			0.99 + reward_sum * 0.01
-		print('ep %d: total_reward: %f, moving_average_reward: %f' %
-		      (episode_number, reward_sum, running_reward))
+		running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
+		print('ep %d: total_reward: %f, runing_average_reward: %f' % (episode_number, reward_sum, running_reward))
 		if episode_number % 300 == 0:
 			pickle.dump(model, open(save_file, 'wb'))
 		
