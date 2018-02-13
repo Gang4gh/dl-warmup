@@ -34,8 +34,8 @@ if resume:
 else:
 	# "Xavier" initialization
 	model = {}
-	model['W1'] = np.random.randn(H, D) / np.sqrt(D/2.0)
-	model['W2'] = np.random.randn(H) / np.sqrt(H/2.0)
+	model['W1'] = np.random.randn(H, D) / np.sqrt(D)
+	model['W2'] = np.random.randn(H) / np.sqrt(H)
 
 # update buffers that add up gradients over a batch
 grad_buffer = {k: np.zeros_like(v) for k, v in model.items()}
@@ -86,6 +86,7 @@ def policy_backward(eph, epdlogp):
 	dW1 = np.dot(dh.T, epx)
 	return {'W1': dW1, 'W2': dW2}
 
+start_time = time.time()
 
 env = gym.make("Pong-v0")
 if args.seed is not None:
@@ -115,7 +116,7 @@ while True:
 	hs.append(h)  # hidden state
 	y = 1 if action == 2 else 0  # a "fake label"
 	# grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
-	dlogps.append((y - aprob) * aprob * (1 - aprob))
+	dlogps.append(y - aprob) # * aprob * (1 - aprob))
 
 	# step the environment and get new measurements
 	observation, reward, done, info = env.step(action)
@@ -123,9 +124,6 @@ while True:
 
 	# record reward (has to be done after we call step() to get reward for previous action)
 	drs.append(reward)
-
-	#if reward != 0:  # Pong has either +1 or -1 reward exactly when game ends.
-	#	print('-' if reward == -1 else '+', end='', flush=1)
 
 	if done:  # an episode finished
 		episode_number += 1
@@ -159,7 +157,8 @@ while True:
 
 		# boring book-keeping
 		running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
-		print('ep %d: total_reward: %f, runing_average_reward: %f' % (episode_number, reward_sum, running_reward))
+		time_cost = int(time.time() - start_time)
+		print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
 		if episode_number % 300 == 0:
 			pickle.dump(model, open(save_file, 'wb'))
 		
