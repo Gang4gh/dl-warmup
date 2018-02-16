@@ -33,18 +33,11 @@ save_file = 'W-{}.bin'.format(args.expname)
 
 # model initialization
 D = 80 * 80  # input dimensionality: 80x80 grid
-if not resume:
-	model = pickle.load(open(save_file, 'rb'))
-else:
-	# "Xavier" initialization
-	model = {}
-	model['W1'] = np.random.randn(H, D) / np.sqrt(D)
-	model['W2'] = np.random.randn(H) / np.sqrt(H)
+model = {}
+model['W1'] = np.random.randn(H, D) / np.sqrt(D)
+model['W2'] = np.random.randn(H) / np.sqrt(H)
 
-# update buffers that add up gradients over a batch
-grad_buffer = {k: np.zeros_like(v) for k, v in model.items()}
-rmsprop_cache = {k: np.zeros_like(v) for k, v in model.items()}  # rmsprop memory
-
+#with tf.device('/cpu:0'):
 X = tf.placeholder(tf.float64, shape=[None,D])
 Y = tf.placeholder(tf.float64, shape=[None])
 R = tf.placeholder(tf.float64, shape=[None])
@@ -72,10 +65,6 @@ nW1 = W1.assign(W1 + learning_rate * dW1 / (tf.sqrt(nW1beta2) + 1e-5))
 nW2 = W2.assign(W2 + learning_rate * dW2 / (tf.sqrt(nW2beta2) + 1e-5))
 update = tf.group(nW1, nW2)
 
-def sigmoid(x):
-	# sigmoid "squashing" function to interval [0,1]
-	return 1.0 / (1.0 + np.exp(-x))
-
 
 def prepro(I):
 	""" prepro 210x160x3 uint8 frame into 6400 (80x80) 1D float vector """
@@ -89,50 +78,20 @@ def prepro(I):
 
 def discount_rewards(r):
 	""" take 1D float array of rewards and compute discounted reward """
-	discounted_r = np.zeros_like(r)
-	running_add = 0
-	for t in reversed(range(0, r.size)):
+	current = 0
+	for t in reversed(range(0, len(r))):
 		if r[t] != 0:
-			# reset the sum, since this was a game boundary (pong specific!)
-			running_add = 0
-		running_add = running_add * gamma + r[t]
-		discounted_r[t] = running_add
-	return discounted_r
-
-
-def policy_forward(x):
-	h = np.dot(model['W1'], x)
-	h[h < 0] = 0  # ReLU nonlinearity
-	logp = np.dot(model['W2'], h)
-	p = sigmoid(logp)
-	return p, h  # return probability of taking action 2, and hidden state
-
-
-def policy_backward(eph, epdlogp):
-	""" backward pass. (eph is array of intermediate hidden states) """
-	dW2 = np.dot(eph.T, epdlogp).ravel()
-	dh = np.outer(epdlogp, model['W2'])
-	t1 = dh.copy()
-	dh[eph <= 0] = 0  # backpro prelu
-	t2 = dh.copy()
-	dW1 = np.dot(dh.T, epx)
-	return {'W1': dW1, 'W2': dW2}, t1, t2
-
-
-def compare_arries(a, b, msg):
-	print('compare array: a.shape={}, b.shape={}'.format(np.shape(a), np.shape(b)))
-	if (abs(a - b) < 1e-4).all():
-		print(msg, ':', 'same')
-	else:
-		print(msg, ':', 'different')
-		sys.exit(-1)
+			# reset the reward, since this was a game boundary (pong specific!)
+			current = r[t]
+		else:
+			current *= gamma
+			r[t] = current
 
 
 start_time = time.time()
 observation = env.reset()
 prev_x = None  # used in computing the difference frame
-xs, hs, dlogps, drs, ys = [], [], [], [], []
-exp1, ys1, discounted_epr1 = [], [], []
+X_list, Y_list, R_list, R_episode = [], [], [], []
 running_reward = None
 reward_sum = 0
 episode_number = 0
@@ -148,93 +107,40 @@ with tf.Session() as sess:
 		x = cur_x - prev_x if prev_x is not None else np.zeros(D)
 		prev_x = cur_x
 
-		# forward the policy network and sample an action from the returned probability
-		# aprob, h = policy_forward(x)
+		# sample an action from current policy
 		tfy0, = sess.run([Y0], feed_dict={X: [x]})
-		# if (abs(aprob - tfy0) > 1e-4).all():
-		# 	print(aprob, tfy0, abs(aprob - tfy0) < 1e-4)
-		# 	sys.exit(-1)
-		# action = 2 if np.random.uniform() < aprob else 3  # roll the dice!
-		action = 2 if np.random.uniform() < tfy0[0] else 3  # roll the dice!
-
-		# record various intermediates (needed later for backprop)
-		xs.append(x)  # observation
-		#hs.append(h)  # hidden state
-		y = 1 if action == 2 else 0  # a "fake label"
-		# grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
-		#dlogps.append(y - aprob) # * aprob * (1 - aprob))
-		ys.append(y)
+		action = 2 if np.random.uniform() < tfy0[0] else 3
 
 		# step the environment and get new measurements
 		observation, reward, done, info = env.step(action)
 		reward_sum += reward
 
-		# record reward (has to be done after we call step() to get reward for previous action)
-		drs.append(reward)
+		X_list.append(x)
+		Y_list.append(1 if action == 2 else 0)
+		R_episode.append(reward)
 
 		if done:  # an episode finished
 			episode_number += 1
 
-			# stack together all inputs, hidden states, action gradients, and rewards for this episode
-			epx = np.vstack(xs)
-			# eph = np.vstack(hs)
-			# epdlogp = np.vstack(dlogps)
-			epr = np.vstack(drs)
-			epy = np.vstack(ys)
-			
 			# compute the discounted reward backwards through time
-			discounted_epr = discount_rewards(epr)
+			discount_rewards(R_episode)
 			# standardize the rewards to be unit normal (helps control the gradient estimator variance)
-			discounted_epr -= np.mean(discounted_epr)
-			discounted_epr /= np.std(discounted_epr)
+			R_episode -= np.mean(R_episode)
+			R_episode /= np.std(R_episode)
+			R_list.append(R_episode)
+			R_episode = []
 
-			exp1.extend(xs)
-			ys1.extend(ys)
-			discounted_epr1.extend(discounted_epr.reshape(-1))
-
-			# modulate the gradient with advantage (PG magic happens right here.)
-			# epdlogp *= discounted_epr
-			# grad, t1, t2 = policy_backward(eph, epdlogp)
-			# for k in model:
-			# 	grad_buffer[k] += grad[k]  # accumulate grad over batch
-
-			# perform rmsprop parameter update every batch_size episodes
+			# perform parameter update every {batch_size} episodes
 			if episode_number % batch_size == 0:
-				# dW1a = np.copy(grad_buffer['W1'])
-				# dW2a = np.copy(grad_buffer['W2'])
-				# for k, v in model.items():
-				# 	g = grad_buffer[k]  # gradient
-				# 	rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
-				# 	model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
-				# 	grad_buffer[k] = np.zeros_like(v)  # reset batch gradient buffer
-
-				#discounted_epr_reshape = discounted_epr1.reshape(-1)
-				#H1_val, G_val, dW2_val, dW1_val, nW1beta2_val, nW2beta2_val, nW1_val, nW2_val, _ = sess.run([H1, G, dW2, dW1, nW1beta2, nW2beta2, nW1, nW2, update], feed_dict={X:exp1, Y:ys1, R:discounted_epr1})
-				# compare_arries(H1_val, eph, 'H1')
-				# compare_arries(G_val, epdlogp.reshape(-1), 'G')
-				# compare_arries(dW2_val, dW2a, 'dW2')
-				# compare_arries(dW1_val, dW1a.T, 'dW1')
-				# compare_arries(nW1beta2_val, rmsprop_cache['W1'].T, 'nW1beta2')
-				# compare_arries(nW2beta2_val, rmsprop_cache['W2'], 'nW2beta2')
-				# compare_arries(nW1_val, model['W1'].T, 'nW1')
-				# compare_arries(nW2_val, model['W2'], 'nW2')
-				_ = sess.run([update], feed_dict={X:exp1, Y:ys1, R:discounted_epr1})
-				
-				exp1, ys1, discounted_epr1 = [], [], []
-
-			xs, hs, dlogps, drs, ys = [], [], [], [], []  # reset array memory
+				print('len(X_list) :', len(X_list), flush=1)
+				_ = sess.run([update], feed_dict={X:X_list, Y:Y_list, R:np.concatenate(R_list)})
+				X_list, Y_list, R_list = [], [], []
 
 			# boring book-keeping
 			running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
 			time_cost = int(time.time() - start_time)
 			print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
-			if episode_number % 300 == 0:
-				pickle.dump(model, open(save_file, 'wb'))
 			
 			reward_sum = 0
 			observation = env.reset() # reset env
 			prev_x = None
-
-			if episode_number == args.max_episode:
-				pickle.dump(model, open(save_file, 'wb'))
-				break

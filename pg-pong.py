@@ -158,7 +158,8 @@ while True:
 		# boring book-keeping
 		running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
 		time_cost = int(time.time() - start_time)
-		print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
+		if episode_number < 10 or episode_number % 10 == 0:
+			print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
 		if episode_number % 300 == 0:
 			pickle.dump(model, open(save_file, 'wb'))
 		
