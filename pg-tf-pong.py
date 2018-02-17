@@ -32,7 +32,7 @@ resume = not args.reset
 save_file = 'W-{}.bin'.format(args.expname)
 
 # model initialization
-D = 80 * 80  # input dimensionality: 80x80 grid
+D = 80 * 80 # input dimensionality: 80x80 grid
 model = {}
 model['W1'] = np.random.randn(H, D) / np.sqrt(D)
 model['W2'] = np.random.randn(H) / np.sqrt(H)
@@ -46,18 +46,25 @@ W2 = tf.Variable(model['W2'], dtype=tf.float64) # tf.random_normal((H,)))
 W1beta2 = tf.Variable(tf.zeros([D,H], dtype=tf.float64)) # tf.random_normal((D, H)))
 W2beta2 = tf.Variable(tf.zeros([H], dtype=tf.float64)) # tf.random_normal((H,)))
 
+#X = tf.get_variable('X', shape=[30000,D], initializer=tf.zeros_initializer(), dtype=tf.float64, trainable=False)
+X_1 = tf.placeholder(tf.float64, shape=[D])
+H_1 = tf.nn.relu(tf.tensordot(X_1, W1, 1))
+Y_1 = tf.nn.sigmoid(tf.tensordot(H_1, W2, 1))
+# updateX = X
+#updateX = X.assign(tf.concat([X, [X_1]], 0))
+
 H1 = tf.nn.relu(tf.matmul(X, W1))
 Y0 = tf.nn.sigmoid(tf.tensordot(H1, W2, 1))
-G = (Y - Y0) * R
 
-dW2 = tf.tensordot(G, H1, (0,0))
-T1 = tf.expand_dims(W2, 1) * tf.expand_dims(G, 0)
-Mask = tf.greater(H1, 0)
-Zeros = tf.zeros_like(H1)
-T2 = tf.where(Mask, tf.transpose(T1), Zeros)
-dW1 = tf.tensordot(X, T2, (0,0))
-# loss = tf.reduce_mean(0.5 * tf.multiply(tf.square(Y - Y0), R))
-# dW1, dW2 = tf.gradients(loss, [W1, W2])
+# G = (Y - Y0) * R
+# dW2 = tf.tensordot(G, H1, (0,0))
+# T1 = tf.expand_dims(W2, 1) * tf.expand_dims(G, 0)
+# Mask = tf.greater(H1, 0)
+# Zeros = tf.zeros_like(H1)
+# T2 = tf.where(Mask, tf.transpose(T1), Zeros)
+# dW1 = tf.tensordot(X, T2, (0,0))
+loss = tf.reduce_mean(0.5 * tf.multiply(tf.square(Y - Y0), R))
+dW1, dW2 = tf.gradients(loss, [W1, W2])
 
 nW1beta2 = W1beta2.assign(W1beta2 * decay_rate + (1-decay_rate) * tf.square(dW1))
 nW2beta2 = W2beta2.assign(W2beta2 * decay_rate + (1-decay_rate) * tf.square(dW2))
@@ -108,8 +115,15 @@ with tf.Session() as sess:
 		prev_x = cur_x
 
 		# sample an action from current policy
-		tfy0, = sess.run([Y0], feed_dict={X: [x]})
-		action = 2 if np.random.uniform() < tfy0[0] else 3
+		Y_1_val, = sess.run([Y_1], feed_dict={X_1: x})
+		action = 2 if np.random.uniform() < Y_1_val else 3
+		# prob, = sess.run([Y0], feed_dict={X: [x]})
+		# action = 2 if np.random.uniform() < prob else 3
+		# tfy0, Y_1_val = sess.run([Y0, Y_1], feed_dict={X: [x], X_1: x})
+		# if abs(tfy0[0] - Y_1_val) > 1e-4:
+		# 	print ('invalid Y_1_val')
+		# 	exit(-1)
+		# action = 2 if np.random.uniform() < tfy0[0] else 3
 
 		# step the environment and get new measurements
 		observation, reward, done, info = env.step(action)
@@ -132,15 +146,18 @@ with tf.Session() as sess:
 
 			# perform parameter update every {batch_size} episodes
 			if episode_number % batch_size == 0:
-				print('len(X_list) :', len(X_list), flush=1)
 				_ = sess.run([update], feed_dict={X:X_list, Y:Y_list, R:np.concatenate(R_list)})
 				X_list, Y_list, R_list = [], [], []
 
 			# boring book-keeping
 			running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
-			time_cost = int(time.time() - start_time)
-			print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
+			if episode_number < 10 or episode_number % 10 == 0:
+				time_cost = int(time.time() - start_time)
+				print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
 			
 			reward_sum = 0
 			observation = env.reset() # reset env
 			prev_x = None
+
+			if episode_number == args.max_episode:
+				break
