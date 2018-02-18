@@ -4,6 +4,11 @@ import sys, time, pickle, argparse
 import numpy as np
 import gym
 
+# import cudamat as cm
+# cm.cublas_init()
+
+import tensorflow as tf
+
 # parse arguments
 parser = argparse.ArgumentParser(description='Play with PG algorithm on Pong')
 parser.add_argument('-s', '--seed', type=int, help='random seed used by numpy and gym')
@@ -29,13 +34,15 @@ render = args.render
 
 # model initialization
 D = 80 * 80  # input dimensionality: 80x80 grid
-if resume:
+if 0 and resume:
 	model = pickle.load(open(save_file, 'rb'))
 else:
 	# "Xavier" initialization
 	model = {}
-	model['W1'] = np.random.randn(H, D) / np.sqrt(D)
+	model['W1'] = (np.random.randn(H, D) / np.sqrt(D)).astype(np.float32)
+	#model['W1'] = (np.random.randn(H, D) / np.sqrt(D)).astype(np.float32)
 	model['W2'] = np.random.randn(H) / np.sqrt(H)
+	# cmW1 = cm.CUDAMatrix(model['W1'])
 
 # update buffers that add up gradients over a batch
 grad_buffer = {k: np.zeros_like(v) for k, v in model.items()}
@@ -54,7 +61,7 @@ def prepro(I):
 	I[I == 144] = 0  # erase background (background type 1)
 	I[I == 109] = 0  # erase background (background type 2)
 	I[I != 0] = 1  # everything else (paddles, ball) just set to 1
-	return I.astype(np.float).ravel()
+	return I.astype(np.float32).ravel()
 
 
 def discount_rewards(r):
@@ -71,7 +78,23 @@ def discount_rewards(r):
 
 
 def policy_forward(x):
-	h = np.dot(model['W1'], x)
+	# calculate by CUDAMAtrix
+	# cmX = cm.CUDAMatrix(x.reshape(1,-1))
+	# h = cm.dot(cmX, cmW1.T).asarray().ravel()
+
+	# calculate by numpy
+	# h = np.dot(model['W1'], x)
+
+	# calculate by tensorflow
+	h, = sess.run([H], feed_dict={X: x})
+
+	h[h < 0] = 0  # ReLU nonlinearity
+	logp = np.dot(model['W2'], h)
+	p = sigmoid(logp)
+	return p, h  # return probability of taking action 2, and hidden state
+
+
+def policy_forwardH(h):
 	h[h < 0] = 0  # ReLU nonlinearity
 	logp = np.dot(model['W2'], h)
 	p = sigmoid(logp)
@@ -86,7 +109,13 @@ def policy_backward(eph, epdlogp):
 	dW1 = np.dot(dh.T, epx)
 	return {'W1': dW1, 'W2': dW2}
 
+
 start_time = time.time()
+
+W1 = tf.Variable(model['W1'].T, dtype=tf.float64)
+X = tf.placeholder(tf.float64, shape=[D])
+H = tf.tensordot(X, W1, 1)
+updateW = W1
 
 env = gym.make("Pong-v0")
 if args.seed is not None:
@@ -97,76 +126,85 @@ xs, hs, dlogps, drs = [], [], [], []
 running_reward = None
 reward_sum = 0
 episode_number = 0
-while True:
-	if render:
-		env.render()
-		time.sleep(0.01)
+total_count = 0
+with tf.Session() as sess:
+	sess.run(tf.global_variables_initializer())
+	while True:
+		if render:
+			env.render()
+			time.sleep(0.01)
 
-	# preprocess the observation, set input to network to be difference image
-	cur_x = prepro(observation)
-	x = cur_x - prev_x if prev_x is not None else np.zeros(D)
-	prev_x = cur_x
+		# preprocess the observation, set input to network to be difference image
+		cur_x = prepro(observation)
+		x = cur_x - prev_x if prev_x is not None else np.zeros(D).astype(np.float32)
+		prev_x = cur_x
 
-	# forward the policy network and sample an action from the returned probability
-	aprob, h = policy_forward(x)
-	action = 2 if np.random.uniform() < aprob else 3  # roll the dice!
+		# forward the policy network and sample an action from the returned probability
+		aprob, h = policy_forward(x)
+		total_count += 1
+		action = 2 if np.random.uniform() < aprob else 3  # roll the dice!
 
-	# record various intermediates (needed later for backprop)
-	xs.append(x)  # observation
-	hs.append(h)  # hidden state
-	y = 1 if action == 2 else 0  # a "fake label"
-	# grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
-	dlogps.append(y - aprob) # * aprob * (1 - aprob))
+		# record various intermediates (needed later for backprop)
+		xs.append(x)  # observation
+		hs.append(h)  # hidden state
+		y = 1 if action == 2 else 0  # a "fake label"
+		# grad that encourages the action that was taken to be taken (see http://cs231n.github.io/neural-networks-2/#losses if confused)
+		dlogps.append(y - aprob) # * aprob * (1 - aprob))
 
-	# step the environment and get new measurements
-	observation, reward, done, info = env.step(action)
-	reward_sum += reward
+		# step the environment and get new measurements
+		observation, reward, done, info = env.step(action)
+		reward_sum += reward
 
-	# record reward (has to be done after we call step() to get reward for previous action)
-	drs.append(reward)
+		# record reward (has to be done after we call step() to get reward for previous action)
+		drs.append(reward)
 
-	if done:  # an episode finished
-		episode_number += 1
+		if done:  # an episode finished
+			episode_number += 1
 
-		# stack together all inputs, hidden states, action gradients, and rewards for this episode
-		epx = np.vstack(xs)
-		eph = np.vstack(hs)
-		epdlogp = np.vstack(dlogps)
-		epr = np.vstack(drs)
-		xs, hs, dlogps, drs = [], [], [], []  # reset array memory
+			# stack together all inputs, hidden states, action gradients, and rewards for this episode
+			epx = np.vstack(xs)
+			eph = np.vstack(hs)
+			epdlogp = np.vstack(dlogps)
+			epr = np.vstack(drs)
+			xs, hs, dlogps, drs = [], [], [], []  # reset array memory
 
-		# compute the discounted reward backwards through time
-		discounted_epr = discount_rewards(epr)
-		# standardize the rewards to be unit normal (helps control the gradient estimator variance)
-		discounted_epr -= np.mean(discounted_epr)
-		discounted_epr /= np.std(discounted_epr)
+			# compute the discounted reward backwards through time
+			discounted_epr = discount_rewards(epr)
+			# standardize the rewards to be unit normal (helps control the gradient estimator variance)
+			discounted_epr -= np.mean(discounted_epr)
+			discounted_epr /= np.std(discounted_epr)
 
-		# modulate the gradient with advantage (PG magic happens right here.)
-		epdlogp *= discounted_epr
-		grad = policy_backward(eph, epdlogp)
-		for k in model:
-			grad_buffer[k] += grad[k]  # accumulate grad over batch
+			# modulate the gradient with advantage (PG magic happens right here.)
+			epdlogp *= discounted_epr
+			grad = policy_backward(eph, epdlogp)
+			
+			for k in model:
+				grad_buffer[k] += grad[k]  # accumulate grad over batch
+			
+			# perform rmsprop parameter update every batch_size episodes
+			if episode_number % batch_size == 0:
+				for k, v in model.items():
+					g = grad_buffer[k]  # gradient
+					rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
+					model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
+					grad_buffer[k] = np.zeros_like(v)  # reset batch gradient buffer
+				model['W1'] = model['W1'].astype(np.float32)
+				#cmW1 = cm.CUDAMatrix(model['W1'])
+				W1.load(model['W1'].T)
 
-		# perform rmsprop parameter update every batch_size episodes
-		if episode_number % batch_size == 0:
-			for k, v in model.items():
-				g = grad_buffer[k]  # gradient
-				rmsprop_cache[k] = decay_rate * rmsprop_cache[k] + (1 - decay_rate) * g**2
-				model[k] += learning_rate * g / (np.sqrt(rmsprop_cache[k]) + 1e-5)
-				grad_buffer[k] = np.zeros_like(v)  # reset batch gradient buffer
+			# boring book-keeping
+			running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
+			time_cost = int(time.time() - start_time)
+			if episode_number < 10 or episode_number % 10 == 0:
+				print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
+			if episode_number % 300 == 0:
+				pickle.dump(model, open(save_file, 'wb'))
+			
+			reward_sum = 0
+			observation = env.reset() # reset env
+			prev_x = None
 
-		# boring book-keeping
-		running_reward = reward_sum if running_reward is None else running_reward * 0.99 + reward_sum * 0.01
-		time_cost = int(time.time() - start_time)
-		if episode_number < 10 or episode_number % 10 == 0:
-			print('ep %d: totalReward: %f, averageReward: %f, time: %d' % (episode_number, reward_sum, running_reward, time_cost), flush=1)
-		if episode_number % 300 == 0:
-			pickle.dump(model, open(save_file, 'wb'))
-		
-		reward_sum = 0
-		observation = env.reset() # reset env
-		prev_x = None
-
-		if episode_number == args.max_episode:
-			pickle.dump(model, open(save_file, 'wb'))
-			break
+			if episode_number == args.max_episode:
+				pickle.dump(model, open(save_file, 'wb'))
+				print('total-ops-count = ', total_count, ', time-cost per 1k ops = ', time_cost / total_count * 1000)
+				break

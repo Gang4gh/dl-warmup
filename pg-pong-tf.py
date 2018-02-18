@@ -63,13 +63,16 @@ Y0 = tf.nn.sigmoid(tf.tensordot(H1, W2, 1))
 # Zeros = tf.zeros_like(H1)
 # T2 = tf.where(Mask, tf.transpose(T1), Zeros)
 # dW1 = tf.tensordot(X, T2, (0,0))
-loss = tf.reduce_mean(0.5 * tf.multiply(tf.square(Y - Y0), R))
+
+#loss = tf.reduce_sum(0.5 * tf.multiply(tf.square(Y0 - Y), R))
+loss = -tf.reduce_sum(tf.multiply(tf.where(Y > 0, tf.log(Y0), tf.log(1-Y0)), R))
+#loss = tf.losses.log_loss(Y, Y0, epsilon=0.0, weights=R) * tf.cast(tf.size(Y0), tf.float32)
 dW1, dW2 = tf.gradients(loss, [W1, W2])
 
 nW1beta2 = W1beta2.assign(W1beta2 * decay_rate + (1-decay_rate) * tf.square(dW1))
 nW2beta2 = W2beta2.assign(W2beta2 * decay_rate + (1-decay_rate) * tf.square(dW2))
-nW1 = W1.assign(W1 + learning_rate * dW1 / (tf.sqrt(nW1beta2) + 1e-5))
-nW2 = W2.assign(W2 + learning_rate * dW2 / (tf.sqrt(nW2beta2) + 1e-5))
+nW1 = W1.assign(W1 - learning_rate * dW1 / (tf.sqrt(nW1beta2) + 1e-5))
+nW2 = W2.assign(W2 - learning_rate * dW2 / (tf.sqrt(nW2beta2) + 1e-5))
 update = tf.group(nW1, nW2)
 
 
