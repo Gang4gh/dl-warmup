@@ -100,5 +100,6 @@ ENV/
 # mypy
 .mypy_cache/
 
-# training model files
+# training model and data files/folders
 *.bin
+**/Gigaword/

@@ -1,42 +1,29 @@
-#
-#  Copyright (c) 2015, Facebook, Inc.
-#  All rights reserved.
-#
-#  This source code is licensed under the BSD-style license found in the
-#  LICENSE file in the root directory of this source tree. An additional grant
-#  of patent rights can be found in the PATENTS file in the same directory.
-#
-#  Author: Alexander M Rush <srush@seas.harvard.edu>
-#          Sumit Chopra <spchopra@fb.com>
-#          Jason Weston <jase@fb.com>
-
-#/usr/bin/env python
+#!/usr/bin/env python
 
 import sys
 import os
 import re
 import gzip
-#@lint-avoid-python-3-compatibility-imports
+
+inputfn = sys.argv[1]
+outputfn = sys.argv[2]
+outdir = os.path.dirname(outputfn)
 
 # Make directory for output if it doesn't exist
+if not os.path.isdir(outdir):
+    try:
+        os.makedirs(outdir)
+    except OSError:
+        pass
 
-try:
-    os.mkdir(sys.argv[2] + "/" + sys.argv[1].split("/")[-2])
-except OSError:
-    pass
-
-# Strip off .gz ending
-end = "/".join(sys.argv[1].split("/")[-2:])[:-len(".xml.gz")] + ".txt"
-
-out = open(sys.argv[2] + end, "w")
-
-filename = sys.argv[1].split("/")[-1]
+out = open(outputfn, "w")
 
 # Parse and print titles and articles
 NONE, HEAD, NEXT, TEXT = 0, 1, 2, 3
 MODE = NONE
-title_parse = ""
+title_parse = ''
 article_parse = []
+doc_id = ''
 
 # FIX: Some parses are mis-parenthesized.
 def fix_paren(parse):
@@ -57,10 +44,10 @@ def get_words(parse):
 def remove_digits(parse):
     return re.sub(r'\d', '#', parse)
 
-lc = 0
-doc_id = ''
-for l in gzip.open(sys.argv[1]):
-    lc += 1
+line_count = 0
+for l in gzip.open(inputfn):
+    line_count += 1
+    #if line_count > 10000: break
     ls = l.strip()
 
     if l.find('<DOC id="') == 0:
@@ -73,16 +60,17 @@ for l in gzip.open(sys.argv[1]):
     elif MODE == NEXT and ls == "<TEXT>":
         MODE = TEXT
     elif MODE == TEXT and ls == "</TEXT>":
-        if "(. .)" not in article_parse[0]:
-            print lc, article_parse[0]
+        #if "(. .)" not in article_parse[0]:
+        #    print line_count, article_parse[0]
 
         article = "(TOP " + " (EOS <eos/>) ".join(article_parse) + ")"
-        # title_parse \t article_parse \t title \t article
-        print >>out, "\t".join([#title_parse, article,
-                                doc_id, filename,
+        # schema: doc_it \t title \t article
+        print >>out, "\t".join([doc_id,
                                 " ".join(get_words(title_parse)),
                                 " ".join(get_words(article))])
+        title_parse = ''
         article_parse = []
+        doc_id = ''
         MODE = NONE
     elif MODE == TEXT:
         if ls == "<P>" or ls == "</P>": continue
