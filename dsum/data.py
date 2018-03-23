@@ -99,13 +99,14 @@ def ExampleGen(data_path, num_epochs=None):
     assert filelist, 'Empty filelist.'
     random.shuffle(filelist)
     for f in filelist:
-      reader = open(f, 'rb')
-      while True:
-        len_bytes = reader.read(8)
-        if not len_bytes: break
-        str_len = struct.unpack('q', len_bytes)[0]
-        example_str = struct.unpack('%ds' % str_len, reader.read(str_len))[0]
-        yield example_pb2.Example.FromString(example_str)
+      for l in open(f):
+        splits = l.strip().split("\t")
+        if len(splits) != 3:
+          continue
+        _, title, article = splits
+        yield (article, title)
+        #data = {i.split('=')[0]:i.split('=')[1] for i in splits}
+        #yield (data['article'], data['abstract'])
 
     epoch += 1
 
@@ -197,10 +198,6 @@ def SnippetGen(text, start_tok, end_tok, inclusive=True):
       raise StopIteration('no more snippets in text: %s' % e)
 
 
-def GetExFeatureText(ex, key):
-  return ex.features.feature[key].bytes_list.value[0]
-
-
 def ToSentences(paragraph, include_token=True):
   """Takes tokens of a paragraph and returns list of sentences.
 
@@ -211,5 +208,5 @@ def ToSentences(paragraph, include_token=True):
   Returns:
     List of sentence strings.
   """
-  s_gen = SnippetGen(paragraph, SENTENCE_START, SENTENCE_END, include_token)
+  s_gen = paragraph.split(' <eos/> ')
   return [s for s in s_gen]
