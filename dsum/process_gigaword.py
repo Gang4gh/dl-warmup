@@ -49,7 +49,7 @@ def filter_articles(filefn):
             continue
 
         # Okay, print.
-        print(l.strip())
+        print(l.lower().strip())
 
 def build_vocab(filefn):
     counter = collections.Counter()
