@@ -22,7 +22,7 @@ print('arguments: ', args.__dict__)
 if args.seed is not None:
     np.random.seed(args.seed)
 
-SAVE_FILE = '{}-s{}.m.bin'.format(args.expname, 'x' if args.seed is None else args.seed)
+SAVE_FILE = '{}.m.bin'.format(args.expname)
 
 # hyperparameters
 H = 200  # number of hidden layer neurons
