@@ -68,11 +68,11 @@ def build_vocab(filefn):
         counter.update(article.split())
     
     del counter['<eos/>']
-    for word, count in counter.most_common(200000 - 4):
+    for word, count in counter.most_common(100000 - 4):
         print(word, count)
+    print('<UNK> 0')
     print('<s> 0')
     print('</s> 0')
-    print('<UNK> 0')
     print('<PAD> 0')
 
 cmd = sys.argv[1]
