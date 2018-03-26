@@ -1,8 +1,9 @@
 CPUS ?= $(shell nproc)
 #MAKEFLAGS += -j24	# doesn't work at make 4.1
+TAG = $(shell date +'%Y%m%d%H%M%S')
 
 all:
-	$(MAKE) -j$(CPUS) gigaword-data
+	$(MAKE) -j$(CPUS) data
 
 # preprocess gigaword training data
 GIGA_DIR=./Gigaword/
@@ -19,7 +20,7 @@ $(GIGA_ARTICLES)%.articles : $(GIGA_RAW)%.xml.gz ./convert_gigaword.py
 gigaword-articles: $(GIGA_ARTICLES_FILES)
 
 %.articles.f: %.articles ./process_gigaword.py
-	python3 $(word 2,$^) filter $< > $@
+	python3 $(word 2,$^) filter $< 2 120 > $@
 
 %.sumdata: %.splits $(subst .articles,.articles.f,$(GIGA_ARTICLES_FILES))
 	cat $< | xargs -I % cat $(GIGA_ARTICLES)%.f > $@
@@ -27,7 +28,15 @@ gigaword-articles: $(GIGA_ARTICLES_FILES)
 %.vocab: %.sumdata ./process_gigaword.py
 	python3 $(word 2,$^) vocab $< > $@
 
-gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
+data: $(GIGA_DIR).gigaword-data
+
+$(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
+	mkdir $(GIGA_DIR)data-$(TAG)/
+	cp $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)data-$(TAG)/
+	touch $@
+
+check-tag:
+	@echo current tag is \'$(TAG)\'
 
 small-train:
 	python3 ./seq2seq_attention.py \
@@ -35,3 +44,10 @@ small-train:
 		--data_path=./Gigaword/data-0323/strain.data \
 		--vocab_path=./Gigaword/data-0323/strain.vocab \
 		--log_root=giga0323 --train_dir=giga0323/train
+
+train:
+	python3 ./seq2seq_attention.py \
+		--mode=train \
+		--data_path=$(GIGA_DIR)train.sumdata \
+		--vocab_path=$(GIGA_DIR)train.vocab \
+		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
