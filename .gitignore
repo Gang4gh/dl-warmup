@@ -103,3 +103,5 @@ ENV/
 # training model and data files/folders
 *.bin
 **/Gigaword/
+.vscode/launch.json
+

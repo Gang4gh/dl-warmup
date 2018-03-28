@@ -268,24 +268,30 @@ class Seq2SeqAttentionModel(object):
     results = sess.run([self._enc_top_states, self._dec_in_state],
                        feed_dict={self._articles: enc_inputs,
                                   self._article_lens: enc_len})
-    return results[0], results[1][0]
+    return results[0], tf.contrib.rnn.LSTMStateTuple(results[1].c[0], results[1].h[0])
 
   def decode_topk(self, sess, latest_tokens, enc_top_states, dec_init_states):
     """Return the topK results and new decoder states."""
+    beam_size = len(dec_init_states)
+
+    # Turn dec_init_states (a list of LSTMStateTuples) into a single LSTMStateTuple for the batch
+    c = np.array([state.c for state in dec_init_states])
+    h = np.array([state.h for state in dec_init_states])
+    new_dec_in_state = tf.contrib.rnn.LSTMStateTuple(c, h)
+
     feed = {
         self._enc_top_states: enc_top_states,
         self._dec_in_state:
-            np.squeeze(np.array(dec_init_states)),
+            new_dec_in_state,
         self._abstracts:
             np.transpose(np.array([latest_tokens])),
-        self._abstract_lens: np.ones([len(dec_init_states)], np.int32)}
+        self._abstract_lens: np.ones([beam_size], np.int32)}
 
-    results = sess.run(
+    ids, probs, states = sess.run(
         [self._topk_ids, self._topk_log_probs, self._dec_out_state],
         feed_dict=feed)
 
-    ids, probs, states = results[0], results[1], results[2]
-    new_states = [s for s in states]
+    new_states = [tf.contrib.rnn.LSTMStateTuple(states.c[i], states.h[i]) for i in xrange(beam_size)]
     return ids, probs, new_states
 
   def build_graph(self):

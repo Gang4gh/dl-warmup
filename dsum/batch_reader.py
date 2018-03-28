@@ -68,12 +68,12 @@ class Batcher(object):
     self._input_queue = Queue.Queue(QUEUE_NUM_BATCH * self._hps.batch_size)
     self._bucket_input_queue = Queue.Queue(QUEUE_NUM_BATCH)
     self._input_threads = []
-    for _ in xrange(16):
+    for _ in xrange(1):
       self._input_threads.append(Thread(target=self._FillInputQueue))
       self._input_threads[-1].daemon = True
       self._input_threads[-1].start()
     self._bucketing_threads = []
-    for _ in xrange(4):
+    for _ in xrange(1):
       self._bucketing_threads.append(Thread(target=self._FillBucketInputQueue))
       self._bucketing_threads[-1].daemon = True
       self._bucketing_threads[-1].start()
@@ -139,9 +139,6 @@ class Batcher(object):
                            data.ToSentences(article, include_token=False)]
       abstract_sentences = [sent.strip() for sent in
                             data.ToSentences(abstract, include_token=False)]
-      #print('art: ', len(article_sentences), article_sentences)
-      #print('abs:', abstract_sentences)
-      #input("check : ")
 
       enc_inputs = []
       # Use the <s> as the <GO> symbol for decoder inputs.
@@ -242,27 +239,3 @@ class Batcher(object):
           bucketing_threads[-1].daemon = True
           bucketing_threads[-1].start()
       self._bucketing_threads = bucketing_threads
-
-  def _TextGenerator(self, example_gen):
-    """Generates article and abstract text from tf.Example."""
-    while True:
-      e = six.next(example_gen)
-      try:
-        article_text = self._GetExFeatureText(e, self._article_key)
-        abstract_text = self._GetExFeatureText(e, self._abstract_key)
-      except ValueError:
-        tf.logging.error('Failed to get article or abstract from example')
-        continue
-
-      yield (article_text, abstract_text)
-
-  def _GetExFeatureText(self, ex, key):
-    """Extract text for a feature from td.Example.
-
-    Args:
-      ex: tf.Example.
-      key: key of the feature to be extracted.
-    Returns:
-      feature: a feature text extracted.
-    """
-    return ex.features.feature[key].bytes_list.value[0]

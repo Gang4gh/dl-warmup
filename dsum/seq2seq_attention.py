@@ -112,7 +112,6 @@ def _Train(model, data_batcher):
       if step % 100 == 0:
         summary_writer.flush()
     sv.Stop()
-    return running_avg_loss
 
 
 def _Eval(model, data_batcher, vocab=None):

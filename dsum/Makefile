@@ -43,7 +43,7 @@ small-train:
 		--mode=train \
 		--data_path=./Gigaword/data-0323/strain.data \
 		--vocab_path=./Gigaword/data-0323/strain.vocab \
-		--log_root=giga0323 --train_dir=giga0323/train
+		--log_root=./Gigaword/log-giga0323 --train_dir=./Gigaword/log-giga0323/train
 
 train:
 	python3 ./seq2seq_attention.py \
@@ -51,3 +51,18 @@ train:
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
+
+eval:
+	python3 ./seq2seq_attention.py \
+		--mode=eval \
+		--data_path=$(GIGA_DIR)test.10.sumdata \
+		--vocab_path=$(GIGA_DIR)train.vocab \
+		--log_root=$(GIGA_DIR)summodel --eval_dir=$(GIGA_DIR)summodel/eval
+
+decode:
+	python3 ./seq2seq_attention.py \
+		--mode=decode \
+		--data_path=$(GIGA_DIR)test.10.sumdata \
+		--vocab_path=$(GIGA_DIR)train.vocab \
+		--log_root=$(GIGA_DIR)summodel --decode_dir=$(GIGA_DIR)summodel/decode \
+		--beam_size=6

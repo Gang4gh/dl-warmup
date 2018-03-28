@@ -20,19 +20,11 @@ import random
 import struct
 import sys
 
-from tensorflow.core.example import example_pb2
-
-
 # Special tokens
-PARAGRAPH_START = '<p>'
-PARAGRAPH_END = '</p>'
 SENTENCE_START = '<s>'
 SENTENCE_END = '</s>'
 UNKNOWN_TOKEN = '<UNK>'
 PAD_TOKEN = '<PAD>'
-DOCUMENT_START = '<d>'
-DOCUMENT_END = '</d>'
-
 
 class Vocab(object):
   """Vocabulary class for mapping words and ids."""
@@ -170,33 +162,6 @@ def Ids2Words(ids_list, vocab):
   """
   assert isinstance(ids_list, list), '%s  is not a list' % ids_list
   return [vocab.IdToWord(i) for i in ids_list]
-
-
-def SnippetGen(text, start_tok, end_tok, inclusive=True):
-  """Generates consecutive snippets between start and end tokens.
-
-  Args:
-    text: a string
-    start_tok: a string denoting the start of snippets
-    end_tok: a string denoting the end of snippets
-    inclusive: Whether include the tokens in the returned snippets.
-
-  Yields:
-    String snippets
-  """
-  cur = 0
-  while True:
-    try:
-      start_p = text.index(start_tok, cur)
-      end_p = text.index(end_tok, start_p + 1)
-      cur = end_p + len(end_tok)
-      if inclusive:
-        yield text[start_p:cur]
-      else:
-        yield text[start_p+len(start_tok):end_p]
-    except ValueError as e:
-      raise StopIteration('no more snippets in text: %s' % e)
-
 
 def ToSentences(paragraph, include_token=True):
   """Takes tokens of a paragraph and returns list of sentences.
