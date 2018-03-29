@@ -84,9 +84,7 @@ def ExampleGen(data_path, num_epochs=None):
   If there are multiple files specified, they accessed in a random order.
   """
   epoch = 0
-  while True:
-    if num_epochs is not None and epoch >= num_epochs:
-      break
+  while num_epochs is None or epoch < num_epochs:
     filelist = glob.glob(data_path)
     assert filelist, 'Empty filelist.'
     random.shuffle(filelist)
@@ -97,9 +95,6 @@ def ExampleGen(data_path, num_epochs=None):
           continue
         _, title, article = splits
         yield (article, title)
-        #data = {i.split('=')[0]:i.split('=')[1] for i in splits}
-        #yield (data['article'], data['abstract'])
-
     epoch += 1
 
 

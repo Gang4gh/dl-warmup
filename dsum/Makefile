@@ -62,7 +62,7 @@ eval:
 decode:
 	python3 ./seq2seq_attention.py \
 		--mode=decode \
-		--data_path=$(GIGA_DIR)test.10.sumdata \
+		--data_path=$(GIGA_DIR)test.1k.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
-		--log_root=$(GIGA_DIR)summodel --decode_dir=$(GIGA_DIR)summodel/decode \
-		--beam_size=6
+		--log_root=$(GIGA_DIR)summodel0329 --decode_dir=$(GIGA_DIR)summodel0329/decode \
+		--beam_size=8

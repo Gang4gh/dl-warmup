@@ -23,6 +23,9 @@ import data
 from six.moves import xrange
 import tensorflow as tf
 
+from pythonrouge.pythonrouge import Pythonrouge
+from pprint import pprint
+
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_integer('max_decode_steps', 1000000,
                             'Number of decoding steps.')
@@ -31,8 +34,18 @@ tf.app.flags.DEFINE_integer('decode_batches_per_ckpt', 8000,
                             'checkpoint')
 
 DECODE_LOOP_DELAY_SECS = 5
-DECODE_IO_FLUSH_INTERVAL = 1
 
+def evaluate_inmemory(summaries, references):
+    rouge = Pythonrouge(summary_file_exist=False,
+                        summary=summaries, reference=references,
+                        n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
+                        recall_only=False, stemming=True, stopwords=False,
+                        word_level=True, length_limit=True, length=5,
+                        use_cf=False, cf=95, scoring_formula='average',
+                        resampling=True, samples=1000, favor=True, p=0.5)
+    score = rouge.calc_score()
+    print('ROUGE-N(1-2) & ROUGE-L recall and F value:')
+    pprint(score)
 
 class DecodeIO(object):
   """Writes the decoded and references to RKV files for Rouge score.
@@ -45,8 +58,7 @@ class DecodeIO(object):
     self._outdir = outdir
     if not os.path.exists(self._outdir):
       os.mkdir(self._outdir)
-    self._ref_file = None
-    self._decode_file = None
+    self._result_file = None
 
   def Write(self, reference, decode):
     """Writes the reference and decoded outputs to RKV files.
@@ -55,22 +67,26 @@ class DecodeIO(object):
       reference: The human (correct) result.
       decode: The machine-generated result
     """
-    self._ref_file.write('output=%s\n' % reference)
-    self._decode_file.write('output=%s\n' % decode)
+    self._result_file.write('%s\t%s\n' % (decode, reference))
+    self._summary.append([decode])
+    self._reference.append([[reference]])
     self._cnt += 1
-    if self._cnt % DECODE_IO_FLUSH_INTERVAL == 0:
-      self._ref_file.flush()
-      self._decode_file.flush()
+    if self._cnt % 100 == 0:
+      print('decode count =', self._cnt)
 
   def ResetFiles(self):
     """Resets the output files. Must be called once before Write()."""
-    if self._ref_file: self._ref_file.close()
-    if self._decode_file: self._decode_file.close()
+    if self._result_file: self._result_file.close()
     timestamp = int(time.time())
-    self._ref_file = open(
-        os.path.join(self._outdir, 'ref%d'%timestamp), 'w')
-    self._decode_file = open(
-        os.path.join(self._outdir, 'decode%d'%timestamp), 'w')
+    self._result_file = open(
+        os.path.join(self._outdir, 'res%d'%timestamp), 'w')
+    self._summary = []
+    self._reference = []
+
+  def Close(self):
+    """Close the output file."""
+    if self._result_file: self._result_file.close()
+    evaluate_inmemory(self._summary, self._reference)
 
 
 class BSDecoder(object):
@@ -96,12 +112,8 @@ class BSDecoder(object):
   def DecodeLoop(self):
     """Decoding loop for long running process."""
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
-    step = 0
-    while step < FLAGS.max_decode_steps:
-      time.sleep(DECODE_LOOP_DELAY_SECS)
-      if not self._Decode(self._saver, sess):
-        continue
-      step += 1
+    time.sleep(DECODE_LOOP_DELAY_SECS)
+    self._Decode(self._saver, sess)
 
   def _Decode(self, saver, sess):
     """Restore a checkpoint and decode it.
@@ -124,24 +136,23 @@ class BSDecoder(object):
     saver.restore(sess, ckpt_path)
 
     self._decode_io.ResetFiles()
-    for _ in xrange(FLAGS.decode_batches_per_ckpt):
+    while True:
       (article_batch, _, _, article_lens, _, _, origin_articles,
-       origin_abstracts) = self._batch_reader.NextBatch()
-      for i in xrange(self._hps.batch_size):
+       origin_abstracts) = self._batch_reader.NextBatch(1)
+      if article_batch is None:
+        break
+      for i in xrange(1):
         bs = beam_search.BeamSearch(
             self._model, self._hps.batch_size,
             self._vocab.WordToId(data.SENTENCE_START),
             self._vocab.WordToId(data.SENTENCE_END),
             self._hps.dec_timesteps)
 
-        article_batch_cp = article_batch.copy()
-        article_batch_cp[:] = article_batch[i:i+1]
-        article_lens_cp = article_lens.copy()
-        article_lens_cp[:] = article_lens[i:i+1]
-        best_beam = bs.BeamSearch(sess, article_batch_cp, article_lens_cp)[0]
+        best_beam = bs.BeamSearch(sess, [article_batch[0]] * self._hps.batch_size, [article_lens[0]] * self._hps.batch_size)[0]
         decode_output = [int(t) for t in best_beam.tokens[1:]]
         self._DecodeBatch(
             origin_articles[i], origin_abstracts[i], decode_output)
+    self._decode_io.Close()
     return True
 
   def _DecodeBatch(self, article, abstract, output_ids):

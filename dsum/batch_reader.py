@@ -78,11 +78,11 @@ class Batcher(object):
       self._bucketing_threads[-1].daemon = True
       self._bucketing_threads[-1].start()
 
-    self._watch_thread = Thread(target=self._WatchThreads)
-    self._watch_thread.daemon = True
-    self._watch_thread.start()
+    # self._watch_thread = Thread(target=self._WatchThreads)
+    # self._watch_thread.daemon = True
+    # self._watch_thread.start()
 
-  def NextBatch(self):
+  def NextBatch(self, batch_size = None):
     """Returns a batch of inputs for seq2seq attention model.
 
     Returns:
@@ -95,23 +95,35 @@ class Batcher(object):
       origin_articles: original article words.
       origin_abstracts: original abstract words.
     """
+    if batch_size is None:
+      batch_size = self._hps.batch_size
+    
     enc_batch = np.zeros(
-        (self._hps.batch_size, self._hps.enc_timesteps), dtype=np.int32)
+        (batch_size, self._hps.enc_timesteps), dtype=np.int32)
     enc_input_lens = np.zeros(
-        (self._hps.batch_size), dtype=np.int32)
+        (batch_size), dtype=np.int32)
     dec_batch = np.zeros(
-        (self._hps.batch_size, self._hps.dec_timesteps), dtype=np.int32)
+        (batch_size, self._hps.dec_timesteps), dtype=np.int32)
     dec_output_lens = np.zeros(
-        (self._hps.batch_size), dtype=np.int32)
+        (batch_size), dtype=np.int32)
     target_batch = np.zeros(
-        (self._hps.batch_size, self._hps.dec_timesteps), dtype=np.int32)
+        (batch_size, self._hps.dec_timesteps), dtype=np.int32)
     loss_weights = np.zeros(
-        (self._hps.batch_size, self._hps.dec_timesteps), dtype=np.float32)
-    origin_articles = ['None'] * self._hps.batch_size
-    origin_abstracts = ['None'] * self._hps.batch_size
+        (batch_size, self._hps.dec_timesteps), dtype=np.float32)
+    origin_articles = ['None'] * batch_size
+    origin_abstracts = ['None'] * batch_size
 
+    for i in range(5):
+      if not self._bucket_input_queue.empty():
+        break
+      time.sleep(1)
+      if i == 4:
+        return (None, None, None, None, None, None, None, None)
+    
     buckets = self._bucket_input_queue.get()
-    for i in xrange(self._hps.batch_size):
+    assert batch_size == len(buckets)
+    
+    for i in xrange(batch_size):
       (enc_inputs, dec_inputs, targets, enc_input_len, dec_output_len,
        article, abstract) = buckets[i]
 
@@ -132,9 +144,12 @@ class Batcher(object):
     start_id = self._vocab.WordToId(data.SENTENCE_START)
     end_id = self._vocab.WordToId(data.SENTENCE_END)
     pad_id = self._vocab.WordToId(data.PAD_TOKEN)
-    input_gen = data.ExampleGen(self._data_path)
+    input_gen = data.ExampleGen(self._data_path, None if self._hps.mode != 'decode' else 1)
     while True:
-      (article, abstract) = six.next(input_gen)
+      try:
+        (article, abstract) = six.next(input_gen)
+      except StopIteration:
+        break
       article_sentences = [sent.strip() for sent in
                            data.ToSentences(article, include_token=False)]
       abstract_sentences = [sent.strip() for sent in
@@ -199,18 +214,21 @@ class Batcher(object):
   def _FillBucketInputQueue(self):
     """Fill bucketed batches into the bucket_input_queue."""
     while True:
-      inputs = []
-      for _ in xrange(self._hps.batch_size * BUCKET_CACHE_BATCH):
-        inputs.append(self._input_queue.get())
-      if self._bucketing:
-        inputs = sorted(inputs, key=lambda inp: inp.enc_len)
+      if self._hps.mode != 'decode':
+        inputs = []
+        for _ in xrange(self._hps.batch_size * BUCKET_CACHE_BATCH):
+          inputs.append(self._input_queue.get())
+        if self._bucketing:
+          inputs = sorted(inputs, key=lambda inp: inp.enc_len)
 
-      batches = []
-      for i in xrange(0, len(inputs), self._hps.batch_size):
-        batches.append(inputs[i:i+self._hps.batch_size])
-      shuffle(batches)
-      for b in batches:
-        self._bucket_input_queue.put(b)
+        batches = []
+        for i in xrange(0, len(inputs), self._hps.batch_size):
+          batches.append(inputs[i:i+self._hps.batch_size])
+        shuffle(batches)
+        for b in batches:
+          self._bucket_input_queue.put(b)
+      else:
+        self._bucket_input_queue.put([self._input_queue.get()])
 
   def _WatchThreads(self):
     """Watch the daemon input threads and restart if dead."""
