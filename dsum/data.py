@@ -88,6 +88,7 @@ def ExampleGen(data_path, num_epochs=None):
 					continue
 				_, title, article = splits
 				yield (article, title)
+		print('end of epoch#', epoch)
 		epoch += 1
 
 

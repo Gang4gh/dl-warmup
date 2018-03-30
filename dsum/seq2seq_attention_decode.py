@@ -72,7 +72,7 @@ class DecodeIO(object):
     self._reference.append([[reference]])
     self._cnt += 1
     if self._cnt % 100 == 0:
-      print('decode count =', self._cnt)
+      print('decoded {} articles'.format(self._cnt))
 
   def ResetFiles(self):
     """Resets the output files. Must be called once before Write()."""
@@ -107,7 +107,7 @@ class BSDecoder(object):
     self._hps = hps
     self._vocab = vocab
     self._saver = tf.train.Saver()
-    self._decode_io = DecodeIO(FLAGS.decode_dir)
+    self._decode_io = DecodeIO(os.path.join(FLAGS.log_root, 'decode'))
 
   def DecodeLoop(self):
     """Decoding loop for long running process."""

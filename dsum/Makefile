@@ -55,7 +55,6 @@ train:
 		--mode=train \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
-		--batch_size=128 \
 		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
 
 eval:
@@ -70,5 +69,5 @@ decode:
 		--mode=decode \
 		--data_path=$(GIGA_DIR)test.100.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
-		--log_root=$(GIGA_DIR)summodel0329 --decode_dir=$(GIGA_DIR)summodel0329/decode \
+		--log_root=$(GIGA_DIR)log-20180329211418 --decode_dir=$(GIGA_DIR)log-20180329211418/decode \
 		--beam_size=8

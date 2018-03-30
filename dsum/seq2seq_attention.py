@@ -22,6 +22,7 @@ Beyond."
 
 """
 import sys
+import os
 import time
 import datetime
 
@@ -41,9 +42,6 @@ tf.app.flags.DEFINE_string('article_key', 'article',
 tf.app.flags.DEFINE_string('abstract_key', 'headline',
                            'tf.Example feature key for abstract.')
 tf.app.flags.DEFINE_string('log_root', '', 'Directory for model root.')
-tf.app.flags.DEFINE_string('train_dir', '', 'Directory for train.')
-tf.app.flags.DEFINE_string('eval_dir', '', 'Directory for eval.')
-tf.app.flags.DEFINE_string('decode_dir', '', 'Directory for decode summaries.')
 tf.app.flags.DEFINE_string('mode', 'train', 'train/eval/decode mode')
 tf.app.flags.DEFINE_integer('max_run_steps', 10000000,
                             'Maximum number of run steps.')
@@ -64,22 +62,22 @@ tf.app.flags.DEFINE_bool('truncate_input', False,
                          'examples that are too long are discarded.')
 tf.app.flags.DEFINE_integer('num_gpus', 0, 'Number of gpus used.')
 tf.app.flags.DEFINE_integer('random_seed', 111, 'A seed value for randomness.')
-tf.app.flags.DEFINE_integer('batch_size', 32, 'The mini-batch size for training.')
+tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
 
 
 def _Train(model, data_batcher):
   """Runs model training."""
+  print('start model training...')
   model.build_graph()
   saver = tf.train.Saver()
   # Train dir is different from log_root to avoid summary directory
   # conflict with Supervisor.
-  summary_writer = tf.summary.FileWriter(FLAGS.train_dir)
+  summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_root, 'train'))
   sv = tf.train.Supervisor(logdir=FLAGS.log_root,
                             is_chief=True,
                             saver=saver,
-                            summary_op=None,
-                            save_summaries_secs=60,
                             save_model_secs=FLAGS.checkpoint_secs,
+                            summary_op=None,
                             global_step=model.global_step)
   sess = sv.prepare_or_wait_for_session(config=tf.ConfigProto(
       allow_soft_placement=True))
@@ -87,7 +85,8 @@ def _Train(model, data_batcher):
   while not sv.should_stop() and train_step < FLAGS.max_run_steps:
     (article_batch, abstract_batch, targets, article_lens, abstract_lens,
       loss_weights, _, _) = data_batcher.NextBatch()
-    (_, summaries, loss, train_step) = model.run_train_step(
+
+    (_, summaries, _, train_step) = model.run_train_step(
         sess, article_batch, abstract_batch, targets, article_lens,
         abstract_lens, loss_weights)
 
@@ -102,7 +101,7 @@ def _Eval(model, data_batcher, vocab=None):
   """Runs model eval."""
   model.build_graph()
   saver = tf.train.Saver()
-  summary_writer = tf.summary.FileWriter(FLAGS.eval_dir)
+  summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_root, 'eval'))
   sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
   while True:
     time.sleep(FLAGS.eval_interval_secs)
@@ -113,7 +112,7 @@ def _Eval(model, data_batcher, vocab=None):
       continue
 
     if not (ckpt_state and ckpt_state.model_checkpoint_path):
-      tf.logging.info('No model to eval yet at %s', FLAGS.train_dir)
+      tf.logging.info('No model to eval yet at %s', FLAGS.log_root)
       continue
 
     tf.logging.info('Loading checkpoint %s', ckpt_state.model_checkpoint_path)
@@ -179,8 +178,9 @@ def main(unused_argv):
     decode_mdl_hps = hps._replace(dec_timesteps=1)
     model = seq2seq_attention_model.Seq2SeqAttentionModel(
         decode_mdl_hps, vocab, num_gpus=FLAGS.num_gpus)
-    decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
-    decoder.DecodeLoop()
+    with tf.device('/cpu:0'):
+      decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
+      decoder.DecodeLoop()
     print('decode done.')
 
 

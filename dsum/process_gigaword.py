@@ -43,7 +43,7 @@ def filter_articles(filefn, argv):
 
         # Reasonable lengths
         if not (10 < len(article_words) <= max_word_len and
-                3 < len(title_words) <= max_title_word_len):
+                3 < len(title_words) < max_title_word_len):
             continue
 
         # Some word match.
