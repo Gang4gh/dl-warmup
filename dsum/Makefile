@@ -20,7 +20,7 @@ $(GIGA_ARTICLES)%.articles : $(GIGA_RAW)%.xml.gz ./convert_gigaword.py
 gigaword-articles: $(GIGA_ARTICLES_FILES)
 
 %.articles.f: %.articles ./process_gigaword.py
-	python3 $(word 2,$^) filter $< 2 120 > $@
+	python3 $(word 2,$^) filter $< 2 120 30 > $@
 
 %.sumdata: %.splits $(subst .articles,.articles.f,$(GIGA_ARTICLES_FILES))
 	cat $< | xargs -I % cat $(GIGA_ARTICLES)%.f > $@
@@ -33,6 +33,9 @@ data: $(GIGA_DIR).gigaword-data
 $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
 	mkdir $(GIGA_DIR)data-$(TAG)/
 	cp $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)data-$(TAG)/
+	shuf -n 100 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.100.sumdata
+	shuf -n 1000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.1k.sumdata
+	shuf -n 8000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.8k.sumdata
 	touch $@
 
 check-tag:
@@ -46,10 +49,13 @@ small-train:
 		--log_root=./Gigaword/log-giga0323 --train_dir=./Gigaword/log-giga0323/train
 
 train:
+	killall -w tensorboard
+	tensorboard --port 2345 --logdir=$(GIGA_DIR)log-$(TAG) &
 	python3 ./seq2seq_attention.py \
 		--mode=train \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
+		--batch_size=128 \
 		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
 
 eval:
@@ -62,7 +68,7 @@ eval:
 decode:
 	python3 ./seq2seq_attention.py \
 		--mode=decode \
-		--data_path=$(GIGA_DIR)test.1k.sumdata \
+		--data_path=$(GIGA_DIR)test.100.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=$(GIGA_DIR)summodel0329 --decode_dir=$(GIGA_DIR)summodel0329/decode \
 		--beam_size=8

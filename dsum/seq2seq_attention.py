@@ -23,6 +23,7 @@ Beyond."
 """
 import sys
 import time
+import datetime
 
 import tensorflow as tf
 import batch_reader
@@ -63,55 +64,38 @@ tf.app.flags.DEFINE_bool('truncate_input', False,
                          'examples that are too long are discarded.')
 tf.app.flags.DEFINE_integer('num_gpus', 0, 'Number of gpus used.')
 tf.app.flags.DEFINE_integer('random_seed', 111, 'A seed value for randomness.')
-
-
-def _RunningAvgLoss(loss, running_avg_loss, summary_writer, step, decay=0.999):
-  """Calculate the running average of losses."""
-  if running_avg_loss == 0:
-    running_avg_loss = loss
-  else:
-    running_avg_loss = running_avg_loss * decay + (1 - decay) * loss
-  running_avg_loss = min(running_avg_loss, 12)
-  loss_sum = tf.Summary()
-  loss_sum.value.add(tag='running_avg_loss', simple_value=running_avg_loss)
-  summary_writer.add_summary(loss_sum, step)
-  sys.stdout.write('running_avg_loss: %f\n' % running_avg_loss)
-  return running_avg_loss
+tf.app.flags.DEFINE_integer('batch_size', 32, 'The mini-batch size for training.')
 
 
 def _Train(model, data_batcher):
   """Runs model training."""
-  with tf.device('/cpu:0'):
-    model.build_graph()
-    saver = tf.train.Saver()
-    # Train dir is different from log_root to avoid summary directory
-    # conflict with Supervisor.
-    summary_writer = tf.summary.FileWriter(FLAGS.train_dir)
-    sv = tf.train.Supervisor(logdir=FLAGS.log_root,
-                             is_chief=True,
-                             saver=saver,
-                             summary_op=None,
-                             save_summaries_secs=60,
-                             save_model_secs=FLAGS.checkpoint_secs,
-                             global_step=model.global_step)
-    sess = sv.prepare_or_wait_for_session(config=tf.ConfigProto(
-        allow_soft_placement=True))
-    running_avg_loss = 0
-    step = 0
-    while not sv.should_stop() and step < FLAGS.max_run_steps:
-      (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-       loss_weights, _, _) = data_batcher.NextBatch()
-      (_, summaries, loss, train_step) = model.run_train_step(
-          sess, article_batch, abstract_batch, targets, article_lens,
-          abstract_lens, loss_weights)
+  model.build_graph()
+  saver = tf.train.Saver()
+  # Train dir is different from log_root to avoid summary directory
+  # conflict with Supervisor.
+  summary_writer = tf.summary.FileWriter(FLAGS.train_dir)
+  sv = tf.train.Supervisor(logdir=FLAGS.log_root,
+                            is_chief=True,
+                            saver=saver,
+                            summary_op=None,
+                            save_summaries_secs=60,
+                            save_model_secs=FLAGS.checkpoint_secs,
+                            global_step=model.global_step)
+  sess = sv.prepare_or_wait_for_session(config=tf.ConfigProto(
+      allow_soft_placement=True))
+  train_step = 0
+  while not sv.should_stop() and train_step < FLAGS.max_run_steps:
+    (article_batch, abstract_batch, targets, article_lens, abstract_lens,
+      loss_weights, _, _) = data_batcher.NextBatch()
+    (_, summaries, loss, train_step) = model.run_train_step(
+        sess, article_batch, abstract_batch, targets, article_lens,
+        abstract_lens, loss_weights)
 
-      summary_writer.add_summary(summaries, train_step)
-      running_avg_loss = _RunningAvgLoss(
-          running_avg_loss, loss, summary_writer, train_step)
-      step += 1
-      if step % 100 == 0:
-        summary_writer.flush()
-    sv.Stop()
+    summary_writer.add_summary(summaries, train_step)
+    if train_step <= 10 or train_step <= 100 and train_step % 10 == 0 or train_step % 1000 == 0:
+      summary_writer.flush()
+      print('train_step:', train_step, 'done at', datetime.datetime.now())
+  sv.Stop()
 
 
 def _Eval(model, data_batcher, vocab=None):
@@ -120,8 +104,6 @@ def _Eval(model, data_batcher, vocab=None):
   saver = tf.train.Saver()
   summary_writer = tf.summary.FileWriter(FLAGS.eval_dir)
   sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
-  running_avg_loss = 0
-  step = 0
   while True:
     time.sleep(FLAGS.eval_interval_secs)
     try:
@@ -150,21 +132,14 @@ def _Eval(model, data_batcher, vocab=None):
         ' '.join(data.Ids2Words(abstract_batch[0][:].tolist(), vocab)))
 
     summary_writer.add_summary(summaries, train_step)
-    running_avg_loss = _RunningAvgLoss(
-        running_avg_loss, loss, summary_writer, train_step)
-    if step % 100 == 0:
+    if train_step % 100 == 0:
       summary_writer.flush()
 
 
 def main(unused_argv):
   vocab = data.Vocab(FLAGS.vocab_path, 1000000)
-  # Check for presence of required special tokens.
-  assert vocab.CheckVocab(data.PAD_TOKEN) > 0
-  assert vocab.CheckVocab(data.UNKNOWN_TOKEN) >= 0
-  assert vocab.CheckVocab(data.SENTENCE_START) > 0
-  assert vocab.CheckVocab(data.SENTENCE_END) > 0
 
-  batch_size = 4
+  batch_size = FLAGS.batch_size
   if FLAGS.mode == 'decode':
     batch_size = FLAGS.beam_size
 

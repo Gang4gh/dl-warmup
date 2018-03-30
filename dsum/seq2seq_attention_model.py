@@ -146,7 +146,7 @@ class Seq2SeqAttentionModel(object):
       article_lens = self._article_lens
 
       # Embedding shared by the input and outputs.
-      with tf.variable_scope('embedding'), tf.device('/cpu:0'):
+      with tf.variable_scope('embedding'):
         embedding = tf.get_variable(
             'embedding', [vsize, hps.emb_dim], dtype=tf.float32,
             initializer=tf.truncated_normal_initializer(stddev=1e-4))
@@ -156,8 +156,7 @@ class Seq2SeqAttentionModel(object):
                               for x in decoder_inputs]
 
       for layer_i in xrange(hps.enc_layers):
-        with tf.variable_scope('encoder%d'%layer_i), tf.device(
-            self._next_device()):
+        with tf.variable_scope('encoder%d'%layer_i):
           cell_fw = tf.contrib.rnn.LSTMCell(
               hps.num_hidden,
               initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=123))
@@ -178,7 +177,7 @@ class Seq2SeqAttentionModel(object):
             'v', [vsize], dtype=tf.float32,
             initializer=tf.truncated_normal_initializer(stddev=1e-4))
 
-      with tf.variable_scope('decoder'), tf.device(self._next_device()):
+      with tf.variable_scope('decoder'):
         # When decoding, use model output from the previous step
         # for the next step.
         loop_function = None
@@ -202,7 +201,7 @@ class Seq2SeqAttentionModel(object):
             cell, num_heads=1, loop_function=loop_function,
             initial_state_attention=initial_state_attention)
 
-      with tf.variable_scope('output'), tf.device(self._next_device()):
+      with tf.variable_scope('output'):
         model_outputs = []
         for i in xrange(len(decoder_outputs)):
           if i > 0:
@@ -211,7 +210,7 @@ class Seq2SeqAttentionModel(object):
               tf.nn.xw_plus_b(decoder_outputs[i], w, v))
 
       if hps.mode == 'decode':
-        with tf.variable_scope('decode_output'), tf.device('/cpu:0'):
+        with tf.variable_scope('decode_output'):
           best_outputs = [tf.argmax(x, 1) for x in model_outputs]
           tf.logging.info('best_outputs%s', best_outputs[0].get_shape())
           self._outputs = tf.concat(
@@ -220,13 +219,12 @@ class Seq2SeqAttentionModel(object):
           self._topk_log_probs, self._topk_ids = tf.nn.top_k(
               tf.log(tf.nn.softmax(model_outputs[-1])), hps.batch_size*2)
 
-      with tf.variable_scope('loss'), tf.device(self._next_device()):
+      with tf.variable_scope('loss'):
         def sampled_loss_func(inputs, labels):
-          with tf.device('/cpu:0'):  # Try gpu.
-            labels = tf.reshape(labels, [-1, 1])
-            return tf.nn.sampled_softmax_loss(
-                weights=w_t, biases=v, labels=labels, inputs=inputs,
-                num_sampled=hps.num_softmax_samples, num_classes=vsize)
+          labels = tf.reshape(labels, [-1, 1])
+          return tf.nn.sampled_softmax_loss(
+            weights=w_t, biases=v, labels=labels, inputs=inputs,
+            num_sampled=hps.num_softmax_samples, num_classes=vsize)
 
         if hps.num_softmax_samples != 0 and hps.mode == 'train':
           self._loss = seq2seq_lib.sampled_sequence_loss(
@@ -245,9 +243,8 @@ class Seq2SeqAttentionModel(object):
         tf.train.exponential_decay(hps.lr, self.global_step, 30000, 0.98))
 
     tvars = tf.trainable_variables()
-    with tf.device(self._get_gpu(self._num_gpus-1)):
-      grads, global_norm = tf.clip_by_global_norm(
-          tf.gradients(self._loss, tvars), hps.max_grad_norm)
+    grads, global_norm = tf.clip_by_global_norm(
+      tf.gradients(self._loss, tvars), hps.max_grad_norm)
     tf.summary.scalar('global_norm', global_norm)
     optimizer = tf.train.GradientDescentOptimizer(self._lr_rate)
     tf.summary.scalar('learning rate', self._lr_rate)

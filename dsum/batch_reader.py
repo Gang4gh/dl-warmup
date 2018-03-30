@@ -78,9 +78,9 @@ class Batcher(object):
       self._bucketing_threads[-1].daemon = True
       self._bucketing_threads[-1].start()
 
-    # self._watch_thread = Thread(target=self._WatchThreads)
-    # self._watch_thread.daemon = True
-    # self._watch_thread.start()
+    #self._watch_thread = Thread(target=self._WatchThreads)
+    #self._watch_thread.daemon = True
+    #self._watch_thread.start()
 
   def NextBatch(self, batch_size = None):
     """Returns a batch of inputs for seq2seq attention model.
