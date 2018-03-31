@@ -71,8 +71,8 @@ class DecodeIO(object):
     self._summary.append([decode])
     self._reference.append([[reference]])
     self._cnt += 1
-    if self._cnt % 100 == 0:
-      print('decoded {} articles'.format(self._cnt))
+    #if self._cnt % 100 == 0:
+    #  print('decoded {} articles'.format(self._cnt))
 
   def ResetFiles(self):
     """Resets the output files. Must be called once before Write()."""
@@ -134,6 +134,8 @@ class BSDecoder(object):
         FLAGS.log_root, os.path.basename(ckpt_state.model_checkpoint_path))
     tf.logging.info('renamed checkpoint path %s', ckpt_path)
     saver.restore(sess, ckpt_path)
+
+    print('load model from checkpoint path', ckpt_path)
 
     self._decode_io.ResetFiles()
     while True:
