@@ -11,6 +11,9 @@ SENTENCE_END = '</s>'
 UNKNOWN_TOKEN = '<UNK>'
 PAD_TOKEN = '<PAD>'
 
+EOS_TOKEN = '<eos/>'				# End of sentence token, used as sentence boundary
+EOS_TOKEN2 = ' ' + EOS_TOKEN + ' '
+
 class Vocab(object):
 	"""Vocabulary class to map words and ids."""
 

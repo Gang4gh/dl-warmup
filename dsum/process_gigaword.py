@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
 import sys
+import re
 import collections
+
+def _remove_digits(text):
+    return re.sub(r'\d[,\\/\d]*', '#', text)
 
 def filter_articles(filefn, argv):
     keep_sentence_count = 100 if len(argv) < 1 else int(argv[0])
@@ -9,52 +13,19 @@ def filter_articles(filefn, argv):
     max_title_word_len = 50 if len(argv) < 3 else int(argv[2])
 
     for l in open(filefn):
-        splits = l.strip().split("\t")
+        splits = _remove_digits(l.strip()).lower().split("\t")
         if len(splits) != 3:
             continue
         doc_id, title, article = splits
         title_words = title.split()
         article_words = ' <eos/> '.join(article.split(' <eos/> ')[:keep_sentence_count]).split()
 
-        # No blanks.
-        if any((word == "" for word in title_words)):
-            continue
-
-        if any((word == "" for word in article_words)):
-            continue
-
-        if not any((word == "." for word in article_words)):
-            continue
-
-        # Spurious words to blacklist.
-        # First set is words that never appear in input and output
-        # Second set is punctuation and non-title words.
-        bad_words = ['update#', 'update', 'recasts', 'undated', 'grafs', 'corrects',
-                    'retransmitting', 'updates', 'dateline', 'writethru',
-                    'recaps', 'inserts', 'incorporates', 'adv##',
-                    'ld-writethru', 'djlfx', 'edits', 'byline',
-                    'repetition', 'background', 'thruout', 'quotes',
-                    'attention', 'ny###', 'overline', 'embargoed', ' ap ', ' gmt ',
-                    ' adds ', 'embargo',
-                    'urgent', '?', ' i ', ' : ', ' - ', ' by ', '-lrb-', '-rrb-']
-        if any((bad in title.lower()
-                for bad in bad_words)):
-            continue
-
-        # Reasonable lengths
+        # reasonable lengths
         if not (10 < len(article_words) <= max_word_len and
                 3 < len(title_words) < max_title_word_len):
             continue
 
-        # Some word match.
-        matches = len(set([w.lower() for w in title_words if len(w) > 3]) &
-                    set([w.lower() for w in article_words if len(w) > 3]))
-        if matches < 1:
-            continue
-
-        # Okay, print.
-        #print(l.lower().strip())
-        print('\t'.join([doc_id, title, ' '.join(article_words)]).lower())
+        print('\t'.join([doc_id, title, ' '.join(article_words)]))
 
 def build_vocab(filefn):
     counter = collections.Counter()

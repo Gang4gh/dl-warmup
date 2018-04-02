@@ -1,20 +1,25 @@
 CPUS ?= $(shell nproc)
-#MAKEFLAGS += -j24	# doesn't work at make 4.1
+#MAKEFLAGS += -j24	# doesn't work with make v4.1
 TAG = $(shell date +'%Y%m%d%H%M%S')
+
+# preprocess gigaword training data
+GIGA_DIR=Gigaword/
+GIGA_RAW_DIR=$(GIGA_DIR)LDC2012T21/Data/data/xml/
+
 
 all:
 	$(MAKE) -j$(CPUS) data
 
-# preprocess gigaword training data
-GIGA_DIR=./Gigaword/
-GIGA_RAW=$(GIGA_DIR)LDC2012T21/Data/data/xml/
-GIGA_ARTICLES=$(GIGA_DIR)articles/
 
-GIGA_GZ_FILES=$(wildcard $(GIGA_RAW)*.xml.gz)
-GIGA_ARTICLES_FILES=$(patsubst $(GIGA_RAW)%.xml.gz,$(GIGA_ARTICLES)%.articles,$(GIGA_GZ_FILES))
+clean:
+	rm -f $(GIGA_RAW_DIR)*.articles
 
-$(GIGA_ARTICLES)%.articles : $(GIGA_RAW)%.xml.gz ./convert_gigaword.py
-	python2.7 $(word 2,$^) $< $@
+
+GIGA_GZ_FILES=$(wildcard $(GIGA_RAW_DIR)*.xml.gz)
+GIGA_ARTICLES_FILES=$(subst .xml.gz,.articles,$(GIGA_GZ_FILES))
+
+$(GIGA_RAW_DIR)%.articles : $(GIGA_RAW_DIR)%.xml.gz ./data_gigaword.py
+	python3 $(word 2,$^) $< > $@
 
 # this target is defined to preserve *.articles files
 gigaword-articles: $(GIGA_ARTICLES_FILES)
@@ -23,7 +28,7 @@ gigaword-articles: $(GIGA_ARTICLES_FILES)
 	python3 $(word 2,$^) filter $< 2 120 30 > $@
 
 %.sumdata: %.splits $(subst .articles,.articles.f,$(GIGA_ARTICLES_FILES))
-	cat $< | xargs -I % cat $(GIGA_ARTICLES)%.f > $@
+	cat $< | xargs -I % cat $(GIGA_RAW_DIR)%.f > $@
 
 %.vocab: %.sumdata ./process_gigaword.py
 	python3 $(word 2,$^) vocab $< > $@
@@ -31,40 +36,33 @@ gigaword-articles: $(GIGA_ARTICLES_FILES)
 data: $(GIGA_DIR).gigaword-data
 
 $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
-	mkdir $(GIGA_DIR)data-$(TAG)/
-	cp $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)data-$(TAG)/
+	mkdir -p $(GIGA_DIR)data-$(TAG)
 	shuf -n 100 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.100.sumdata
 	shuf -n 1000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.1k.sumdata
 	shuf -n 8000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.8k.sumdata
+	cp $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)*.splits $(GIGA_DIR)data-$(TAG)
+	tar czvf $(GIGA_DIR)data-$(TAG)/articles.tar.gz $(GIGA_RAW_DIR)*.articles >/dev/null &
 	touch $@
 
-check-tag:
-	@echo current tag is \'$(TAG)\'
+tensorboard:
+	(killall -w tensorboard || echo) 2>&1 >/dev/null
+	tensorboard --port 2345 --logdir=$(GIGA_DIR)log-$(TAG) &
 
-small-train:
+strain: data tensorboard
 	python3 ./seq2seq_attention.py \
 		--mode=train \
-		--data_path=./Gigaword/data-0323/strain.data \
-		--vocab_path=./Gigaword/data-0323/strain.vocab \
-		--log_root=./Gigaword/log-giga0323 --train_dir=./Gigaword/log-giga0323/train
+		--data_path=$(GIGA_DIR)strain.sumdata \
+		--vocab_path=$(GIGA_DIR)strain.vocab \
+		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
 
-train:
-	killall -w tensorboard
-	tensorboard --port 2345 --logdir=$(GIGA_DIR)log-$(TAG) &
+train: data tensorboard
 	python3 ./seq2seq_attention.py \
 		--mode=train \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
 
-eval:
-	python3 ./seq2seq_attention.py \
-		--mode=eval \
-		--data_path=$(GIGA_DIR)test.10.sumdata \
-		--vocab_path=$(GIGA_DIR)train.vocab \
-		--log_root=$(GIGA_DIR)summodel --eval_dir=$(GIGA_DIR)summodel/eval
-
-decode:
+decode: data
 	python3 ./seq2seq_attention.py \
 		--mode=decode \
 		--data_path=$(GIGA_DIR)test.1k.sumdata \

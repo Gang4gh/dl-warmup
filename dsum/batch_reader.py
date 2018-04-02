@@ -40,7 +40,7 @@ class Batcher(object):
   """Batch reader with shuffling and bucketing support."""
 
   def __init__(self, data_path, vocab, hps,
-               article_key, abstract_key, max_article_sentences,
+               max_article_sentences,
                max_abstract_sentences, bucketing=True, truncate_input=False):
     """Batcher constructor.
 
@@ -48,8 +48,6 @@ class Batcher(object):
       data_path: tf.Example filepattern.
       vocab: Vocabulary.
       hps: Seq2SeqAttention model hyperparameters.
-      article_key: article feature key in tf.Example.
-      abstract_key: abstract feature key in tf.Example.
       max_article_sentences: Max number of sentences used from article.
       max_abstract_sentences: Max number of sentences used from abstract.
       bucketing: Whether bucket articles of similar length into the same batch.
@@ -59,8 +57,6 @@ class Batcher(object):
     self._data_path = data_path
     self._vocab = vocab
     self._hps = hps
-    self._article_key = article_key
-    self._abstract_key = abstract_key
     self._max_article_sentences = max_article_sentences
     self._max_abstract_sentences = max_abstract_sentences
     self._bucketing = bucketing

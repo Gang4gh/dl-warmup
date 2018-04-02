@@ -23,6 +23,8 @@ import data
 from six.moves import xrange
 import tensorflow as tf
 
+# Install pythonrouge by:
+#   pip install git+https://github.com/tagucci/pythonrouge.git
 from pythonrouge.pythonrouge import Pythonrouge
 from pprint import pprint
 

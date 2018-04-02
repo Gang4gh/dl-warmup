@@ -37,10 +37,6 @@ tf.app.flags.DEFINE_string('data_path',
                            '', 'Path expression to tf.Example.')
 tf.app.flags.DEFINE_string('vocab_path',
                            '', 'Path expression to text vocabulary file.')
-tf.app.flags.DEFINE_string('article_key', 'article',
-                           'tf.Example feature key for article.')
-tf.app.flags.DEFINE_string('abstract_key', 'headline',
-                           'tf.Example feature key for abstract.')
 tf.app.flags.DEFINE_string('log_root', '', 'Directory for model root.')
 tf.app.flags.DEFINE_string('mode', 'train', 'train/eval/decode mode')
 tf.app.flags.DEFINE_integer('max_run_steps', 10000000,
@@ -69,7 +65,7 @@ def _Train(model, data_batcher):
   """Runs model training."""
   print('start model training...')
   model.build_graph()
-  saver = tf.train.Saver()
+  saver = tf.train.Saver(keep_checkpoint_every_n_hours=12)
   # Train dir is different from log_root to avoid summary directory
   # conflict with Supervisor.
   summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_root, 'train'))
@@ -94,7 +90,7 @@ def _Train(model, data_batcher):
     if train_step <= 10 or train_step <= 100 and train_step % 10 == 0 or train_step % 1000 == 0:
       summary_writer.flush()
       print('train_step:', train_step, 'done at', datetime.datetime.now())
-  sv.Stop()
+  sv.stop()
 
 
 def _Eval(model, data_batcher, vocab=None):
@@ -120,7 +116,7 @@ def _Eval(model, data_batcher, vocab=None):
 
     (article_batch, abstract_batch, targets, article_lens, abstract_lens,
      loss_weights, _, _) = data_batcher.NextBatch()
-    (summaries, loss, train_step) = model.run_eval_step(
+    (summaries, _, train_step) = model.run_eval_step(
         sess, article_batch, abstract_batch, targets, article_lens,
         abstract_lens, loss_weights)
     tf.logging.info(
@@ -157,10 +153,9 @@ def main(unused_argv):
       num_softmax_samples=4096)  # If 0, no sampled softmax.
 
   batcher = batch_reader.Batcher(
-      FLAGS.data_path, vocab, hps, FLAGS.article_key,
-      FLAGS.abstract_key, FLAGS.max_article_sentences,
-      FLAGS.max_abstract_sentences, bucketing=FLAGS.use_bucketing,
-      truncate_input=FLAGS.truncate_input)
+      FLAGS.data_path, vocab, hps,
+      FLAGS.max_article_sentences, FLAGS.max_abstract_sentences,
+      bucketing=FLAGS.use_bucketing, truncate_input=FLAGS.truncate_input)
   tf.set_random_seed(FLAGS.random_seed)
 
   if hps.mode == 'train':
