@@ -7,8 +7,13 @@ import collections
 import data
 
 
-def _remove_digits(text):
-    return re.sub(r'\d[,\\/\d]*', '#', text)
+def _normalize_text(text):
+    return re.sub(r'\d[,\\/\d]*', '#', text.lower())
+
+
+_stop_ngrams = set(['major news items ', 'weather forecast for ', 'cox news service ', 'beijing-based newspapers'
+        , ', am editors', ' economic briefs', ' business briefs', ' key market information'
+        ])
 
 
 def filter_articles(filefn, argv):
@@ -17,12 +22,16 @@ def filter_articles(filefn, argv):
     max_title_word_len = 50 if len(argv) < 3 else int(argv[2])
 
     for l in open(filefn):
-        splits = _remove_digits(l.strip()).lower().split("\t")
+        splits = l.strip().split("\t")
         if len(splits) != 3:
             continue
-        doc_id, title, article = splits
+        doc_id, title, article = splits[0], _normalize_text(splits[1]), _normalize_text(splits[2])
         title_words = title.split()
         article_words = data.EOS_TOKEN2.join(article.split(data.EOS_TOKEN2)[:keep_sentence_count]).split()
+
+        # filter by ngrams stop words
+        if any([ngram in title for ngram in _stop_ngrams]):
+            return False
 
         # reasonable lengths
         if not (10 < len(article_words) <= max_word_len and
@@ -71,7 +80,7 @@ def count_titles(filefn, max_allowed_count):
 if __name__ == '__main__':
 	#main():
     if len(sys.argv) < 3:
-        print('Error: invalid argv.', sys.argv)
+        print('error: invalid argv.', sys.argv)
         exit(-1)
 
     cmd = sys.argv[1]
@@ -84,5 +93,5 @@ if __name__ == '__main__':
     elif cmd == 'count-title':
         count_titles(filefn, 1)
     else:
-        print('Error: invalid command.', cmd)
+        print('error: invalid command.', cmd)
         exit(-1)

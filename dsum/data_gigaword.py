@@ -42,7 +42,7 @@ def _is_good(_title_words, _article):
                 'repetition', 'background', 'thruout', 'quotes',
                 'attention', 'ny#', 'ny###', 'overline', 'embargoed', 'ap', 'gmt',
                 'edt', 'adds', 'embargo',
-                'urgent', '?', 'i', ':', '-', 'by', '-lrb-', '-rrb-'])
+                'urgent', '?', 'i', ':', '-', 'by', '-lrb-', '-rrb-', 'afp'])
     if any([w.lower() in stop_words for w in _title_words]) > 0:
        return False
 
