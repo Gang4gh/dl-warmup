@@ -1,15 +1,15 @@
 """Data vocab and reader for summerization data in <tab> separated text files"""
 
+import sys
 import glob
 import random
 import struct
-import sys
 
 # Special tokens
-SENTENCE_START = '<s>'
-SENTENCE_END = '</s>'
 UNKNOWN_TOKEN = '<UNK>'
 PAD_TOKEN = '<PAD>'
+SENTENCE_START = '<s>'
+SENTENCE_END = '</s>'
 
 EOS_TOKEN = '<eos/>'				# End of sentence token, used as sentence boundary
 EOS_TOKEN2 = ' ' + EOS_TOKEN + ' '

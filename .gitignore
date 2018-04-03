@@ -104,4 +104,5 @@ ENV/
 *.bin
 **/Gigaword/
 .vscode/launch.json
+dsum/training_center/
 

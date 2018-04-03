@@ -18,19 +18,19 @@ clean:
 GIGA_GZ_FILES=$(wildcard $(GIGA_RAW_DIR)*.xml.gz)
 GIGA_ARTICLES_FILES=$(subst .xml.gz,.articles,$(GIGA_GZ_FILES))
 
-$(GIGA_RAW_DIR)%.articles : $(GIGA_RAW_DIR)%.xml.gz ./data_gigaword.py
+$(GIGA_RAW_DIR)%.articles : $(GIGA_RAW_DIR)%.xml.gz data_gigaword.py
 	python3 $(word 2,$^) $< > $@
 
 # this target is defined to preserve *.articles files
 gigaword-articles: $(GIGA_ARTICLES_FILES)
 
-%.articles.f: %.articles ./process_gigaword.py
+%.articles.f: %.articles data_generic.py
 	python3 $(word 2,$^) filter $< 2 120 30 > $@
 
 %.sumdata: %.splits $(subst .articles,.articles.f,$(GIGA_ARTICLES_FILES))
 	cat $< | xargs -I % cat $(GIGA_RAW_DIR)%.f > $@
 
-%.vocab: %.sumdata ./process_gigaword.py
+%.vocab: %.sumdata data_generic.py
 	python3 $(word 2,$^) vocab $< > $@
 
 data: $(GIGA_DIR).gigaword-data
@@ -62,10 +62,10 @@ train: data tensorboard
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
 
-decode: data
+decode:
 	python3 ./seq2seq_attention.py \
 		--mode=decode \
-		--data_path=$(GIGA_DIR)test.1k.sumdata \
-		--vocab_path=$(GIGA_DIR)train.vocab \
+		--data_path=training_center/sa16-0330/test.1k.sumdata \
+		--vocab_path=training_center/sa16-0330/train.vocab \
 		--log_root=$(GIGA_DIR)log-20180330133216 --decode_dir=$(GIGA_DIR)log-20180330133216/decode \
 		--beam_size=8
