@@ -12,7 +12,8 @@ all:
 
 
 clean:
-	rm -f $(GIGA_RAW_DIR)*.articles
+	rm -f $(GIGA_RAW_DIR)*.articles $(GIGA_RAW_DIR)*.articles.f
+	rm -f $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab
 
 
 GIGA_GZ_FILES=$(wildcard $(GIGA_RAW_DIR)*.xml.gz)
@@ -37,30 +38,22 @@ data: $(GIGA_DIR).gigaword-data
 
 $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
 	mkdir -p $(GIGA_DIR)data-$(TAG)
-	shuf -n 100 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.100.sumdata
 	shuf -n 1000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.1k.sumdata
 	shuf -n 8000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.8k.sumdata
-	cp $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)*.splits $(GIGA_DIR)data-$(TAG)
-	tar czvf $(GIGA_DIR)data-$(TAG)/articles.tar.gz $(GIGA_RAW_DIR)*.articles >/dev/null &
+	cp $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)*.splits data_*.py $(GIGA_DIR)data-$(TAG)
 	touch $@
 
-tensorboard:
+TRAINING_ROOT=training_center/run-$(TAG)/
+
+train: data
+	cp *.py Makefile $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(TRAINING_ROOT)
 	(killall -w tensorboard || echo) 2>&1 >/dev/null
-	tensorboard --port 2345 --logdir=$(GIGA_DIR)log-$(TAG) &
-
-strain: data tensorboard
-	python3 ./seq2seq_attention.py \
+	tensorboard --port 2345 --logdir=$(TRAINING_ROOT)model &
+	python3 $(TRAINING_ROOT)seq2seq_attention.py \
 		--mode=train \
-		--data_path=$(GIGA_DIR)strain.sumdata \
-		--vocab_path=$(GIGA_DIR)strain.vocab \
-		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
-
-train: data tensorboard
-	python3 ./seq2seq_attention.py \
-		--mode=train \
-		--data_path=$(GIGA_DIR)train.sumdata \
-		--vocab_path=$(GIGA_DIR)train.vocab \
-		--log_root=$(GIGA_DIR)log-$(TAG) --train_dir=$(GIGA_DIR)log-$(TAG)/train
+		--data_path=$(TRAINING_ROOT)train.sumdata \
+		--vocab_path=$(TRAINING_ROOT)train.vocab \
+		--log_root=$(TRAINING_ROOT)model --train_dir=$(TRAINING_ROOT)model/train
 
 decode:
 	python3 ./seq2seq_attention.py \

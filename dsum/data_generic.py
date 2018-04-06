@@ -4,11 +4,13 @@ import sys
 import re
 import collections
 
+import numpy as np
+
 import data
 
 
 def _normalize_text(text):
-    return re.sub(r'\d[,\\/\d]*', '#', text.lower())
+    return re.sub(r'\d[,./\\\d]*\d', '#', text.lower())
 
 
 _stop_ngrams = set(['major news items ', 'weather forecast for ', 'cox news service ', 'beijing-based newspapers'
@@ -31,7 +33,7 @@ def filter_articles(filefn, argv):
 
         # filter by ngrams stop words
         if any([ngram in title for ngram in _stop_ngrams]):
-            return False
+            continue
 
         # reasonable lengths
         if not (10 < len(article_words) <= max_word_len and
@@ -77,6 +79,29 @@ def count_titles(filefn, max_allowed_count):
         print(p)
 
 
+def calc_histogram(filefn):
+    data = ({}, {})
+
+    for l in open(filefn):
+        splits = l.strip().split("\t")
+        if len(splits) != 3:
+            continue
+        id, title, article = splits
+        id = id[:3]
+        if id not in data[0]:
+            data[0][id] = []
+            data[1][id] = []
+        data[0][id].append(len(title.split()))
+        data[1][id].append(len(article.split()))
+    
+    for key in data[0]:
+        print(key)
+        print('    median word count in title :', np.median(data[0][key]))
+        print(np.histogram(data[0][key]))
+        print('    median word count in article :', np.median(data[1][key]))
+        print(np.histogram(data[1][key]))
+
+
 if __name__ == '__main__':
 	#main():
     if len(sys.argv) < 3:
@@ -92,6 +117,8 @@ if __name__ == '__main__':
         build_vocab(filefn, 10000)
     elif cmd == 'count-title':
         count_titles(filefn, 1)
+    elif cmd == 'histogram':
+        calc_histogram(filefn)
     else:
         print('error: invalid command.', cmd)
         exit(-1)

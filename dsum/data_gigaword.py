@@ -29,7 +29,7 @@ def _get_words(parse):
 def _is_good(_title_words, _article):
     _article_words = [w for sent in _article for w in sent]
 
-    if not '.' in [w for sent in _article[:3] for w in sent]:
+    if not '.' in [w for sent in _article[:2] for w in sent]:
         return False
 
     # spurious words to blacklist for titles.
