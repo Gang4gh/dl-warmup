@@ -97,9 +97,9 @@ def calc_histogram(filefn):
     for key in data[0]:
         print(key)
         print('    median word count in title :', np.median(data[0][key]))
-        print(np.histogram(data[0][key]))
+        print(np.histogram(data[0][key], density=True))
         print('    median word count in article :', np.median(data[1][key]))
-        print(np.histogram(data[1][key]))
+        print(np.histogram(data[1][key], density=True))
 
 
 if __name__ == '__main__':
@@ -114,7 +114,7 @@ if __name__ == '__main__':
     if cmd == 'filter':
         filter_articles(filefn, sys.argv[3:])
     elif cmd == 'vocab':
-        build_vocab(filefn, 10000)
+        build_vocab(filefn, 100000)
     elif cmd == 'count-title':
         count_titles(filefn, 1)
     elif cmd == 'histogram':

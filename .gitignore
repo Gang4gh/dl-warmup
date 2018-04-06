@@ -102,7 +102,7 @@ ENV/
 
 # training model and data files/folders
 *.bin
-**/Gigaword/
 .vscode/launch.json
+dsum/Gigaword/
 dsum/training_center/
-
+dsum/model/
