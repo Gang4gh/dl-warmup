@@ -59,6 +59,7 @@ tf.app.flags.DEFINE_bool('truncate_input', False,
 tf.app.flags.DEFINE_integer('num_gpus', 0, 'Number of gpus used.')
 tf.app.flags.DEFINE_integer('random_seed', 111, 'A seed value for randomness.')
 tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
+tf.app.flags.DEFINE_string('tf_device', None, 'Overall tf.device placement instruction.')
 
 
 def _Train(model, data_batcher):
@@ -179,5 +180,15 @@ def main(unused_argv):
     print('decode done.')
 
 
+def main_with_device_placement(argv):
+  if FLAGS.tf_device:
+    print('set tf.device to:', FLAGS.tf_device)
+    with tf.device(FLAGS.tf_device):
+      main(argv)
+  else:
+    main(argv)
+
+
 if __name__ == '__main__':
-  tf.app.run()
+  tf.app.run(main=main_with_device_placement)
+

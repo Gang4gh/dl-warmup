@@ -1,6 +1,6 @@
 CPUS ?= $(shell nproc)
 #MAKEFLAGS += -j24	# doesn't work with make v4.1
-TAG = $(shell date +'%Y%m%d%H%M%S')
+TAG ?= $(shell date +'%Y%m%d%H%M%S')
 
 
 # preprocess gigaword training data
@@ -16,6 +16,8 @@ clean:
 	rm -f $(GIGA_RAW_DIR)*.articles $(GIGA_RAW_DIR)*.articles.f
 	rm -f $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab
 
+check:
+	@echo TAG is '$(TAG)'
 
 # prepare data used for training
 GIGA_GZ_FILES=$(wildcard $(GIGA_RAW_DIR)*.xml.gz)
@@ -51,12 +53,13 @@ tb tensorboard:
 	(killall -w tensorboard || echo) 2>&1 >/dev/null
 	tensorboard --port 2345 --logdir=model &
 
-trainmodel:
+tm trainmodel:
 	python3 seq2seq_attention.py \
 		--mode=train \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model --train_dir=model/train
+#		--tf_device=/cpu:0
 
 cleanmodel:
 	rm -rf model
@@ -65,7 +68,7 @@ train: data cleanmodel tensorboard trainmodel
 
 ctrain: data tensorboard trainmodel
 
-TRAINING_ROOT=training_center/run-$(TAG)/
+TRAINING_ROOT=training_center/$(TAG)/
 
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)

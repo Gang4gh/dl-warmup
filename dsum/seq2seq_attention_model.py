@@ -191,7 +191,7 @@ class Seq2SeqAttentionModel(object):
 
         encoder_outputs = [tf.reshape(x, [hps.batch_size, 1, 2*hps.num_hidden])
                            for x in encoder_outputs]
-        self._enc_top_states = tf.concat(axis=1, values=encoder_outputs)
+        self._enc_top_states = tf.concat(axis=1, values=encoder_outputs)  # swap D1 and D2?
         self._dec_in_state = fw_state
         # During decoding, follow up _dec_in_state are fed from beam_search.
         # dec_out_state are stored by beam_search for next step feeding.
