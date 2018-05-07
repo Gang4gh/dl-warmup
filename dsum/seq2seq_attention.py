@@ -50,7 +50,7 @@ tf.app.flags.DEFINE_integer('max_abstract_sentences', 100,
 tf.app.flags.DEFINE_integer('beam_size', 4,
                             'beam size for beam search decoding.')
 tf.app.flags.DEFINE_integer('eval_interval_secs', 60, 'How often to run eval.')
-tf.app.flags.DEFINE_integer('checkpoint_secs', 60, 'How often to checkpoint.')
+tf.app.flags.DEFINE_integer('checkpoint_secs', 1200, 'How often to checkpoint.')
 tf.app.flags.DEFINE_bool('use_bucketing', False,
                          'Whether bucket articles of similar length.')
 tf.app.flags.DEFINE_bool('truncate_input', False,

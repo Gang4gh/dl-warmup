@@ -4,8 +4,9 @@ TAG ?= $(shell date +'%Y%m%d%H%M%S')
 
 
 # preprocess gigaword training data
+GIGA_DATA_DIR=/home/gang/LDC2012T21/Data/data/xml/
 GIGA_DIR=Gigaword/
-GIGA_RAW_DIR=$(GIGA_DIR)LDC2012T21/Data/data/xml/
+GIGA_TMP_DIR=$(GIGA_DIR)articles/
 
 
 all:
@@ -13,17 +14,18 @@ all:
 
 
 clean:
-	rm -f $(GIGA_RAW_DIR)*.articles $(GIGA_RAW_DIR)*.articles.f
+	rm -rf $(GIGA_TMP_DIR)
 	rm -f $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab
 
 check:
 	@echo TAG is '$(TAG)'
 
 # prepare data used for training
-GIGA_GZ_FILES=$(wildcard $(GIGA_RAW_DIR)*.xml.gz)
-GIGA_ARTICLES_FILES=$(subst .xml.gz,.articles,$(GIGA_GZ_FILES))
+GIGA_GZ_FILES=$(wildcard $(GIGA_DATA_DIR)*.xml.gz)
+GIGA_ARTICLES_FILES=$(GIGA_GZ_FILES:$(GIGA_DATA_DIR)%.xml.gz=$(GIGA_TMP_DIR)%.articles)
 
-$(GIGA_RAW_DIR)%.articles : $(GIGA_RAW_DIR)%.xml.gz data_gigaword.py
+$(GIGA_TMP_DIR)%.articles : $(GIGA_DATA_DIR)%.xml.gz data_gigaword.py
+	@mkdir -p $(GIGA_TMP_DIR)
 	python3 $(word 2,$^) $< > $@
 
 # this target is defined to preserve *.articles files
@@ -33,7 +35,7 @@ gigaword-articles: $(GIGA_ARTICLES_FILES)
 	python3 $(word 2,$^) filter $< 2 120 30 > $@
 
 %.sumdata: %.splits $(subst .articles,.articles.f,$(GIGA_ARTICLES_FILES))
-	cat $< | xargs -I % cat $(GIGA_RAW_DIR)%.f > $@
+	cat $< | xargs -I % cat $(GIGA_TMP_DIR)%.f > $@
 
 %.vocab: %.sumdata data_generic.py
 	python3 $(word 2,$^) vocab $< > $@
