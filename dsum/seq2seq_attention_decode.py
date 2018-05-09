@@ -37,7 +37,7 @@ tf.app.flags.DEFINE_integer('decode_batches_per_ckpt', 8000,
 
 DECODE_LOOP_DELAY_SECS = 5
 
-def evaluate_inmemory(summaries, references):
+def evaluate_inmemory(summaries, references, train_step):
     rouge = Pythonrouge(summary_file_exist=False,
                         summary=summaries, reference=references,
                         n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
@@ -48,6 +48,14 @@ def evaluate_inmemory(summaries, references):
     score = rouge.calc_score()
     print('ROUGE-N(1-2) & ROUGE-L recall and F value:')
     pprint(score)
+
+    if train_step:
+      for key in ['ROUGE-1-R','ROUGE-2-R','ROUGE-L-R']:
+        swriter = tf.summary.FileWriter(os.path.join(FLAGS.log_root, key))
+        summary = tf.Summary()
+        summary.value.add(tag='ROUGE(recall)', simple_value=score[key])
+        swriter.add_summary(summary, train_step)
+        swriter.close()
 
 class DecodeIO(object):
   """Writes the decoded and references to RKV files for Rouge score.
@@ -85,10 +93,10 @@ class DecodeIO(object):
     self._summary = []
     self._reference = []
 
-  def Close(self):
+  def Close(self, train_step = None):
     """Close the output file."""
     if self._result_file: self._result_file.close()
-    evaluate_inmemory(self._summary, self._reference)
+    evaluate_inmemory(self._summary, self._reference, train_step)
 
 
 class BSDecoder(object):
@@ -111,13 +119,13 @@ class BSDecoder(object):
     self._saver = tf.train.Saver()
     self._decode_io = DecodeIO(os.path.join(FLAGS.log_root, 'decode'))
 
-  def DecodeLoop(self):
+  def DecodeLoop(self, train_step = None):
     """Decoding loop for long running process."""
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
     time.sleep(DECODE_LOOP_DELAY_SECS)
-    self._Decode(self._saver, sess)
+    self._Decode(self._saver, sess, train_step)
 
-  def _Decode(self, saver, sess):
+  def _Decode(self, saver, sess, train_step = None):
     """Restore a checkpoint and decode it.
 
     Args:
@@ -126,18 +134,23 @@ class BSDecoder(object):
     Returns:
       If success, returns true, otherwise, false.
     """
-    ckpt_state = tf.train.get_checkpoint_state(FLAGS.log_root)
-    if not (ckpt_state and ckpt_state.model_checkpoint_path):
-      tf.logging.info('No model to decode yet at %s', FLAGS.log_root)
-      return False
+    if train_step:
+      ckpt_path = os.path.join(FLAGS.log_root, 'model.ckpt-' + str(train_step))
+      tf.logging.info('specified checkpoint path model.ckpt-%s', train_step)
+    else:
+      ckpt_state = tf.train.get_checkpoint_state(FLAGS.log_root)
+      if not (ckpt_state and ckpt_state.model_checkpoint_path):
+        tf.logging.info('No model to decode yet at %s', FLAGS.log_root)
+        return False
 
-    tf.logging.info('checkpoint path %s', ckpt_state.model_checkpoint_path)
-    ckpt_path = os.path.join(
-        FLAGS.log_root, os.path.basename(ckpt_state.model_checkpoint_path))
-    tf.logging.info('renamed checkpoint path %s', ckpt_path)
+      tf.logging.info('checkpoint path %s', ckpt_state.model_checkpoint_path)
+      ckpt_path = os.path.join(
+          FLAGS.log_root, os.path.basename(ckpt_state.model_checkpoint_path))
+      tf.logging.info('renamed checkpoint path %s', ckpt_path)
+      train_step = ckpt_path.split('-')[-1]
+
     saver.restore(sess, ckpt_path)
-
-    print('load model from checkpoint path', ckpt_path)
+    print('load model from checkpoint path {0}, train_step {1}'.format(ckpt_path, train_step))
 
     self._decode_io.ResetFiles()
     while True:
@@ -156,7 +169,7 @@ class BSDecoder(object):
         decode_output = [int(t) for t in best_beam.tokens[1:]]
         self._DecodeBatch(
             origin_articles[i], origin_abstracts[i], decode_output)
-    self._decode_io.Close()
+    self._decode_io.Close(train_step)
     return True
 
   def _DecodeBatch(self, article, abstract, output_ids):

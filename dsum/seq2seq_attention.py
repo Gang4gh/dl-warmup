@@ -56,10 +56,10 @@ tf.app.flags.DEFINE_bool('use_bucketing', False,
 tf.app.flags.DEFINE_bool('truncate_input', False,
                          'Truncate inputs that are too long. If False, '
                          'examples that are too long are discarded.')
-tf.app.flags.DEFINE_integer('num_gpus', 0, 'Number of gpus used.')
 tf.app.flags.DEFINE_integer('random_seed', 111, 'A seed value for randomness.')
 tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
-tf.app.flags.DEFINE_string('tf_device', None, 'Overall tf.device placement instruction.')
+tf.app.flags.DEFINE_string('tf_device', None, 'default tf.device placement instruction.')
+tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
 
 
 def _Train(model, data_batcher):
@@ -161,28 +161,25 @@ def main(unused_argv):
 
   if hps.mode == 'train':
     model = seq2seq_attention_model.Seq2SeqAttentionModel(
-        hps, vocab, num_gpus=FLAGS.num_gpus)
+        hps, vocab)
     _Train(model, batcher)
   elif hps.mode == 'eval':
     model = seq2seq_attention_model.Seq2SeqAttentionModel(
-        hps, vocab, num_gpus=FLAGS.num_gpus)
+        hps, vocab)
     _Eval(model, batcher, vocab=vocab)
   elif hps.mode == 'decode':
-    decode_mdl_hps = hps
     # Only need to restore the 1st step and reuse it since
     # we keep and feed in state for each step's output.
     decode_mdl_hps = hps._replace(dec_timesteps=1)
-    model = seq2seq_attention_model.Seq2SeqAttentionModel(
-        decode_mdl_hps, vocab, num_gpus=FLAGS.num_gpus)
-    with tf.device('/cpu:0'):
-      decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
-      decoder.DecodeLoop()
+    model = seq2seq_attention_model.Seq2SeqAttentionModel(decode_mdl_hps, vocab)
+    decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
+    decoder.DecodeLoop(FLAGS.decode_train_step)
     print('decode done.')
 
 
 def main_with_device_placement(argv):
   if FLAGS.tf_device:
-    print('set tf.device to:', FLAGS.tf_device)
+    print('set default tf.device to:', FLAGS.tf_device)
     with tf.device(FLAGS.tf_device):
       main(argv)
   else:
