@@ -61,10 +61,9 @@ def _extract_argmax_and_embed(embedding, output_projection=None,
 class Seq2SeqAttentionModel(object):
   """Wrapper for Tensorflow model graph for text sum vectors."""
 
-  def __init__(self, hps, vocab, num_gpus=0):
+  def __init__(self, hps, vocab):
     self._hps = hps
     self._vocab = vocab
-    self._num_gpus = num_gpus
     self._cur_gpu = 0
 
   def run_train_step(self, sess, article_batch, abstract_batch, targets,
@@ -99,20 +98,6 @@ class Seq2SeqAttentionModel(object):
                                self._article_lens: article_lens,
                                self._abstract_lens: abstract_lens,
                                self._loss_weights: loss_weights})
-
-  def _next_device(self):
-    """Round robin the gpu device. (Reserve last gpu for expensive op)."""
-    if self._num_gpus == 0:
-      return ''
-    dev = '/gpu:%d' % self._cur_gpu
-    if self._num_gpus > 1:
-      self._cur_gpu = (self._cur_gpu + 1) % (self._num_gpus-1)
-    return dev
-
-  def _get_gpu(self, gpu_id):
-    if self._num_gpus <= 0 or gpu_id >= self._num_gpus:
-      return ''
-    return '/gpu:%d' % gpu_id
 
   def _add_placeholders(self):
     """Inputs to be fed to the graph."""

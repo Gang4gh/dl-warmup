@@ -20,6 +20,7 @@ clean:
 check:
 	@echo TAG is '$(TAG)'
 
+
 # prepare data used for training
 GIGA_GZ_FILES=$(wildcard $(GIGA_DATA_DIR)*.xml.gz)
 GIGA_ARTICLES_FILES=$(GIGA_GZ_FILES:$(GIGA_DATA_DIR)%.xml.gz=$(GIGA_TMP_DIR)%.articles)
@@ -63,7 +64,6 @@ tm trainmodel:
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model --train_dir=model/train
-#		--tf_device=/cpu:0
 
 cleanmodel:
 	rm -rf model
@@ -80,9 +80,9 @@ tc trainingcenter: data
 	$(MAKE) -C $(TRAINING_ROOT) tensorboard trainmodel
 
 decode:
-	python3 seq2seq_attention.py \
-		--mode=decode \
-		--data_path=training_center/sa16-0330/test.1k.sumdata \
-		--vocab_path=training_center/sa16-0330/train.vocab \
-		--log_root=$(GIGA_DIR)log-20180330133216 --decode_dir=$(GIGA_DIR)log-20180330133216/decode \
+	python3 seq2seq_attention.py $(ARGS) \
+		--mode=decode --tf_device=/cpu:0 \
+		--data_path=training_center/sa16-0405/test.1k.sumdata \
+		--vocab_path=training_center/sa16-0405/train.vocab \
+		--log_root=training_center/sa16-0405/model/ --decode_dir=training_center/sa16-0405/model/decode \
 		--beam_size=8
