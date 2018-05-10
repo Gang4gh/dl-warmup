@@ -47,6 +47,7 @@ $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(
 	mkdir -p $(GIGA_DIR)data-$(TAG)
 	shuf $(GIGA_DIR)train.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)train.shuf.sumdata
 	mv -f $(GIGA_DIR)train.shuf.sumdata $(GIGA_DIR)train.sumdata
+	touch $(GIGA_DIR)train.vocab
 	shuf -n 1000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.1k.sumdata
 	shuf -n 8000 $(GIGA_DIR)test.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.8k.sumdata
 	cp -p $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)*.splits data_*.py $(GIGA_DIR)data-$(TAG)
