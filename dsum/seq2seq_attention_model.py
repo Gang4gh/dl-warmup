@@ -18,7 +18,6 @@
 from collections import namedtuple
 
 import numpy as np
-import seq2seq_lib
 from six.moves import xrange
 import tensorflow as tf
 
@@ -126,8 +125,8 @@ class Seq2SeqAttentionModel(object):
     with tf.variable_scope('seq2seq'):
       encoder_inputs = tf.unstack(tf.transpose(self._articles))
       decoder_inputs = tf.unstack(tf.transpose(self._abstracts))
-      targets = tf.unstack(tf.transpose(self._targets))
-      loss_weights = tf.unstack(tf.transpose(self._loss_weights))
+      targets = tf.transpose(self._targets)
+      loss_weights = tf.transpose(self._loss_weights)
       article_lens = self._article_lens
 
       # Embedding shared by the input and outputs.
@@ -205,18 +204,8 @@ class Seq2SeqAttentionModel(object):
               tf.log(tf.nn.softmax(model_outputs[-1])), hps.batch_size*2)
 
       with tf.variable_scope('loss'):
-        def sampled_loss_func(inputs, labels):
-          labels = tf.reshape(labels, [-1, 1])
-          return tf.nn.sampled_softmax_loss(
-            weights=w_t, biases=v, labels=labels, inputs=inputs,
-            num_sampled=hps.num_softmax_samples, num_classes=vsize)
-
-        if hps.num_softmax_samples != 0 and hps.mode == 'train':
-          self._loss = seq2seq_lib.sampled_sequence_loss(
-              decoder_outputs, targets, loss_weights, sampled_loss_func)
-        else:
-          self._loss = tf.contrib.legacy_seq2seq.sequence_loss(
-              model_outputs, targets, loss_weights)
+        model_outputs = tf.stack(model_outputs)
+        self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
         tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
 
   def _add_train_op(self):

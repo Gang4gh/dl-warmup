@@ -56,12 +56,16 @@ $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(
 
 # training/test actions
 tb tensorboard:
-	(killall -w tensorboard || echo) 2>&1 >/dev/null
+	killall -q -w sleep ; killall -q -w tensorboard ; true
 	tensorboard --port 2345 --logdir=model &
+
+delayed-tensorboard:
+	killall -q -w sleep ; killall -q -w tensorboard ; true
+	(sleep 600; tensorboard --port 2345 --logdir=model) &
 
 tm trainmodel:
 	python3 seq2seq_attention.py \
-		--mode=train \
+		--mode=train --batch_size=96 \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model --train_dir=model/train
@@ -69,21 +73,21 @@ tm trainmodel:
 cleanmodel:
 	rm -rf model
 
-train: data cleanmodel tensorboard trainmodel
+train: data cleanmodel delayed-tensorboard trainmodel
 
-ctrain: data tensorboard trainmodel
+ctrain: data delayed-tensorboard trainmodel
 
 TRAINING_ROOT=training_center/$(TAG)/
 
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)
 	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab *.py Makefile $(TRAINING_ROOT)
-	$(MAKE) -C $(TRAINING_ROOT) tensorboard trainmodel
+	$(MAKE) -C $(TRAINING_ROOT) delayed-tensorboard trainmodel
 
 decode:
 	python3 seq2seq_attention.py $(ARGS) \
 		--mode=decode --tf_device=/cpu:0 \
-		--data_path=training_center/sa16-0405/test.1k.sumdata \
-		--vocab_path=training_center/sa16-0405/train.vocab \
-		--log_root=training_center/sa16-0405/model/ --decode_dir=training_center/sa16-0405/model/decode \
+		--data_path=$(GIGA_DIR)/test.1k.sumdata \
+		--vocab_path=$(GIGA_DIR)/train.vocab \
+		--log_root=model/ --decode_dir=model/decode \
 		--beam_size=8
