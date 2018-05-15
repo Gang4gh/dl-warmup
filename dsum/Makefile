@@ -56,12 +56,8 @@ $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(
 
 # training/test actions
 tb tensorboard:
-	killall -q -w sleep ; killall -q -w tensorboard ; true
+	killall -q -w tensorboard ; true
 	tensorboard --port 2345 --logdir=model &
-
-delayed-tensorboard:
-	killall -q -w sleep ; killall -q -w tensorboard ; true
-	(sleep 600; tensorboard --port 2345 --logdir=model) &
 
 tm trainmodel:
 	python3 seq2seq_attention.py \
@@ -73,16 +69,16 @@ tm trainmodel:
 cleanmodel:
 	rm -rf model
 
-train: data cleanmodel delayed-tensorboard trainmodel
+train: data cleanmodel tensorboard trainmodel
 
-ctrain: data delayed-tensorboard trainmodel
+ctrain: data tensorboard trainmodel
 
 TRAINING_ROOT=training_center/$(TAG)/
 
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)
 	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab *.py Makefile $(TRAINING_ROOT)
-	$(MAKE) -C $(TRAINING_ROOT) delayed-tensorboard trainmodel
+	$(MAKE) -C $(TRAINING_ROOT) tensorboard trainmodel
 
 decode:
 	python3 seq2seq_attention.py $(ARGS) \
