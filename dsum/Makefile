@@ -78,7 +78,7 @@ TRAINING_ROOT=training_center/$(TAG)/
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)
 	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab *.py Makefile $(TRAINING_ROOT)
-	$(MAKE) -C $(TRAINING_ROOT) train
+	$(MAKE) -C $(TRAINING_ROOT) tensorboard trainmodel
 
 decode:
 	CUDA_VISIBLE_DEVICES= python3 seq2seq_attention.py $(ARGS) \
@@ -89,4 +89,4 @@ decode:
 		--beam_size=8
 
 cdecode:
-	watch -n 21600 $(MAKE) decode
+	watch -n 10800 $(MAKE) decode

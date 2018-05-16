@@ -209,21 +209,7 @@ class Seq2SeqAttentionModel(object):
         tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
 
   def _add_train_op(self):
-    """Sets self._train_op, op to run for training."""
-    hps = self._hps
-
-    self._lr_rate = tf.maximum(
-        hps.min_lr,  # min_lr_rate.
-        tf.train.exponential_decay(hps.lr, self.global_step, 30000, 0.98))
-
-    tvars = tf.trainable_variables()
-    grads, global_norm = tf.clip_by_global_norm(
-      tf.gradients(self._loss, tvars), hps.max_grad_norm)
-    tf.summary.scalar('global_norm', global_norm)
-    optimizer = tf.train.GradientDescentOptimizer(self._lr_rate)
-    tf.summary.scalar('learning rate', self._lr_rate)
-    self._train_op = optimizer.apply_gradients(
-        zip(grads, tvars), global_step=self.global_step, name='train_step')
+    self._train_op = tf.train.AdamOptimizer().minimize(self._loss, global_step=self.global_step, name='train_op')
 
   def encode_top_state(self, sess, enc_inputs, enc_len):
     """Return the top states from encoder for decoder.
