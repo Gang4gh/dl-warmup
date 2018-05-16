@@ -57,11 +57,11 @@ $(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(
 # training/test actions
 tb tensorboard:
 	killall -q -w tensorboard ; true
-	tensorboard --port 2345 --logdir=model &
+	CUDA_VISIBLE_DEVICES= tensorboard --port 2345 --logdir=model &
 
 tm trainmodel:
 	python3 seq2seq_attention.py \
-		--mode=train --batch_size=96 \
+		--mode=train --batch_size=64 \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model --train_dir=model/train
@@ -78,12 +78,15 @@ TRAINING_ROOT=training_center/$(TAG)/
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)
 	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab *.py Makefile $(TRAINING_ROOT)
-	$(MAKE) -C $(TRAINING_ROOT) tensorboard trainmodel
+	$(MAKE) -C $(TRAINING_ROOT) train
 
 decode:
-	python3 seq2seq_attention.py $(ARGS) \
-		--mode=decode --tf_device=/cpu:0 \
+	CUDA_VISIBLE_DEVICES= python3 seq2seq_attention.py $(ARGS) \
+		--mode=decode \
 		--data_path=$(GIGA_DIR)/test.1k.sumdata \
 		--vocab_path=$(GIGA_DIR)/train.vocab \
 		--log_root=model/ --decode_dir=model/decode \
 		--beam_size=8
+
+cdecode:
+	watch -n 21600 $(MAKE) decode
