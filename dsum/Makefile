@@ -60,11 +60,11 @@ tb tensorboard:
 	CUDA_VISIBLE_DEVICES= tensorboard --port 2345 --logdir=model &
 
 tm trainmodel:
-	python3 seq2seq_attention.py \
+	python3 seq2seq_attention.py $(ARGS) \
 		--mode=train --batch_size=64 \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
-		--log_root=model --train_dir=model/train
+		--log_root=model
 
 cleanmodel:
 	rm -rf model
@@ -85,7 +85,7 @@ decode:
 		--mode=decode \
 		--data_path=$(GIGA_DIR)/test.1k.sumdata \
 		--vocab_path=$(GIGA_DIR)/train.vocab \
-		--log_root=model/ --decode_dir=model/decode \
+		--log_root=model \
 		--beam_size=8
 
 cdecode:

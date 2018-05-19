@@ -18,7 +18,6 @@
 from collections import namedtuple
 
 import numpy as np
-from six.moves import xrange
 import tensorflow as tf
 
 HParams = namedtuple('HParams',
@@ -63,7 +62,6 @@ class Seq2SeqAttentionModel(object):
   def __init__(self, hps, vocab):
     self._hps = hps
     self._vocab = vocab
-    self._cur_gpu = 0
 
   def run_train_step(self, sess, article_batch, abstract_batch, targets,
                      article_lens, abstract_lens, loss_weights):
@@ -139,7 +137,7 @@ class Seq2SeqAttentionModel(object):
         emb_decoder_inputs = [tf.nn.embedding_lookup(embedding, x)
                               for x in decoder_inputs]
 
-      for layer_i in xrange(hps.enc_layers):
+      for layer_i in range(hps.enc_layers):
         with tf.variable_scope('encoder%d'%layer_i):
           cell_fw = tf.contrib.rnn.LSTMCell(
               hps.num_hidden,
@@ -187,7 +185,7 @@ class Seq2SeqAttentionModel(object):
 
       with tf.variable_scope('output'):
         model_outputs = []
-        for i in xrange(len(decoder_outputs)):
+        for i in range(len(decoder_outputs)):
           if i > 0:
             tf.get_variable_scope().reuse_variables()
           model_outputs.append(
@@ -248,13 +246,13 @@ class Seq2SeqAttentionModel(object):
         [self._topk_ids, self._topk_log_probs, self._dec_out_state],
         feed_dict=feed)
 
-    new_states = [tf.contrib.rnn.LSTMStateTuple(states.c[i], states.h[i]) for i in xrange(beam_size)]
+    new_states = [tf.contrib.rnn.LSTMStateTuple(states.c[i], states.h[i]) for i in range(beam_size)]
     return ids, probs, new_states
 
   def build_graph(self):
     self._add_placeholders()
     self._add_seq2seq()
-    self.global_step = tf.Variable(0, name='global_step', trainable=False)
+    self.global_step = tf.train.get_or_create_global_step()
     if self._hps.mode == 'train':
       self._add_train_op()
     self._summaries = tf.summary.merge_all()

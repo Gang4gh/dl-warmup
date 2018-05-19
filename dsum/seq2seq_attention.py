@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Trains a seq2seq model.
+"""trains a seq2seq model.
 
 WORK IN PROGRESS.
 
@@ -64,34 +64,54 @@ tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for
 
 def _Train(model, data_batcher):
   """Runs model training."""
-  print('start model training...')
+  print(datetime.datetime.now(), '- build the model graph')
   model.build_graph()
-  saver = tf.train.Saver(keep_checkpoint_every_n_hours=12)
-  # Train dir is different from log_root to avoid summary directory
-  # conflict with Supervisor.
-  summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_root, 'train'))
-  sv = tf.train.Supervisor(logdir=FLAGS.log_root,
-                            is_chief=True,
-                            saver=saver,
-                            save_model_secs=FLAGS.checkpoint_secs,
-                            summary_op=None,
-                            global_step=model.global_step)
-  sess = sv.prepare_or_wait_for_session(config=tf.ConfigProto(
-      allow_soft_placement=True))
-  train_step = 0
-  while not sv.should_stop() and train_step < FLAGS.max_run_steps:
-    (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-      loss_weights, _, _) = data_batcher.NextBatch()
 
-    (_, summaries, _, train_step) = model.run_train_step(
-        sess, article_batch, abstract_batch, targets, article_lens,
-        abstract_lens, loss_weights)
+  ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=12, max_to_keep=3)
+  ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_secs)
 
-    summary_writer.add_summary(summaries, train_step)
-    if train_step <= 10 or train_step <= 100 and train_step % 10 == 0 or train_step % 1000 == 0:
-      summary_writer.flush()
-      print('train_step:', train_step, 'done at', datetime.datetime.now())
-  sv.stop()
+  with tf.Session() as sess:
+    # initialize or restore model
+    ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
+    if ckpt_path is None:
+      print(datetime.datetime.now(), '- initialize variables')
+      _ = sess.run(tf.global_variables_initializer())
+      summary_writer = tf.summary.FileWriter(FLAGS.log_root, graph=sess.graph)
+    else:
+      print(datetime.datetime.now(), '- restore model from', ckpt_path)
+      ckpt_saver.restore(sess, ckpt_path)
+      summary_writer = tf.summary.FileWriter(FLAGS.log_root)
+
+    global_step = sess.run(model.global_step)
+    for _ in range(global_step): _ = data_batcher.NextBatch()
+
+    # main loop
+    last_timestamp = time.time()
+    print(datetime.datetime.now(), '- start of training at global_step', global_step)
+    while global_step < FLAGS.max_run_steps:
+      (article_batch, abstract_batch, targets, article_lens, abstract_lens,
+        loss_weights, _, _) = data_batcher.NextBatch()
+
+      (_, summary, _, global_step) = model.run_train_step(
+          sess, article_batch, abstract_batch, targets, article_lens,
+          abstract_lens, loss_weights)
+
+      if global_step <= 10 or global_step <= 100 and global_step % 10 == 0 or global_step % 1000 == 0:
+        print(datetime.datetime.now(), '- global_step', global_step, 'is done')
+
+      if ckpt_timer.should_trigger_for_step(global_step):
+        ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
+        ckpt_timer.update_last_triggered_step(global_step)
+
+      # write summaries
+      summary_writer.add_summary(summary, global_step)
+      elapsed_time = time.time() - last_timestamp
+      last_timestamp += elapsed_time
+      steps_per_sec = 1 / elapsed_time if elapsed_time > 0. else float('inf')
+      summary_writer.add_summary(tf.Summary(value=[tf.Summary.Value(tag='global_step/sec', simple_value=steps_per_sec)]), global_step)
+
+    ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
+    print(datetime.datetime.now(), '- end of training at global_step', global_step)
 
 
 def _Eval(model, data_batcher, vocab=None):
