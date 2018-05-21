@@ -120,76 +120,50 @@ class Seq2SeqAttentionModel(object):
     hps = self._hps
     vsize = self._vocab.NumIds()
 
+    uniform_initializer = tf.random_uniform_initializer(-0.1, 0.1, seed=123)
+
     with tf.variable_scope('seq2seq'):
-      encoder_inputs = tf.unstack(tf.transpose(self._articles))
-      decoder_inputs = tf.unstack(tf.transpose(self._abstracts))
+      encoder_inputs = tf.transpose(self._articles)
+      decoder_inputs = tf.transpose(self._abstracts)
       targets = tf.transpose(self._targets)
       loss_weights = tf.transpose(self._loss_weights)
       article_lens = self._article_lens
+      abstract_lens = self._abstract_lens
 
       # Embedding shared by the input and outputs.
       with tf.variable_scope('embedding'):
-        embedding = tf.get_variable(
-            'embedding', [vsize, hps.emb_dim], dtype=tf.float32,
+        embedding = tf.get_variable('embedding', [vsize, hps.emb_dim],
             initializer=tf.truncated_normal_initializer(stddev=1e-4))
-        emb_encoder_inputs = [tf.nn.embedding_lookup(embedding, x)
-                              for x in encoder_inputs]
-        emb_decoder_inputs = [tf.nn.embedding_lookup(embedding, x)
-                              for x in decoder_inputs]
-
+        emb_encoder_inputs = tf.nn.embedding_lookup(embedding, encoder_inputs)
+        emb_decoder_inputs = tf.nn.embedding_lookup(embedding, decoder_inputs)
+ 
       for layer_i in range(hps.enc_layers):
-        with tf.variable_scope('encoder%d'%layer_i):
-          cell_fw = tf.contrib.rnn.LSTMCell(
-              hps.num_hidden,
-              initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=123))
-          cell_bw = tf.contrib.rnn.LSTMCell(
-              hps.num_hidden,
-              initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=113))
-          (emb_encoder_inputs, fw_state, _) = tf.contrib.rnn.static_bidirectional_rnn(
-              cell_fw, cell_bw, emb_encoder_inputs, dtype=tf.float32,
-              sequence_length=article_lens)
-      encoder_outputs = emb_encoder_inputs
-
-      with tf.variable_scope('output_projection'):
-        w = tf.get_variable(
-            'w', [hps.num_hidden, vsize], dtype=tf.float32,
-            initializer=tf.truncated_normal_initializer(stddev=1e-4))
-        w_t = tf.transpose(w)
-        v = tf.get_variable(
-            'v', [vsize], dtype=tf.float32,
-            initializer=tf.truncated_normal_initializer(stddev=1e-4))
+        with tf.variable_scope('encoder%d' % layer_i):
+          cell_fw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
+          cell_bw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
+          (rnn_outputs, (fw_state, _)) = tf.nn.bidirectional_dynamic_rnn(
+              cell_fw, cell_bw, emb_encoder_inputs,
+              sequence_length=article_lens, dtype=tf.float32, time_major=True)
+          emb_encoder_inputs = tf.concat(rnn_outputs, 2)
+      emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
 
       with tf.variable_scope('decoder'):
-        # When decoding, use model output from the previous step
-        # for the next step.
-        loop_function = None
-        if hps.mode == 'decode':
-          loop_function = _extract_argmax_and_embed(
-              embedding, (w, v), update_embedding=False)
+        #attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
+        cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
+        #cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
+        helper = tf.contrib.seq2seq.TrainingHelper(emb_decoder_inputs, abstract_lens, time_major=True)
+        decoder = tf.contrib.seq2seq.BasicDecoder(
+          cell = cell_decoder,
+          helper = helper,
+          initial_state = fw_state)
+          #initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=fw_state))
+        outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
 
-        cell = tf.contrib.rnn.LSTMCell(
-            hps.num_hidden,
-            initializer=tf.random_uniform_initializer(-0.1, 0.1, seed=113))
-
-        encoder_outputs = [tf.reshape(x, [hps.batch_size, 1, 2*hps.num_hidden])
-                           for x in encoder_outputs]
-        self._enc_top_states = tf.concat(axis=1, values=encoder_outputs)  # swap D1 and D2?
-        self._dec_in_state = fw_state
-        # During decoding, follow up _dec_in_state are fed from beam_search.
-        # dec_out_state are stored by beam_search for next step feeding.
-        initial_state_attention = (hps.mode == 'decode')
-        decoder_outputs, self._dec_out_state = tf.contrib.legacy_seq2seq.attention_decoder(
-            emb_decoder_inputs, self._dec_in_state, self._enc_top_states,
-            cell, num_heads=1, loop_function=loop_function,
-            initial_state_attention=initial_state_attention)
+      with tf.variable_scope('output_projection'):
+        projection_layer = tf.layers.Dense(vsize, use_bias=True)
 
       with tf.variable_scope('output'):
-        model_outputs = []
-        for i in range(len(decoder_outputs)):
-          if i > 0:
-            tf.get_variable_scope().reuse_variables()
-          model_outputs.append(
-              tf.nn.xw_plus_b(decoder_outputs[i], w, v))
+        model_outputs = projection_layer(outputs.rnn_output)
 
       if hps.mode == 'decode':
         with tf.variable_scope('decode_output'):
@@ -202,8 +176,8 @@ class Seq2SeqAttentionModel(object):
               tf.log(tf.nn.softmax(model_outputs[-1])), hps.batch_size*2)
 
       with tf.variable_scope('loss'):
-        model_outputs = tf.stack(model_outputs)
-        self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
+        max_lens = tf.shape(model_outputs)[0]
+        self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_lens, :], loss_weights[:max_lens, :])
         tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
 
   def _add_train_op(self):
