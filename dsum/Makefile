@@ -61,7 +61,7 @@ tb tensorboard:
 
 tm trainmodel:
 	python3 seq2seq_attention.py $(ARGS) \
-		--mode=train --batch_size=64 \
+		--mode=train --batch_size=256 \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model

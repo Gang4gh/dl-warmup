@@ -24,7 +24,7 @@ HParams = namedtuple('HParams',
                      'mode, min_lr, lr, batch_size, '
                      'enc_layers, enc_timesteps, dec_timesteps, '
                      'min_input_len, num_hidden, emb_dim, max_grad_norm, '
-                     'num_softmax_samples')
+                     'num_softmax_samples, beam_size')
 
 
 def _extract_argmax_and_embed(embedding, output_projection=None,
@@ -95,6 +95,17 @@ class Seq2SeqAttentionModel(object):
                                self._article_lens: article_lens,
                                self._abstract_lens: abstract_lens,
                                self._loss_weights: loss_weights})
+  
+  def run_infer_step(self, sess, article_batch, abstract_batch, targets,
+                      article_lens, abstract_lens, loss_weights):
+    to_return = [self._predicted_ids]
+    return sess.run(to_return,
+                    feed_dict={self._articles: article_batch,
+                               self._abstracts: abstract_batch,
+                               self._targets: targets,
+                               self._article_lens: article_lens,
+                               self._abstract_lens: abstract_lens,
+                               self._loss_weights: loss_weights})
 
   def _add_placeholders(self):
     """Inputs to be fed to the graph."""
@@ -147,38 +158,48 @@ class Seq2SeqAttentionModel(object):
           emb_encoder_inputs = tf.concat(rnn_outputs, 2)
       emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
 
+      projection_layer = tf.layers.Dense(vsize, use_bias=True)
+      print('batch/beam', hps.batch_size, hps.beam_size)
+
       with tf.variable_scope('decoder'):
-        #attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
-        cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
-        #cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
-        helper = tf.contrib.seq2seq.TrainingHelper(emb_decoder_inputs, abstract_lens, time_major=True)
-        decoder = tf.contrib.seq2seq.BasicDecoder(
-          cell = cell_decoder,
-          helper = helper,
-          initial_state = fw_state)
-          #initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=fw_state))
-        outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
+        if hps.mode != 'decode':
+          cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
+          attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
+          cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention)
+          helper = tf.contrib.seq2seq.TrainingHelper(emb_decoder_inputs, abstract_lens, time_major=True)
+          decoder = tf.contrib.seq2seq.BasicDecoder(
+            cell = cell_decoder,
+            helper = helper,
+            initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=fw_state))
+            #initial_state = fw_state)
+          outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
+          model_outputs = projection_layer(outputs.rnn_output, scope='decoder/dense')
+          with tf.variable_scope('loss'):
+            max_lens = tf.shape(model_outputs)[0]
+            self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_lens, :], loss_weights[:max_lens, :])
+            tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
+        else:
+          emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)
+          article_lens = tf.contrib.seq2seq.tile_batch(article_lens, multiplier=hps.beam_size)
+          fw_state = tf.contrib.seq2seq.tile_batch(fw_state, multiplier=hps.beam_size)
 
-      with tf.variable_scope('output_projection'):
-        projection_layer = tf.layers.Dense(vsize, use_bias=True)
+          cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
+          attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
+          cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention)
 
-      with tf.variable_scope('output'):
-        model_outputs = projection_layer(outputs.rnn_output)
+          initial_state = cell_decoder.zero_state(hps.batch_size * hps.beam_size, tf.float32).clone(cell_state=fw_state)
+          start_token_ids = tf.fill([hps.batch_size], 2)
+          end_token_id = 3
 
-      if hps.mode == 'decode':
-        with tf.variable_scope('decode_output'):
-          best_outputs = [tf.argmax(x, 1) for x in model_outputs]
-          tf.logging.info('best_outputs%s', best_outputs[0].get_shape())
-          self._outputs = tf.concat(
-              axis=1, values=[tf.reshape(x, [hps.batch_size, 1]) for x in best_outputs])
-
-          self._topk_log_probs, self._topk_ids = tf.nn.top_k(
-              tf.log(tf.nn.softmax(model_outputs[-1])), hps.batch_size*2)
-
-      with tf.variable_scope('loss'):
-        max_lens = tf.shape(model_outputs)[0]
-        self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_lens, :], loss_weights[:max_lens, :])
-        tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
+          my_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+            cell=cell_decoder,
+            embedding=embedding,
+            start_tokens=start_token_ids, end_token=end_token_id,
+            initial_state=initial_state,
+            beam_width=hps.beam_size,
+            output_layer=projection_layer)
+          outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(my_decoder, maximum_iterations=30, output_time_major=True)
+          self._predicted_ids = outputs.predicted_ids
 
   def _add_train_op(self):
     self._train_op = tf.train.AdamOptimizer().minimize(self._loss, global_step=self.global_step, name='train_op')

@@ -152,12 +152,46 @@ def _Eval(model, data_batcher, vocab=None):
       summary_writer.flush()
 
 
+def _Infer(model, data_batcher):
+  """Runs model training."""
+  print(datetime.datetime.now(), '- build the model graph')
+  model.build_graph()
+
+  ckpt_saver = tf.train.Saver()
+
+  with tf.Session() as sess:
+    # initialize or restore model
+    ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
+    print(datetime.datetime.now(), '- restore model from', ckpt_path)
+    ckpt_saver.restore(sess, ckpt_path)
+
+    global_step = sess.run(model.global_step)
+
+    # main loop
+    last_timestamp = time.time()
+    print(datetime.datetime.now(), '- start of inferring at global_step', global_step)
+    while global_step < FLAGS.max_run_steps:
+      (article_batch, abstract_batch, targets, article_lens, abstract_lens,
+        loss_weights, articles, titles) = data_batcher.NextBatch()
+
+      (token_ids,) = model.run_infer_step(
+          sess, article_batch, abstract_batch, targets, article_lens,
+          abstract_lens, loss_weights)
+
+      print('----------')
+      print(articles)
+      print(titles)
+      print(token_ids)
+      tokens = [model._vocab.IdToWord(wid[0][0]) for wid in token_ids]
+      print(tokens)
+
+
 def main(unused_argv):
   vocab = data.Vocab(FLAGS.vocab_path, 1000000)
 
   batch_size = FLAGS.batch_size
   if FLAGS.mode == 'decode':
-    batch_size = FLAGS.beam_size
+    batch_size = 1
 
   hps = seq2seq_attention_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
@@ -171,7 +205,8 @@ def main(unused_argv):
       num_hidden=256,  # for rnn cell
       emb_dim=128,  # If 0, don't use embedding
       max_grad_norm=2,
-      num_softmax_samples=0)  # If 0, no sampled softmax.
+      num_softmax_samples=0,  # If 0, no sampled softmax.
+      beam_size=FLAGS.beam_size)
 
   batcher = batch_reader.Batcher(
       FLAGS.data_path, vocab, hps,
@@ -190,10 +225,10 @@ def main(unused_argv):
   elif hps.mode == 'decode':
     # Only need to restore the 1st step and reuse it since
     # we keep and feed in state for each step's output.
-    decode_mdl_hps = hps._replace(dec_timesteps=1)
-    model = seq2seq_attention_model.Seq2SeqAttentionModel(decode_mdl_hps, vocab)
-    decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
-    decoder.DecodeLoop(FLAGS.decode_train_step)
+    model = seq2seq_attention_model.Seq2SeqAttentionModel(hps, vocab)
+    #decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
+    #decoder.DecodeLoop(FLAGS.decode_train_step)
+    _Infer(model, batcher)
     print('decode done.')
 
 
