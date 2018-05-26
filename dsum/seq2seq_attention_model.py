@@ -159,7 +159,6 @@ class Seq2SeqAttentionModel(object):
       emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
 
       projection_layer = tf.layers.Dense(vsize, use_bias=True)
-      print('batch/beam', hps.batch_size, hps.beam_size)
 
       with tf.variable_scope('decoder'):
         if hps.mode != 'decode':
@@ -175,8 +174,9 @@ class Seq2SeqAttentionModel(object):
           outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
           model_outputs = projection_layer(outputs.rnn_output, scope='decoder/dense')
           with tf.variable_scope('loss'):
-            max_lens = tf.shape(model_outputs)[0]
-            self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_lens, :], loss_weights[:max_lens, :])
+            max_len = tf.shape(model_outputs)[0]
+            model_outputs = tf.pad(model_outputs, [[0, hps.dec_timesteps - max_len], [0,0], [0,0]])
+            self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
             tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
         else:
           emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)

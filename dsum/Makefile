@@ -61,7 +61,7 @@ tb tensorboard:
 
 tm trainmodel:
 	python3 seq2seq_attention.py $(ARGS) \
-		--mode=train --batch_size=256 \
+		--mode=train --batch_size=64 \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model
@@ -83,8 +83,8 @@ tc trainingcenter: data
 decode:
 	CUDA_VISIBLE_DEVICES= python3 seq2seq_attention.py $(ARGS) \
 		--mode=decode \
-		--data_path=$(GIGA_DIR)/test.1k.sumdata \
-		--vocab_path=$(GIGA_DIR)/train.vocab \
+		--data_path=$(GIGA_DIR)test.1k.sumdata \
+		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model \
 		--beam_size=8
 

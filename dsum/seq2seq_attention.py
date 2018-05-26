@@ -15,10 +15,7 @@
 
 """trains a seq2seq model.
 
-WORK IN PROGRESS.
-
-Implement "Abstractive Text Summarization using Sequence-to-sequence RNNS and
-Beyond."
+based on "Abstractive Text Summarization using Sequence-to-sequence RNNS and Beyond"
 
 """
 import sys
@@ -31,6 +28,11 @@ import batch_reader
 import data
 import seq2seq_attention_decode
 import seq2seq_attention_model
+
+# Install pythonrouge by:
+#   pip install git+https://github.com/tagucci/pythonrouge.git
+from pythonrouge.pythonrouge import Pythonrouge
+from pprint import pprint
 
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('data_path',
@@ -61,6 +63,27 @@ tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training
 tf.app.flags.DEFINE_string('tf_device', None, 'default tf.device placement instruction.')
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
 
+
+def calculate_rouge_scores(summaries, references, printScores=True, root=None, global_step=None):
+  rouge = Pythonrouge(summary_file_exist=False,
+                        summary=summaries, reference=references,
+                        n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
+                        recall_only=False, stemming=True, stopwords=False,
+                        word_level=True, length_limit=True, length=5,
+                        use_cf=False, cf=95, scoring_formula='average',
+                        resampling=True, samples=1000, favor=True, p=0.5)
+  score = rouge.calc_score()
+
+  if printScores:
+    print('ROUGE-N(1-2) & ROUGE-L recall and F value:')
+    pprint(score)
+
+  if root is not None and global_step is not None:
+    for key in ['ROUGE-1-R','ROUGE-2-R','ROUGE-L-R']:
+      swriter = tf.summary.FileWriter(os.path.join(root, key))
+      summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE(recall)', simple_value=score[key])])
+      swriter.add_summary(summary, global_step)
+      swriter.close()
 
 def _Train(model, data_batcher):
   """Runs model training."""
@@ -152,38 +175,50 @@ def _Eval(model, data_batcher, vocab=None):
       summary_writer.flush()
 
 
-def _Infer(model, data_batcher):
+def _Infer(model, data_batcher, global_step = None):
   """Runs model training."""
   print(datetime.datetime.now(), '- build the model graph')
   model.build_graph()
 
+  decode_root = os.path.join(FLAGS.log_root, 'decode')
+  if not os.path.exists(decode_root):
+    os.mkdir(decode_root)
   ckpt_saver = tf.train.Saver()
 
   with tf.Session() as sess:
-    # initialize or restore model
+    # restore model
     ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
+    if global_step is not None:
+      ckpt_path = '%s-%d' % (ckpt_path.split('-')[0], global_step)
     print(datetime.datetime.now(), '- restore model from', ckpt_path)
     ckpt_saver.restore(sess, ckpt_path)
 
-    global_step = sess.run(model.global_step)
+    global_step = int(ckpt_path.split('-')[-1])
+    result_file = os.path.join(decode_root, 'summary-%d.txt' % global_step)
 
     # main loop
     last_timestamp = time.time()
     print(datetime.datetime.now(), '- start of inferring at global_step', global_step)
-    while global_step < FLAGS.max_run_steps:
-      (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-        loss_weights, articles, titles) = data_batcher.NextBatch()
+    summaries, references = [], []
+    with open(result_file, 'w') as result:
+      batch_count = 0
+      while global_step < FLAGS.max_run_steps:
+        (article_batch, abstract_batch, targets, article_lens, abstract_lens,
+          loss_weights, articles, titles) = data_batcher.NextBatch(1)
+        if article_batch is None: break
 
-      (token_ids,) = model.run_infer_step(
-          sess, article_batch, abstract_batch, targets, article_lens,
-          abstract_lens, loss_weights)
+        (token_ids,) = model.run_infer_step(
+            sess, article_batch, abstract_batch, targets, article_lens,
+            abstract_lens, loss_weights)
 
-      print('----------')
-      print(articles)
-      print(titles)
-      print(token_ids)
-      tokens = [model._vocab.IdToWord(wid[0][0]) for wid in token_ids]
-      print(tokens)
+        tokens = [model._vocab.IdToWord(wid[0][0]) for wid in token_ids if wid[0][0] != 3]
+        summary = ' '.join(tokens)
+        result.write('# [%d]\nArticle = %s\nTitle   = %s\nSummary = %s\n' % (batch_count, articles[0], titles[0], summary))
+        summaries.append([summary])
+        references.append([titles])
+        batch_count += 1
+
+    calculate_rouge_scores(summaries, references, root=decode_root, global_step=global_step)
 
 
 def main(unused_argv):
@@ -215,12 +250,10 @@ def main(unused_argv):
   tf.set_random_seed(FLAGS.random_seed)
 
   if hps.mode == 'train':
-    model = seq2seq_attention_model.Seq2SeqAttentionModel(
-        hps, vocab)
+    model = seq2seq_attention_model.Seq2SeqAttentionModel(hps, vocab)
     _Train(model, batcher)
   elif hps.mode == 'eval':
-    model = seq2seq_attention_model.Seq2SeqAttentionModel(
-        hps, vocab)
+    model = seq2seq_attention_model.Seq2SeqAttentionModel(hps, vocab)
     _Eval(model, batcher, vocab=vocab)
   elif hps.mode == 'decode':
     # Only need to restore the 1st step and reuse it since
@@ -228,7 +261,7 @@ def main(unused_argv):
     model = seq2seq_attention_model.Seq2SeqAttentionModel(hps, vocab)
     #decoder = seq2seq_attention_decode.BSDecoder(model, batcher, hps, vocab)
     #decoder.DecodeLoop(FLAGS.decode_train_step)
-    _Infer(model, batcher)
+    _Infer(model, batcher, FLAGS.decode_train_step)
     print('decode done.')
 
 
