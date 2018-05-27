@@ -13,47 +13,17 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Sequence-to-Sequence with attention model for text summarization.
-"""
-from collections import namedtuple
+"""sequence-to-Sequence with attention model"""
 
 import numpy as np
 import tensorflow as tf
 
+from collections import namedtuple
 HParams = namedtuple('HParams',
                      'mode, min_lr, lr, batch_size, '
                      'enc_layers, enc_timesteps, dec_timesteps, '
                      'min_input_len, num_hidden, emb_dim, max_grad_norm, '
                      'num_softmax_samples, beam_size')
-
-
-def _extract_argmax_and_embed(embedding, output_projection=None,
-                              update_embedding=True):
-  """Get a loop_function that extracts the previous symbol and embeds it.
-
-  Args:
-    embedding: embedding tensor for symbols.
-    output_projection: None or a pair (W, B). If provided, each fed previous
-      output will first be multiplied by W and added B.
-    update_embedding: Boolean; if False, the gradients will not propagate
-      through the embeddings.
-
-  Returns:
-    A loop function.
-  """
-  def loop_function(prev, _):
-    """function that feed previous model output rather than ground truth."""
-    if output_projection is not None:
-      prev = tf.nn.xw_plus_b(
-          prev, output_projection[0], output_projection[1])
-    prev_symbol = tf.argmax(prev, 1)
-    # Note that gradients will not propagate through the second parameter of
-    # embedding_lookup.
-    emb_prev = tf.nn.embedding_lookup(embedding, prev_symbol)
-    if not update_embedding:
-      emb_prev = tf.stop_gradient(emb_prev)
-    return emb_prev
-  return loop_function
 
 
 class Seq2SeqAttentionModel(object):
@@ -85,17 +55,6 @@ class Seq2SeqAttentionModel(object):
                                self._abstract_lens: abstract_lens,
                                self._loss_weights: loss_weights})
 
-  def run_decode_step(self, sess, article_batch, abstract_batch, targets,
-                      article_lens, abstract_lens, loss_weights):
-    to_return = [self._outputs, self.global_step]
-    return sess.run(to_return,
-                    feed_dict={self._articles: article_batch,
-                               self._abstracts: abstract_batch,
-                               self._targets: targets,
-                               self._article_lens: article_lens,
-                               self._abstract_lens: abstract_lens,
-                               self._loss_weights: loss_weights})
-  
   def run_infer_step(self, sess, article_batch, abstract_batch, targets,
                       article_lens, abstract_lens, loss_weights):
     to_return = [self._predicted_ids]
@@ -199,50 +158,11 @@ class Seq2SeqAttentionModel(object):
             beam_width=hps.beam_size,
             output_layer=projection_layer)
           outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(my_decoder, maximum_iterations=30, output_time_major=True)
-          self._predicted_ids = outputs.predicted_ids
+          self._predicted_ids = tf.transpose(outputs.predicted_ids[:, :, 0])
 
   def _add_train_op(self):
     self._train_op = tf.train.AdamOptimizer().minimize(self._loss, global_step=self.global_step, name='train_op')
 
-  def encode_top_state(self, sess, enc_inputs, enc_len):
-    """Return the top states from encoder for decoder.
-
-    Args:
-      sess: tensorflow session.
-      enc_inputs: encoder inputs of shape [batch_size, enc_timesteps].
-      enc_len: encoder input length of shape [batch_size]
-    Returns:
-      enc_top_states: The top level encoder states.
-      dec_in_state: The decoder layer initial state.
-    """
-    results = sess.run([self._enc_top_states, self._dec_in_state],
-                       feed_dict={self._articles: enc_inputs,
-                                  self._article_lens: enc_len})
-    return results[0], tf.contrib.rnn.LSTMStateTuple(results[1].c[0], results[1].h[0])
-
-  def decode_topk(self, sess, latest_tokens, enc_top_states, dec_init_states):
-    """Return the topK results and new decoder states."""
-    beam_size = len(dec_init_states)
-
-    # Turn dec_init_states (a list of LSTMStateTuples) into a single LSTMStateTuple for the batch
-    c = np.array([state.c for state in dec_init_states])
-    h = np.array([state.h for state in dec_init_states])
-    new_dec_in_state = tf.contrib.rnn.LSTMStateTuple(c, h)
-
-    feed = {
-        self._enc_top_states: enc_top_states,
-        self._dec_in_state:
-            new_dec_in_state,
-        self._abstracts:
-            np.transpose(np.array([latest_tokens])),
-        self._abstract_lens: np.ones([beam_size], np.int32)}
-
-    ids, probs, states = sess.run(
-        [self._topk_ids, self._topk_log_probs, self._dec_out_state],
-        feed_dict=feed)
-
-    new_states = [tf.contrib.rnn.LSTMStateTuple(states.c[i], states.h[i]) for i in range(beam_size)]
-    return ids, probs, new_states
 
   def build_graph(self):
     self._add_placeholders()

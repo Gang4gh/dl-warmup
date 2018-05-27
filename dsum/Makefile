@@ -41,9 +41,9 @@ gigaword-articles: $(GIGA_ARTICLES_FILES)
 %.vocab: %.sumdata data_generic.py
 	python3 $(word 2,$^) vocab $< > $@
 
-data: $(GIGA_DIR).gigaword-data
+data: $(GIGA_DIR).datatag
 
-$(GIGA_DIR).gigaword-data: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
+$(GIGA_DIR).datatag: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)train.vocab $(GIGA_DIR)strain.vocab
 	mkdir -p $(GIGA_DIR)data-$(TAG)
 	shuf $(GIGA_DIR)train.sumdata --random-source=$(GIGA_DIR)test.sumdata > $(GIGA_DIR)train.shuf.sumdata
 	mv -f $(GIGA_DIR)train.shuf.sumdata $(GIGA_DIR)train.sumdata
@@ -60,7 +60,7 @@ tb tensorboard:
 	CUDA_VISIBLE_DEVICES= tensorboard --port 2345 --logdir=model &
 
 tm trainmodel:
-	python3 seq2seq_attention.py $(ARGS) \
+	python3 summarization.py $(ARGS) \
 		--mode=train --batch_size=64 \
 		--data_path=$(GIGA_DIR)train.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
@@ -77,16 +77,16 @@ TRAINING_ROOT=training_center/$(TAG)/
 
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)
-	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab *.py Makefile $(TRAINING_ROOT)
-	$(MAKE) -C $(TRAINING_ROOT) tensorboard trainmodel
+	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR).datatag *.py Makefile $(TRAINING_ROOT)
+	$(MAKE) -C $(TRAINING_ROOT) train
 
 decode:
-	CUDA_VISIBLE_DEVICES= python3 seq2seq_attention.py $(ARGS) \
-		--mode=decode \
+	python3 summarization.py $(ARGS) \
+		--mode=decode --batch_size=25 \
 		--data_path=$(GIGA_DIR)test.1k.sumdata \
 		--vocab_path=$(GIGA_DIR)train.vocab \
 		--log_root=model \
 		--beam_size=8
 
 cdecode:
-	watch -n 10800 $(MAKE) decode
+	watch -n 3600 $(MAKE) decode

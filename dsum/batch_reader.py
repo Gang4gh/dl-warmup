@@ -32,7 +32,7 @@ ModelInput = namedtuple('ModelInput',
                         'enc_input dec_input target enc_len dec_len '
                         'origin_article origin_abstract')
 
-BUCKET_CACHE_BATCH = 100
+BUCKET_CACHE_BATCH = 1
 QUEUE_NUM_BATCH = 100
 
 
@@ -210,21 +210,17 @@ class Batcher(object):
   def _FillBucketInputQueue(self):
     """Fill bucketed batches into the bucket_input_queue."""
     while True:
-      if self._hps.mode != 'decode':
-        inputs = []
-        for _ in xrange(self._hps.batch_size * BUCKET_CACHE_BATCH):
-          inputs.append(self._input_queue.get())
-        if self._bucketing:
-          inputs = sorted(inputs, key=lambda inp: inp.enc_len)
+      inputs = []
+      for _ in xrange(self._hps.batch_size * BUCKET_CACHE_BATCH):
+        inputs.append(self._input_queue.get())
+      if self._bucketing:
+        inputs = sorted(inputs, key=lambda inp: inp.enc_len)
 
-        batches = []
-        for i in xrange(0, len(inputs), self._hps.batch_size):
-          batches.append(inputs[i:i+self._hps.batch_size])
-        shuffle(batches)
-        for b in batches:
-          self._bucket_input_queue.put(b)
-      else:
-        self._bucket_input_queue.put([self._input_queue.get()])
+      batches = []
+      for i in xrange(0, len(inputs), self._hps.batch_size):
+        batches.append(inputs[i:i+self._hps.batch_size])
+      for b in batches:
+        self._bucket_input_queue.put(b)
 
   def _WatchThreads(self):
     """Watch the daemon input threads and restart if dead."""
