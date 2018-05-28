@@ -28,8 +28,7 @@ import batch_reader
 import data
 import seq2seq_model
 
-# Install pythonrouge by:
-#   pip install git+https://github.com/tagucci/pythonrouge.git
+# install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
 from pythonrouge.pythonrouge import Pythonrouge
 from pprint import pprint
 
@@ -95,6 +94,8 @@ def _Train(model, data_batcher):
   """Runs model training."""
   tprint('build the model graph')
   model.build_graph()
+  print('  tf.trainable_variables:')
+  for var in tf.trainable_variables(): print('    %s' % var)
 
   ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=12, max_to_keep=3)
   ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_secs)
@@ -203,7 +204,6 @@ def _Infer(model, data_batcher, global_step = None):
     result_file = os.path.join(decode_root, 'summary-%d-%d.txt' % (global_step, int(time.time())))
 
     # main loop
-    last_timestamp = time.time()
     tprint('start of inferring at global_step', global_step)
     summaries, references = [], []
     with open(result_file, 'w') as result:

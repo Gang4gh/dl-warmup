@@ -123,7 +123,7 @@ class Seq2SeqAttentionModel(object):
         if hps.mode != 'decode':
           cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
-          cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention)
+          cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
           helper = tf.contrib.seq2seq.TrainingHelper(emb_decoder_inputs, abstract_lens, time_major=True)
           decoder = tf.contrib.seq2seq.BasicDecoder(
             cell = cell_decoder,
@@ -144,7 +144,7 @@ class Seq2SeqAttentionModel(object):
 
           cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
-          cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention)
+          cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
 
           initial_state = cell_decoder.zero_state(hps.batch_size * hps.beam_size, tf.float32).clone(cell_state=fw_state)
           start_token_ids = tf.fill([hps.batch_size], 2)
@@ -171,3 +171,4 @@ class Seq2SeqAttentionModel(object):
     if self._hps.mode == 'train':
       self._add_train_op()
     self._summaries = tf.summary.merge_all()
+
