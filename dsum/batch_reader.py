@@ -151,17 +151,9 @@ class Batcher(object):
       abstract_sentences = [sent.strip() for sent in
                             data.ToSentences(abstract, include_token=False)]
 
-      enc_inputs = []
-      # Use the <s> as the <GO> symbol for decoder inputs.
-      dec_inputs = [start_id]
-
       # Convert first N sentences to word IDs, stripping existing <s> and </s>.
-      for i in xrange(min(self._max_article_sentences,
-                          len(article_sentences))):
-        enc_inputs += data.GetWordIds(article_sentences[i], self._vocab)
-      for i in xrange(min(self._max_abstract_sentences,
-                          len(abstract_sentences))):
-        dec_inputs += data.GetWordIds(abstract_sentences[i], self._vocab)
+      (enc_inputs, dec_inputs) = data.GetWordIds2(article_sentences, abstract_sentences, self._vocab)
+      dec_inputs.insert(0, start_id)
 
       # Filter out too-short input
       if (len(enc_inputs) < self._hps.min_input_len or

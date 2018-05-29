@@ -33,8 +33,14 @@ class Vocab(object):
 				self._word_to_id[pieces[0]] = self._count
 				self._id_to_word[self._count] = pieces[0]
 				self._count += 1
-				if self._count > max_vocab_size:
-					raise ValueError('Too many words: >%d.' % max_vocab_size)
+				if self._count >= max_vocab_size:
+					print('Too many words: >%d.' % max_vocab_size)
+					break
+			for i in range(120):
+				word = '[#%d]' % i
+				self._word_to_id[word] = self._count
+				self._id_to_word[self._count] = word
+				self._count += 1
 		
 		# Check for presence of required special tokens.
 		assert self.CheckVocab(PAD_TOKEN) > 0
@@ -140,6 +146,22 @@ def GetWordIds(text, vocab, pad_len=None, pad_id=None):
 	if pad_len is not None:
 		return Pad(ids, pad_id, pad_len)
 	return ids
+
+def DoGetWordId(word, vocab, reference):
+	wid = vocab.CheckVocab(word)
+	if wid is not None:
+		return wid
+	try:
+		rid = reference.index(word)
+		return vocab.WordToId('[#%d]' % rid)
+	except ValueError:
+		return vocab.WordToId(UNKNOWN_TOKEN)
+
+def GetWordIds2(article, abstract, vocab):
+	article_words = [w for sent in article for w in sent.split()]
+	article_word_ids = [vocab.WordToId(w) for w in article_words]
+	abstract_word_ids = [DoGetWordId(w, vocab, article_words) for sent in abstract for w in sent.split()]
+	return (article_word_ids, abstract_word_ids)
 
 
 def Ids2Words(ids_list, vocab):

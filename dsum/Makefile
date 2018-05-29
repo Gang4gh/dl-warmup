@@ -1,6 +1,7 @@
 CPUS ?= $(shell nproc)
 #MAKEFLAGS += -j24	# doesn't work with make v4.1
 TAG ?= $(shell date +'%Y%m%d%H%M%S')
+PORT ?= 2345
 
 
 # preprocess gigaword training data
@@ -55,9 +56,13 @@ $(GIGA_DIR).datatag: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_D
 
 
 # training/test actions
-tb tensorboard:
+tb tensorboard: ktb otb
+
+otb opentensorboard:
+	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --logdir=model &
+
+ktb killtensorboard:
 	killall -q -w tensorboard ; true
-	CUDA_VISIBLE_DEVICES= tensorboard --port 2345 --logdir=model &
 
 tm trainmodel:
 	python3 summarization.py $(ARGS) \

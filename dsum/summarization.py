@@ -59,6 +59,7 @@ tf.app.flags.DEFINE_bool('truncate_input', False,
 tf.app.flags.DEFINE_integer('random_seed', 111, 'A seed value for randomness.')
 tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
+tf.app.flags.DEFINE_bool('write_global_step', False, 'whether write global_step/sec to summary.')
 
 
 def calculate_rouge_scores(summaries, references, printScores=True, root=None, global_step=None):
@@ -116,7 +117,7 @@ def _Train(model, data_batcher):
     for _ in range(global_step): _ = data_batcher.NextBatch()
 
     # main loop
-    last_timestamp = time.time()
+    last_timestamp = time.time() if FLAGS.write_global_step else None
     tprint('start of training at global_step', global_step)
     while global_step < FLAGS.max_run_steps:
       (article_batch, abstract_batch, targets, article_lens, abstract_lens,
@@ -135,10 +136,11 @@ def _Train(model, data_batcher):
 
       # write summaries
       summary_writer.add_summary(summary, global_step)
-      elapsed_time = time.time() - last_timestamp
-      last_timestamp += elapsed_time
-      steps_per_sec = 1 / elapsed_time if elapsed_time > 0. else float('inf')
-      summary_writer.add_summary(tf.Summary(value=[tf.Summary.Value(tag='global_step/sec', simple_value=steps_per_sec)]), global_step)
+      if FLAGS.write_global_step:
+        elapsed_time = time.time() - last_timestamp
+        last_timestamp += elapsed_time
+        steps_per_sec = 1 / elapsed_time if elapsed_time > 0. else float('inf')
+        summary_writer.add_summary(tf.Summary(value=[tf.Summary.Value(tag='global_step/sec', simple_value=steps_per_sec)]), global_step)
 
     ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
     tprint('end of training at global_step', global_step)
@@ -186,6 +188,7 @@ def _Infer(model, data_batcher, global_step = None):
   """Runs model training."""
   tprint('build the model graph')
   model.build_graph()
+  vsize = model._vocab.NumIds() - 120
 
   decode_root = os.path.join(FLAGS.log_root, 'decode')
   if not os.path.exists(decode_root):
@@ -218,10 +221,12 @@ def _Infer(model, data_batcher, global_step = None):
             abstract_lens, loss_weights)
 
         for i in range(len(token_ids)):
-          tokens = [model._vocab.IdToWord(wid) for wid in token_ids[i] if wid != 3]
-          summary = ' '.join(tokens)
+          article_words = articles[i].split()
+          tokens_rouge = [model._vocab.IdToWord(wid) if wid < vsize else '%s' % article_words[wid-vsize] for wid in token_ids[i] if wid != 3]
+          tokens_print = [model._vocab.IdToWord(wid) if wid < vsize else '__%s_(%d/%d)' % (article_words[wid-vsize], wid-vsize, model._vocab.WordToId(article_words[wid-vsize])) for wid in token_ids[i] if wid != 3]
+          summary = ' '.join(tokens_print)
           result.write('# [%d]\nArticle = %s\nTitle   = %s\nSummary = %s\n' % (batch_count * FLAGS.batch_size + i, articles[i], titles[i], summary))
-          summaries.append([summary])
+          summaries.append([' '.join(tokens_rouge)])
           references.append([[titles[i]]])
 
         batch_count += 1
@@ -232,7 +237,8 @@ def _Infer(model, data_batcher, global_step = None):
 
 
 def main(unused_argv):
-  vocab = data.Vocab(FLAGS.vocab_path, 1000000)
+  vocab_size = 50000
+  vocab = data.Vocab(FLAGS.vocab_path, vocab_size)
 
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
@@ -267,6 +273,29 @@ def main(unused_argv):
     print('decode done.')
 
 
+def checkVocab(vocab_size = 100000, batch_count = 1000):
+  vocab = data.Vocab(FLAGS.vocab_path, vocab_size)
+  hps = seq2seq_model.HParams(
+      mode=FLAGS.mode,  # train, eval, decode
+      batch_size=FLAGS.batch_size)
+  batcher = batch_reader.Batcher(
+      FLAGS.data_path, vocab, hps,
+      FLAGS.max_article_sentences, FLAGS.max_abstract_sentences,
+      bucketing=FLAGS.use_bucketing, truncate_input=FLAGS.truncate_input)
+
+  wcount = 0
+  oovcount = 0
+  for _ in range(batch_count):
+    (article_batch, abstract_batch, targets, article_lens, abstract_lens,
+       loss_weights, _, _) = batcher.NextBatch()
+    for i in range(len(targets)):
+      wcount += abstract_lens[i]
+      oovcount += sum(1 for wid in targets[i] if wid >= vocab_size)
+  print('vocab_size = %d and samples_count = %d : count = %d; oovcount = %d; ratio = %f' % (vocab_size, batch_count * FLAGS.batch_size, wcount, oovcount, oovcount / wcount))
+
+
 if __name__ == '__main__':
   tf.app.run()
+  #for vs in [100000, 50000, 30000, 10000]:
+  #  checkVocab(vocab_size=vs, batch_count=10000)
 
