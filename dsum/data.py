@@ -159,7 +159,7 @@ def DoGetWordId(word, vocab, reference):
 
 def GetWordIds2(article, abstract, vocab):
 	article_words = [w for sent in article for w in sent.split()]
-	article_word_ids = [vocab.WordToId(w) for w in article_words]
+	article_word_ids = [DoGetWordId(w, vocab, article_words) for w in article_words]
 	abstract_word_ids = [DoGetWordId(w, vocab, article_words) for sent in abstract for w in sent.split()]
 	return (article_word_ids, abstract_word_ids)
 

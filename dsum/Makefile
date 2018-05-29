@@ -56,14 +56,10 @@ $(GIGA_DIR).datatag: $(GIGA_DIR)train.sumdata $(GIGA_DIR)strain.sumdata $(GIGA_D
 
 
 # training/test actions
-tb tensorboard: ktb otb
-
-otb opentensorboard:
-	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --logdir=model &
-
-ktb killtensorboard:
-	killall -q -w tensorboard ; true
-
+tb tensorboard:
+	pkill -f tensorboard\ --port\ $(PORT); sleep 1
+	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --logdir model --window_title $(lastword $(subst /, ,$(CURDIR))) &
+	
 tm trainmodel:
 	python3 summarization.py $(ARGS) \
 		--mode=train --batch_size=64 \
