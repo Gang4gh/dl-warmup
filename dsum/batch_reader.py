@@ -25,8 +25,7 @@ import six
 from six.moves import queue as Queue
 from six.moves import xrange
 import tensorflow as tf
-
-import data
+import vocab
 
 ModelInput = namedtuple('ModelInput',
                         'enc_input dec_input target enc_len dec_len '
@@ -137,23 +136,25 @@ class Batcher(object):
 
   def _FillInputQueue(self):
     """Fill input queue with ModelInput."""
-    start_id = self._vocab.WordToId(data.SENTENCE_START)
-    end_id = self._vocab.WordToId(data.SENTENCE_END)
-    pad_id = self._vocab.WordToId(data.PAD_TOKEN)
-    input_gen = data.ExampleGen(self._data_path, None if self._hps.mode != 'decode' else 1)
+    start_id = self._vocab.token_start_id
+    end_id = self._vocab.token_end_id
+    pad_id = self._vocab.token_pad_id
+    input_gen = vocab.ExampleGen(self._data_path, None if self._hps.mode != 'decode' else 1)
     while True:
       try:
         (article, abstract) = six.next(input_gen)
       except StopIteration:
         break
       article_sentences = [sent.strip() for sent in
-                           data.ToSentences(article, include_token=False)]
+                           vocab.ToSentences(article, include_token=False)]
       abstract_sentences = [sent.strip() for sent in
-                            data.ToSentences(abstract, include_token=False)]
+                            vocab.ToSentences(abstract, include_token=False)]
 
       # Convert first N sentences to word IDs, stripping existing <s> and </s>.
-      (enc_inputs, dec_inputs) = data.GetWordIds2(article_sentences, abstract_sentences, self._vocab)
-      dec_inputs.insert(0, start_id)
+      article_tokens = [w for sent in article_sentences for w in sent.split()]
+      abstract_tokens = [w for sent in abstract_sentences for w in sent.split()]
+      enc_inputs = [self._vocab.get_id_by_word(w, article_tokens) for w in article_tokens]
+      dec_inputs = [start_id] + [self._vocab.get_id_by_word(w, article_tokens) for w in abstract_tokens]
 
       # Filter out too-short input
       if (len(enc_inputs) < self._hps.min_input_len or

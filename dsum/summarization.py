@@ -25,7 +25,7 @@ import datetime
 
 import tensorflow as tf
 import batch_reader
-import data
+from vocab import Vocab
 import seq2seq_model
 
 # install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
@@ -56,10 +56,12 @@ tf.app.flags.DEFINE_bool('use_bucketing', False,
 tf.app.flags.DEFINE_bool('truncate_input', False,
                          'Truncate inputs that are too long. If False, '
                          'examples that are too long are discarded.')
-tf.app.flags.DEFINE_integer('random_seed', 111, 'A seed value for randomness.')
+tf.app.flags.DEFINE_integer('random_seed', 17, 'A seed value for randomness.')
 tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
 tf.app.flags.DEFINE_bool('write_global_step', False, 'whether write global_step/sec to summary.')
+tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
+tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
 
 
 def calculate_rouge_scores(summaries, references, printScores=True, root=None, global_step=None):
@@ -95,8 +97,8 @@ def _Train(model, data_batcher):
   """Runs model training."""
   tprint('build the model graph')
   model.build_graph()
-  print('  tf.trainable_variables:')
-  for var in tf.trainable_variables(): print('    %s' % var)
+  #print('  tf.trainable_variables:')
+  #for var in tf.trainable_variables(): print('    %s' % var)
 
   ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=12, max_to_keep=3)
   ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_secs)
@@ -184,11 +186,10 @@ def _Eval(model, data_batcher, vocab=None):
       summary_writer.flush()
 
 
-def _Infer(model, data_batcher, global_step = None):
+def _Infer(model, data_batcher, global_step=None):
   """Runs model training."""
   tprint('build the model graph')
   model.build_graph()
-  vsize = model._vocab.NumIds() - 120
 
   decode_root = os.path.join(FLAGS.log_root, 'decode')
   if not os.path.exists(decode_root):
@@ -204,7 +205,7 @@ def _Infer(model, data_batcher, global_step = None):
     ckpt_saver.restore(sess, ckpt_path)
 
     global_step = int(ckpt_path.split('-')[-1])
-    result_file = os.path.join(decode_root, 'summary-%d-%d.txt' % (global_step, int(time.time())))
+    result_file = os.path.join(decode_root, 'summary-%06d-%d.txt' % (global_step, int(time.time())))
 
     # main loop
     tprint('start of inferring at global_step', global_step)
@@ -222,8 +223,10 @@ def _Infer(model, data_batcher, global_step = None):
 
         for i in range(len(token_ids)):
           article_words = articles[i].split()
-          tokens_rouge = [model._vocab.IdToWord(wid) if wid < vsize else '%s' % article_words[wid-vsize] for wid in token_ids[i] if wid != 3]
-          tokens_print = [model._vocab.IdToWord(wid) if wid < vsize else '__%s_(%d/%d)' % (article_words[wid-vsize], wid-vsize, model._vocab.WordToId(article_words[wid-vsize])) for wid in token_ids[i] if wid != 3]
+          tokens_rouge = [model._vocab.get_word_by_id(wid, reference=article_words)
+            for wid in token_ids[i] if wid != model._vocab.token_end_id]
+          tokens_print = [model._vocab.get_word_by_id(wid, reference=article_words, markup=True)
+            for wid in token_ids[i] if wid != model._vocab.token_end_id]
           summary = ' '.join(tokens_print)
           result.write('# [%d]\nArticle = %s\nTitle   = %s\nSummary = %s\n' % (batch_count * FLAGS.batch_size + i, articles[i], titles[i], summary))
           summaries.append([' '.join(tokens_rouge)])
@@ -237,9 +240,6 @@ def _Infer(model, data_batcher, global_step = None):
 
 
 def main(unused_argv):
-  vocab_size = 50000
-  vocab = data.Vocab(FLAGS.vocab_path, vocab_size)
-
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
       min_lr=0.01,  # min learning rate.
@@ -254,6 +254,8 @@ def main(unused_argv):
       max_grad_norm=2,
       num_softmax_samples=0,  # If 0, no sampled softmax.
       beam_size=FLAGS.beam_size)
+
+  vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
 
   batcher = batch_reader.Batcher(
       FLAGS.data_path, vocab, hps,
@@ -274,7 +276,7 @@ def main(unused_argv):
 
 
 def checkVocab(vocab_size = 100000, batch_count = 1000):
-  vocab = data.Vocab(FLAGS.vocab_path, vocab_size)
+  vocab = Vocab(FLAGS.vocab_path, vocab_size, 120)
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
       batch_size=FLAGS.batch_size)
