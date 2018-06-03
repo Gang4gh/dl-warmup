@@ -1,0 +1,7 @@
+[user]
+	email = 36316266+gang4gh@users.noreply.github.com
+	name = Gang Luo
+[push]
+	default = simple
+[core]
+	pager = less -x1,5

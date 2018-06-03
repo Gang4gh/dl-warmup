@@ -1,0 +1,30 @@
+startup_message off
+
+termcapinfo xterm* ti@:te@
+
+caption always '%{= kw} %-w%{+u kg}%n %t%{-}%+w %-= | %m/%d/%y %c '
+
+# default screens
+screen -t training  1
+screen -t evaluate  2
+screen -t bash      3
+screen -t training2 4
+screen -t evaluate2 5
+screen -t python    9 python # put python at the end
+select 3
+bind c screen 1 # window numbering starts at 1 not 0
+bind 0 select 10
+
+#bindkey "^[[D" prev # Ctrl-left for previous window
+#bindkey "^[[C" next # Ctrl-right for next window
+
+bindkey "\033\061" select 1
+bindkey "\033\062" select 2
+bindkey "\033\063" select 3
+bindkey "\033\064" select 4
+bindkey "\033\065" select 5
+bindkey "\033\066" select 6
+bindkey "\033\067" select 7
+bindkey "\033\070" select 8
+bindkey "\033\071" select 9
+bindkey "\033\060" select 10
