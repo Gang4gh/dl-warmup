@@ -69,7 +69,7 @@ class Vocab():
 			if markup:
 				return '__%s_(%d/%d)' % (reference[rid], rid, self.get_id_by_word(reference[rid]))
 			else:
-				return reference[rid]
+				return reference[rid] if rid < len(reference) else dg.TOKEN_OOV
 		else:
 			raise ValueError('Invalid vocab id: %s' % id)
 

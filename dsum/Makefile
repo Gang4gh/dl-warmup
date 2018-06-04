@@ -2,7 +2,7 @@ CPUS ?= $(shell nproc)
 #MAKEFLAGS += -j24	# doesn't work with make v4.1
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
--include .config
+-include .makeargs
 TAG ?= notag
 PORT ?= 2345
 
@@ -83,9 +83,9 @@ TRAINING_ROOT=training_center/$(TAG)-$(TIMESTAMP)/
 tc trainingcenter: data
 	mkdir -p $(TRAINING_ROOT)
 	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR).datatag *.py Makefile $(TRAINING_ROOT)
-	echo ARGS ?= $(ARGS) >> $(TRAINING_ROOT).config
-	echo PORT ?= $(PORT) >> $(TRAINING_ROOT).config
-	$(MAKE) -C $(TRAINING_ROOT) train 'ARGS=$(ARGS)' PORT=$(PORT)
+	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT).makeargs
+	echo PORT ?= $(PORT) >> $(TRAINING_ROOT).makeargs
+	$(MAKE) -C $(TRAINING_ROOT) train
 
 decode:
 	python3 summarization.py $(ARGS) \
