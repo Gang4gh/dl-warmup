@@ -100,9 +100,13 @@ ENV/
 # mypy
 .mypy_cache/
 
-# training model and data files/folders
-*.bin
-.vscode/launch.json
-dsum/Gigaword/
-dsum/training_center/
+# for deep summerization work in dsum folder
+dsum/running_center/
 dsum/model/
+dsum/**/articles/
+dsum/**/*.articles
+dsum/**/*.splits
+dsum/**/*.split-urls
+dsum/**/*.vocab
+dsum/**/*.merged
+dsum/**/data.md5

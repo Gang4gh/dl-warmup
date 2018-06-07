@@ -30,8 +30,9 @@ def filter_articles(filefn, argv):
 	max_word_len = 1000 if len(argv) < 2 else int(argv[1])
 	max_title_word_len = 50 if len(argv) < 3 else int(argv[2])
 
-	for l in open(filefn):
-		splits = l.strip().split("\t")
+	f = sys.stdin if filefn == '-' else open(filefn)
+	for l in f:
+		splits = l.strip().split('\t')
 		if len(splits) != 3:
 			continue
 		doc_id, title, article = splits[0], _normalize_text(splits[1]), _normalize_text(splits[2])
@@ -50,7 +51,7 @@ def filter_articles(filefn, argv):
 		print('\t'.join([doc_id, title, ' '.join(article_words)]))
 
 
-def build_vocab_from_file(filefn, max_vocab_size):
+def build_vocab(filefn, max_allowed_freq):
 	counter = collections.Counter()
 
 	for l in open(filefn):
@@ -63,7 +64,9 @@ def build_vocab_from_file(filefn, max_vocab_size):
 
 	del counter[TOKEN_EOS]
 
-	for word, count in counter.most_common(max_vocab_size):
+	for word, count in counter.most_common():
+		if count < max_allowed_freq:
+			break
 		print(word, count)
 
 
@@ -113,10 +116,10 @@ if __name__ == '__main__':
 	cmd = sys.argv[1]
 	filefn = sys.argv[2] if len(sys.argv) > 2 else None
 
-	if cmd == 'filter':
+	if cmd == 'build-vocab':
+		build_vocab(filefn, 10)
+	elif cmd == 'filter':
 		filter_articles(filefn, sys.argv[3:])
-	elif cmd == 'vocab':
-		build_vocab_from_file(filefn, int(sys.argv[3]))
 	elif cmd == 'count-title':
 		count_titles(filefn, 1)
 	elif cmd == 'histogram':

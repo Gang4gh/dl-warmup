@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Data pre-processing functions for Gigaword
+"""data pre-processing for Gigaword
 
 convert_targz2articles(): parse tar.gz file and print (id, summary, article)
 """
@@ -8,6 +8,7 @@ import sys
 import os
 import gzip
 
+sys.path.append('..')
 import data_generic as dg
 
 def _fix_paren(parse):
@@ -60,6 +61,7 @@ def _is_good(_title_words, _article):
 	return True
 
 def convert_targz2articles(inputfn):
+	MAX_ARTICLE_SENTENCE_COUNT = 2
 	NONE, HEAD, NEXT, TEXT = 0, 1, 2, 3
 
 	MODE = NONE
@@ -93,7 +95,7 @@ def convert_targz2articles(inputfn):
 				print('\t'.join([
 					doc_id,
 					' '.join(title),
-					dg.TOKEN_EOS_SPACES.join(sentences)
+					dg.TOKEN_EOS_SPACES.join(sentences[:MAX_ARTICLE_SENTENCE_COUNT])
 					]))
 
 			doc_id = ''

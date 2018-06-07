@@ -1,25 +1,19 @@
-CPUS ?= $(shell nproc)
-#MAKEFLAGS += -j24	# doesn't work with make v4.1
+CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
--include .makeargs
+-include Makefile.config
+DATASOURCES ?= Gigaword
 TAG ?= notag
 PORT ?= 2345
 
 
-# preprocess gigaword training data
-GIGA_DATA_DIR=/home/gang/LDC2012T21/Data/data/xml/
-GIGA_DIR=Gigaword/
-GIGA_TMP_DIR=$(GIGA_DIR)articles/
-
-
-all:
-	$(MAKE) -j$(CPUS) data
-
+all: labeled-data
 
 clean:
-	rm -rf $(GIGA_TMP_DIR)
-	rm -f $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR).datatag
+	rm -f */data.md5 *.articles *.vocab
+
+cleanall: clean
+	for ds in $(DATASOURCES); do $(MAKE) -C $$ds clean; done
 
 check:
 	@echo TAG is '$(TAG)'
@@ -27,74 +21,63 @@ check:
 .DELETE_ON_ERROR:
 
 
-# prepare data used for training
-GIGA_GZ_FILES=$(wildcard $(GIGA_DATA_DIR)*.xml.gz)
-GIGA_ARTICLES_FILES=$(GIGA_GZ_FILES:$(GIGA_DATA_DIR)%.xml.gz=$(GIGA_TMP_DIR)%.articles)
+# data pre-processing
+%/data.md5:
+	$(MAKE) -j$(CPUS) -C $*
+	md5sum $*/*.articles > $@
+keep-data-md5: $(addsuffix /data.md5, $(DATASOURCES))
 
-$(GIGA_TMP_DIR)%.articles : $(GIGA_DATA_DIR)%.xml.gz data_gigaword.py
-	@mkdir -p $(GIGA_TMP_DIR)
-	python3 $(word 2,$^) $< > $@
+labeled-data: training.articles training.vocab test.articles test.1k.articles validation.articles
+	@echo labeled data is prepared from \'$(DATASOURCES)\'
 
-# this target is defined to preserve *.articles files
-gigaword-articles: $(GIGA_ARTICLES_FILES)
+%.merged: data_generic.py $(addsuffix /data.md5, $(DATASOURCES))
+	cat $(addsuffix /$*.articles, $(DATASOURCES)) | python3 $< filter - 2 120 30 > $@
 
-%.articles.f: %.articles data_generic.py
-	python3 $(word 2,$^) filter $< 2 120 30 > $@
-
-%.raw.sumdata: %.splits $(subst .articles,.articles.f,$(GIGA_ARTICLES_FILES))
-	cat $< | xargs -I % cat $(GIGA_TMP_DIR)%.f > $@
-
-%.sumdata: %.raw.sumdata
+%.articles: %.merged
 	shuf $< --random-source=$< > $@
 
-%.vocab: %.sumdata data_generic.py
-	python3 $(word 2,$^) vocab $< 100000 > $@
+%.vocab: %.articles data_generic.py
+	python3 $(word 2,$^) build-vocab $< | sort -k2nr -k1 > $@
 
-data: $(GIGA_DIR).datatag
-
-$(GIGA_DIR).datatag: $(GIGA_DIR)train.sumdata $(GIGA_DIR)test.sumdata $(GIGA_DIR)valid.sumdata $(GIGA_DIR)train.vocab
-	head -n 1000 $(GIGA_DIR)test.sumdata > $(GIGA_DIR)test.1k.sumdata
-	mkdir -p $(GIGA_DIR)data-$(TIMESTAMP)
-	cp -p $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR)*.splits data_*.py $(GIGA_DIR)data-$(TIMESTAMP)
-	md5sum $(GIGA_DIR)data-$(TIMESTAMP)/* > $@
-
+test.1k.articles: test.articles
+	head -n 1000 $< > $@
 
 # training/test actions
 tb tensorboard:
 	pkill -f tensorboard\ --port\ $(PORT); sleep 1
 	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir model &
 	
-tm trainmodel:
+tm trainmodel: labeled-data
 	python3 summarization.py $(ARGS) \
 		--mode=train --batch_size=64 \
-		--data_path=$(GIGA_DIR)train.sumdata \
-		--vocab_path=$(GIGA_DIR)train.vocab \
+		--data_path=training.articles \
+		--vocab_path=training.vocab \
 		--log_root=model
 
 cleanmodel:
 	rm -rf model
 
-train: data cleanmodel tensorboard trainmodel
+train: labeled-data cleanmodel tensorboard trainmodel
 
-ctrain: data tensorboard trainmodel
+ctrain: labeled-data tensorboard trainmodel
 
-TRAINING_ROOT=training_center/$(TAG)-$(TIMESTAMP)/
+TRAINING_ROOT=running_center/$(TAG)-$(TIMESTAMP)/
 
-tc trainingcenter: data
+tc trainingcenter: labeled-data
 	mkdir -p $(TRAINING_ROOT)
-	cp -p --parents $(GIGA_DIR)*.sumdata $(GIGA_DIR)*.vocab $(GIGA_DIR).datatag *.py Makefile $(TRAINING_ROOT)
-	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT).makeargs
-	echo PORT ?= $(PORT) >> $(TRAINING_ROOT).makeargs
+	cp -p --parents *.articles *.vocab */data.md5 *.py Makefile $(TRAINING_ROOT)
+	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT)Makefile.config
+	echo PORT ?= $(PORT) >> $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
 
-decode:
+decode: labeled-data
 	python3 summarization.py $(ARGS) \
 		--mode=decode --batch_size=25 \
-		--data_path=$(GIGA_DIR)test.1k.sumdata \
-		--vocab_path=$(GIGA_DIR)train.vocab \
+		--data_path=test.1k.articles \
+		--vocab_path=training.vocab \
 		--log_root=model \
 		--beam_size=8
 
-cdecode:
+cdecode: labeled-data
 	watch -n 3600 $(MAKE) decode
 
