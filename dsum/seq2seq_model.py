@@ -90,6 +90,8 @@ class Seq2SeqAttentionModel(object):
     hps = self._hps
     vsize = self._vocab.get_vocab_size()
 
+    uniform_initializer = tf.random_uniform_initializer(-0.1, 0.1)
+
     with tf.variable_scope('seq2seq'):
       encoder_inputs = tf.transpose(self._articles)
       decoder_inputs = tf.transpose(self._abstracts)
@@ -100,14 +102,15 @@ class Seq2SeqAttentionModel(object):
 
       # Embedding shared by the input and outputs.
       with tf.variable_scope('embedding'):
-        embedding = tf.get_variable('embedding', [vsize, hps.emb_dim])
+        embedding = tf.get_variable('embedding', [vsize, hps.emb_dim],
+            initializer=tf.truncated_normal_initializer(stddev=1e-4))
         emb_encoder_inputs = tf.nn.embedding_lookup(embedding, encoder_inputs)
         emb_decoder_inputs = tf.nn.embedding_lookup(embedding, decoder_inputs)
  
       for layer_i in range(hps.enc_layers):
         with tf.variable_scope('encoder%d' % layer_i):
-          cell_fw = tf.contrib.rnn.LSTMCell(hps.num_hidden)
-          cell_bw = tf.contrib.rnn.LSTMCell(hps.num_hidden)
+          cell_fw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
+          cell_bw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           (rnn_outputs, (fw_state, _)) = tf.nn.bidirectional_dynamic_rnn(
               cell_fw, cell_bw, emb_encoder_inputs,
               sequence_length=article_lens, dtype=tf.float32, time_major=True)
@@ -118,7 +121,7 @@ class Seq2SeqAttentionModel(object):
 
       with tf.variable_scope('decoder'):
         if hps.mode != 'decode':
-          cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden)
+          cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
           cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
           helper = tf.contrib.seq2seq.TrainingHelper(emb_decoder_inputs, abstract_lens, time_major=True)
@@ -139,7 +142,7 @@ class Seq2SeqAttentionModel(object):
           article_lens = tf.contrib.seq2seq.tile_batch(article_lens, multiplier=hps.beam_size)
           fw_state = tf.contrib.seq2seq.tile_batch(fw_state, multiplier=hps.beam_size)
 
-          cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden)
+          cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
           cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
 
