@@ -100,6 +100,9 @@ ENV/
 # mypy
 .mypy_cache/
 
+# ignore vim .swp file
+*.swp
+
 # for deep summerization work in dsum folder
 dsum/running_center/
 dsum/model/

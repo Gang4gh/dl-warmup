@@ -233,7 +233,7 @@ def _Infer(model, data_batcher, global_step=None):
           references.append([[titles[i]]])
 
         batch_count += 1
-        if batch_count % 10 == 0:
+        if batch_count % 40 == 0:
           tprint('batch_count =', batch_count)
     tprint('end of inferring at global_step', global_step)
     calculate_rouge_scores(summaries, references, root=decode_root, global_step=global_step)
