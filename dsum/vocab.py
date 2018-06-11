@@ -73,48 +73,28 @@ class Vocab():
 		else:
 			raise ValueError('Invalid vocab id: %s' % id)
 
-
-def ExampleGen(data_path, num_epochs=None):
-	"""Generates tf.Examples from path of data files.
-
-		Binary data format: <length><blob>. <length> represents the byte size
-		of <blob>. <blob> is serialized tf.Example proto. The tf.Example contains
-		the tokenized article text and summary.
-
-	Args:
-		data_path: path to tf.Example data files.
-		num_epochs: Number of times to go through the data. None means infinite.
-
-	Yields:
-		Deserialized tf.Example.
-
-	If there are multiple files specified, they accessed in a random order.
-	"""
-	epoch = 0
-	while num_epochs is None or epoch < num_epochs:
-		filelist = glob.glob(data_path)
-		assert filelist, 'Empty filelist.'
-		random.shuffle(filelist)
-		for f in filelist:
-			for l in open(f):
-				splits = l.strip().split("\t")
-				if len(splits) != 3:
-					continue
-				_, title, article = splits
-				yield (article, title)
-		print('end of epoch#', epoch)
-		epoch += 1
+	def parse_article(self, article_line, article_sent_limit=2, summary_sent_limit=1):
+		_, summary, article = article_line.split('\t')
+		article_tokens = [word for sent in article.split(dg.TOKEN_EOS_SPACES)[:article_sent_limit]
+				for word in sent.split()]
+		summary_tokens = [word for sent in summary.split(dg.TOKEN_EOS_SPACES)[:summary_sent_limit]
+				for word in sent.split()]
+		article_ids = [self.get_id_by_word(word, article_tokens) for word in article_tokens]
+		summary_ids = [self.get_id_by_word(word, article_tokens) for word in summary_tokens]
+		return article_ids, article_tokens, article, summary_ids, summary_tokens, summary
 
 
-def ToSentences(paragraph, include_token=True):
-	"""Takes tokens of a paragraph and returns list of sentences.
+def check_vocab_stats(article_path, vocab_path, vocab_cap = 50000, vocab_index_size = 120):
+	vocab = Vocab(vocab_path, vocab_cap, vocab_index_size)
+	line_count, total_word_count, index_word_count, oov_word_count = 0, 0, 0, 0
+	for line in open(article_path):
+		art_ids, _, _, summary_ids, _, _ = vocab.parse_article(line.strip())
+		line_count += 1
+		total_word_count += len(summary_ids)
+		index_word_count += sum(1 for wid in summary_ids if wid >= vocab_cap + 4)
+		oov_word_count += sum(1 for wid in summary_ids if wid == vocab.token_oov_id)
+	print('read %d lines' % line_count)
+	print('total_word_count = %d, index_word_count = %d, oov_word_count = %d' % (total_word_count, index_word_count, oov_word_count))
+	print('index/total = %f, oov/total = %f' % (index_word_count / total_word_count, oov_word_count / total_word_count))
 
-	Args:
-		paragraph: string, text of paragraph
-		include_token: Whether include the sentence separation tokens result.
-
-	Returns:
-		List of sentence strings.
-	"""
-	s_gen = paragraph.split(' <eos/> ')
-	return [s for s in s_gen]
+#check_vocab_stats('training.articles', 'training.vocab', 10000)

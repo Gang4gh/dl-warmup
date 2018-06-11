@@ -24,9 +24,9 @@ import time
 import datetime
 
 import tensorflow as tf
-import batch_reader
 from vocab import Vocab
 import seq2seq_model
+import data_generic as dg
 
 # install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
 from pythonrouge.pythonrouge import Pythonrouge
@@ -88,13 +88,18 @@ def calculate_rouge_scores(summaries, references, printScores=True, root=None, g
 def prepare_session_config():
   return tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
 
-def tprint(*arg):
-  """print msg with a timestamp prefix"""
-  print('  [%s]: ' % datetime.datetime.now().replace(microsecond=0).isoformat(' '), *arg)
+def get_tprinter():
+  start_time = datetime.datetime.now()
+  def print_fn(*arg):
+    """print msg with a timestamp prefix"""
+    delta = datetime.datetime.now() - start_time
+    delta = datetime.timedelta(days=delta.days, seconds=delta.seconds)
+    print('  [%s] +%s: ' % (datetime.datetime.now().replace(microsecond=0).isoformat(' '), delta), *arg)
+  return print_fn
 
-
-def _Train(model, data_batcher):
+def _Train(model, data_filepath):
   """Runs model training."""
+  tprint = get_tprinter()
   tprint('build the model graph')
   model.build_graph()
   #print('  tf.trainable_variables:')
@@ -115,19 +120,15 @@ def _Train(model, data_batcher):
       ckpt_saver.restore(sess, ckpt_path)
       summary_writer = tf.summary.FileWriter(FLAGS.log_root)
 
+    model.initialize_dataset(sess, data_filepath)
+
     global_step = sess.run(model.global_step)
-    for _ in range(global_step): _ = data_batcher.NextBatch()
 
     # main loop
     last_timestamp = time.time() if FLAGS.write_global_step else None
     tprint('start of training at global_step', global_step)
     while global_step < FLAGS.max_run_steps:
-      (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-        loss_weights, _, _) = data_batcher.NextBatch()
-
-      (_, summary, _, global_step) = model.run_train_step(
-          sess, article_batch, abstract_batch, targets, article_lens,
-          abstract_lens, loss_weights)
+      (_, summary, _, global_step) = model.run_train_step(sess)
 
       if global_step <= 10 or global_step <= 100 and global_step % 10 == 0 or global_step % 1000 == 0:
         tprint('global_step', global_step, 'is done')
@@ -186,8 +187,9 @@ def _Eval(model, data_batcher, vocab=None):
       summary_writer.flush()
 
 
-def _Infer(model, data_batcher, global_step=None):
+def _Infer(model, data_filepath, global_step=None):
   """Runs model training."""
+  tprint = get_tprinter()
   tprint('build the model graph')
   model.build_graph()
 
@@ -204,6 +206,8 @@ def _Infer(model, data_batcher, global_step=None):
     tprint('restore model from', ckpt_path)
     ckpt_saver.restore(sess, ckpt_path)
 
+    model.initialize_dataset(sess, data_filepath)
+
     global_step = int(ckpt_path.split('-')[-1])
     result_file = os.path.join(decode_root, 'summary-%06d-%d.txt' % (global_step, int(time.time())))
 
@@ -212,23 +216,23 @@ def _Infer(model, data_batcher, global_step=None):
     summaries, references = [], []
     with open(result_file, 'w') as result:
       batch_count = 0
-      while global_step < FLAGS.max_run_steps:
-        (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-          loss_weights, articles, titles) = data_batcher.NextBatch()
-        if article_batch is None: break
-
-        (token_ids,) = model.run_infer_step(
-            sess, article_batch, abstract_batch, targets, article_lens,
-            abstract_lens, loss_weights)
+      while True:
+        try:
+          (token_ids, articles, titles) = model.run_infer_step(sess)
+          articles = [line.decode() for line in articles]
+          titles = [line.decode() for line in titles]
+        except tf.errors.OutOfRangeError:
+          break
 
         for i in range(len(token_ids)):
-          article_words = articles[i].split()
+          article_words = [word for word in articles[i].split() if word != dg.TOKEN_EOS]
           tokens_rouge = [model._vocab.get_word_by_id(wid, reference=article_words)
             for wid in token_ids[i] if wid != model._vocab.token_end_id]
           tokens_print = [model._vocab.get_word_by_id(wid, reference=article_words, markup=True)
             for wid in token_ids[i] if wid != model._vocab.token_end_id]
           summary = ' '.join(tokens_print)
-          result.write('# [%d]\nArticle = %s\nTitle   = %s\nSummary = %s\n' % (batch_count * FLAGS.batch_size + i, articles[i], titles[i], summary))
+          result.write('# [%d]\nArticle = %s\nTitle   = %s\nSummary = %s\n'
+              % (batch_count * FLAGS.batch_size + i, articles[i], titles[i], summary))
           summaries.append([' '.join(tokens_rouge)])
           references.append([[titles[i]]])
 
@@ -257,47 +261,19 @@ def main(unused_argv):
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
 
-  batcher = batch_reader.Batcher(
-      FLAGS.data_path, vocab, hps,
-      FLAGS.max_article_sentences, FLAGS.max_abstract_sentences,
-      bucketing=FLAGS.use_bucketing, truncate_input=FLAGS.truncate_input)
   tf.set_random_seed(FLAGS.random_seed)
 
   if hps.mode == 'train':
     model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
-    _Train(model, batcher)
+    _Train(model, FLAGS.data_path)
   elif hps.mode == 'eval':
     model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
-    _Eval(model, batcher, vocab=vocab)
+    _Eval(model, vocab=vocab)
   elif hps.mode == 'decode':
     model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
-    _Infer(model, batcher, FLAGS.decode_train_step)
+    _Infer(model, FLAGS.data_path, FLAGS.decode_train_step)
     print('decode done.')
-
-
-def checkVocab(vocab_size = 100000, batch_count = 1000):
-  vocab = Vocab(FLAGS.vocab_path, vocab_size, 120)
-  hps = seq2seq_model.HParams(
-      mode=FLAGS.mode,  # train, eval, decode
-      batch_size=FLAGS.batch_size)
-  batcher = batch_reader.Batcher(
-      FLAGS.data_path, vocab, hps,
-      FLAGS.max_article_sentences, FLAGS.max_abstract_sentences,
-      bucketing=FLAGS.use_bucketing, truncate_input=FLAGS.truncate_input)
-
-  wcount = 0
-  oovcount = 0
-  for _ in range(batch_count):
-    (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-       loss_weights, _, _) = batcher.NextBatch()
-    for i in range(len(targets)):
-      wcount += abstract_lens[i]
-      oovcount += sum(1 for wid in targets[i] if wid >= vocab_size)
-  print('vocab_size = %d and samples_count = %d : count = %d; oovcount = %d; ratio = %f' % (vocab_size, batch_count * FLAGS.batch_size, wcount, oovcount, oovcount / wcount))
 
 
 if __name__ == '__main__':
   tf.app.run()
-  #for vs in [100000, 50000, 30000, 10000]:
-  #  checkVocab(vocab_size=vs, batch_count=10000)
-

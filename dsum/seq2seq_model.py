@@ -33,16 +33,9 @@ class Seq2SeqAttentionModel(object):
     self._hps = hps
     self._vocab = vocab
 
-  def run_train_step(self, sess, article_batch, abstract_batch, targets,
-                     article_lens, abstract_lens, loss_weights):
+  def run_train_step(self, sess):
     to_return = [self._train_op, self._summaries, self._loss, self.global_step]
-    return sess.run(to_return,
-                    feed_dict={self._articles: article_batch,
-                               self._abstracts: abstract_batch,
-                               self._targets: targets,
-                               self._article_lens: article_lens,
-                               self._abstract_lens: abstract_lens,
-                               self._loss_weights: loss_weights})
+    return sess.run(to_return)
 
   def run_eval_step(self, sess, article_batch, abstract_batch, targets,
                     article_lens, abstract_lens, loss_weights):
@@ -55,36 +48,61 @@ class Seq2SeqAttentionModel(object):
                                self._abstract_lens: abstract_lens,
                                self._loss_weights: loss_weights})
 
-  def run_infer_step(self, sess, article_batch, abstract_batch, targets,
-                      article_lens, abstract_lens, loss_weights):
-    to_return = [self._predicted_ids]
-    return sess.run(to_return,
-                    feed_dict={self._articles: article_batch,
-                               self._abstracts: abstract_batch,
-                               self._targets: targets,
-                               self._article_lens: article_lens,
-                               self._abstract_lens: abstract_lens,
-                               self._loss_weights: loss_weights})
+  def run_infer_step(self, sess):
+    to_return = [self._predicted_ids, self._article_strings, self._summary_strings]
+    return sess.run(to_return)
 
-  def _add_placeholders(self):
-    """Inputs to be fed to the graph."""
+  def initialize_dataset(self, sess, data_filepath):
+    sess.run(self._iterator.initializer,
+             feed_dict = {self._data_filepath: data_filepath})
+
+  def _setup_model_input(self):
     hps = self._hps
-    self._articles = tf.placeholder(tf.int32,
-                                    [hps.batch_size, hps.enc_timesteps],
-                                    name='articles')
-    self._abstracts = tf.placeholder(tf.int32,
-                                     [hps.batch_size, hps.dec_timesteps],
-                                     name='abstracts')
-    self._targets = tf.placeholder(tf.int32,
-                                   [hps.batch_size, hps.dec_timesteps],
-                                   name='targets')
-    self._article_lens = tf.placeholder(tf.int32, [hps.batch_size],
-                                        name='article_lens')
-    self._abstract_lens = tf.placeholder(tf.int32, [hps.batch_size],
-                                         name='abstract_lens')
-    self._loss_weights = tf.placeholder(tf.float32,
-                                        [hps.batch_size, hps.dec_timesteps],
-                                        name='loss_weights')
+    pad_id = self._vocab.token_pad_id
+    start_id = self._vocab.token_start_id
+    end_id = self._vocab.token_end_id
+
+    def _parse_line(line):
+      article_ids, _, article_text, summary_ids, _, summary_text = self._vocab.parse_article(line.decode())
+      article_len = len(article_ids)
+      summary_len = len(summary_ids)
+      return (
+          np.array(article_ids + [pad_id] * (hps.enc_timesteps - article_len), np.int32),
+          np.int32(article_len),
+          np.array([start_id] + summary_ids + [end_id] * (hps.dec_timesteps - summary_len), np.int32),
+          np.int32(summary_len),
+          article_text,
+          summary_text,)
+
+    def fix_shapes(article_ids, article_len, summary_ids, summary_len, article_text, summary_text):
+      article_ids.set_shape([hps.enc_timesteps])
+      summary_ids.set_shape([hps.dec_timesteps + 1])
+      article_len.set_shape([])
+      summary_len.set_shape([])
+      lossmask = tf.sequence_mask(summary_len + 1, hps.dec_timesteps, dtype=tf.float32)
+      article_text.set_shape([])
+      summary_text.set_shape([])
+      return article_ids, summary_ids[:-1], summary_ids[1:], lossmask, article_len, summary_len + 1, article_text, summary_text
+
+    self._data_filepath = tf.placeholder(tf.string, shape=[])
+    dataset = tf.data.TextLineDataset(self._data_filepath).prefetch(hps.batch_size * 100)
+    dataset = dataset.map(lambda line: tf.py_func(_parse_line, [line], [tf.int32, tf.int32, tf.int32, tf.int32, tf.string, tf.string], stateful=False))
+    dataset = dataset.map(fix_shapes)
+    if hps.mode != 'decode':
+      dataset = dataset.repeat()
+    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
+    dataset = dataset.prefetch(1)
+    print('input shape:', dataset)
+    self._iterator = dataset.make_initializable_iterator()
+
+    next_res = self._iterator.get_next()
+    self._articles, self._abstracts, self._targets, self._loss_weights, self._article_lens, self._abstract_lens, self._article_strings, self._summary_strings = next_res
+    #self._articles = tf.reshape(self._articles, [hps.batch_size, hps.enc_timesteps])
+    #self._abstracts = tf.reshape(self._abstracts, [hps.batch_size, hps.dec_timesteps])
+    #self._targets = tf.reshape(self._targets, [hps.batch_size, hps.dec_timesteps])
+    #self._loss_weights = tf.reshape(self._loss_weights, [hps.batch_size, hps.dec_timesteps]) #tf.float32
+    #self._article_lens = tf.reshape(self._article_lens, [hps.batch_size])
+    #self._abstract_lens = tf.reshape(self._abstract_lens, [hps.batch_size])
 
   def _add_seq2seq(self):
     hps = self._hps
@@ -163,9 +181,8 @@ class Seq2SeqAttentionModel(object):
   def _add_train_op(self):
     self._train_op = tf.train.AdamOptimizer().minimize(self._loss, global_step=self.global_step, name='train_op')
 
-
   def build_graph(self):
-    self._add_placeholders()
+    self._setup_model_input()
     self._add_seq2seq()
     self.global_step = tf.train.get_or_create_global_step()
     if self._hps.mode == 'train':
