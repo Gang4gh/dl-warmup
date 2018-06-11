@@ -1,3 +1,4 @@
+SHELL = /bin/bash
 CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
@@ -27,20 +28,20 @@ check:
 	md5sum $*/*.articles > $@
 keep-data-md5: $(addsuffix /data.md5, $(DATASOURCES))
 
-labeled-data: training.articles training.vocab test.articles test.1k.articles validation.articles
+labeled-data: training.articles training.vocab test.articles test-sample.articles validation.articles
 	@echo labeled data is prepared from \'$(DATASOURCES)\'
 
-%.merged: data_generic.py $(addsuffix /data.md5, $(DATASOURCES))
-	cat $(addsuffix /$*.articles, $(DATASOURCES)) | python3 $< filter - 2 120 30 > $@
-
-%.articles: %.merged
-	shuf $< --random-source=$< > $@
+%.articles: data_generic.py $(addsuffix /data.md5, $(DATASOURCES))
+	cat $(addsuffix /$*.articles, $(DATASOURCES)) \
+		| python3 $< filter - 2 120 30 \
+		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) \
+		> $@
 
 %.vocab: %.articles data_generic.py
 	python3 $(word 2,$^) build-vocab $< | sort -k2nr -k1 > $@
 
-test.1k.articles: test.articles
-	head -n 1000 $< > $@
+test-sample.articles: test.articles
+	head -n 4000 $< > $@
 
 # training/test actions
 tb tensorboard:
@@ -65,7 +66,7 @@ TRAINING_ROOT=running_center/$(TAG)-$(TIMESTAMP)/
 
 tc trainingcenter: labeled-data
 	mkdir -p $(TRAINING_ROOT)
-	cp -p --parents *.articles *.vocab */data.md5 *.py Makefile $(TRAINING_ROOT)
+	cp -p --parents *.py Makefile *.articles *.vocab */data.md5 $(TRAINING_ROOT)
 	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT)Makefile.config
 	echo PORT ?= $(PORT) >> $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
@@ -73,7 +74,7 @@ tc trainingcenter: labeled-data
 decode: labeled-data
 	python3 summarization.py $(ARGS) \
 		--mode=decode --batch_size=25 \
-		--data_path=test.1k.articles \
+		--data_path=test-sample.articles \
 		--vocab_path=training.vocab \
 		--log_root=model \
 		--beam_size=8
