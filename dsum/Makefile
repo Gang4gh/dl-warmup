@@ -50,9 +50,8 @@ tb tensorboard:
 	
 tm trainmodel: labeled-data
 	python3 summarization.py $(ARGS) \
-		--mode=train --batch_size=64 \
-		--data_path=training.articles \
-		--vocab_path=training.vocab \
+		--mode=train --batch_size=64 --check_interval=3600 \
+		--data_path=training.articles --vocab_path=training.vocab \
 		--log_root=model
 
 cleanmodel:
@@ -73,10 +72,8 @@ tc trainingcenter: labeled-data
 
 decode: labeled-data
 	python3 summarization.py $(ARGS) \
-		--mode=decode --batch_size=25 \
-		--data_path=test-sample.articles \
-		--vocab_path=training.vocab \
-		--log_root=model \
+		--mode=decode --log_root=model --batch_size=25 \
+		--data_path=test-sample.articles --vocab_path=training.vocab \
 		--beam_size=8
 
 cdecode: labeled-data

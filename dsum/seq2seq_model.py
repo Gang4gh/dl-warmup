@@ -92,7 +92,7 @@ class Seq2SeqAttentionModel(object):
       dataset = dataset.repeat()
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
     dataset = dataset.prefetch(1)
-    print('input shape:', dataset)
+    #print('input shape:', dataset)
     self._iterator = dataset.make_initializable_iterator()
 
     next_res = self._iterator.get_next()

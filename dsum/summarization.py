@@ -22,6 +22,8 @@ import sys
 import os
 import time
 import datetime
+import threading
+import subprocess
 
 import tensorflow as tf
 from vocab import Vocab
@@ -30,7 +32,6 @@ import data_generic as dg
 
 # install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
 from pythonrouge.pythonrouge import Pythonrouge
-from pprint import pprint
 
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('data_path',
@@ -62,6 +63,7 @@ tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for
 tf.app.flags.DEFINE_bool('write_global_step', False, 'whether write global_step/sec to summary.')
 tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
 tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
+tf.app.flags.DEFINE_integer('check_interval', None, 'interval in seconds to calculate ROUGE via `make decode`.')
 
 
 def calculate_rouge_scores(summaries, references, printScores=True, root=None, global_step=None):
@@ -73,13 +75,14 @@ def calculate_rouge_scores(summaries, references, printScores=True, root=None, g
                         use_cf=False, cf=95, scoring_formula='average',
                         resampling=True, samples=1000, favor=True, p=0.5)
   score = rouge.calc_score()
-
   if printScores:
-    print('ROUGE-N(1-2) & ROUGE-L recall and F value:')
-    pprint(score)
+    tprint('ROUGE(1/2/L) F1 Scores:')
+    tprint('>   ROUGE-1-F: %f' % score['ROUGE-1-F'])
+    tprint('>   ROUGE-2-F: %f' % score['ROUGE-2-F'])
+    tprint('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
 
   if root is not None and global_step is not None:
-    for key in ['ROUGE-1-R','ROUGE-2-R','ROUGE-L-R']:
+    for key in ['ROUGE-1-F','ROUGE-2-F','ROUGE-L-F']:
       swriter = tf.summary.FileWriter(os.path.join(root, key))
       summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE(recall)', simple_value=score[key])])
       swriter.add_summary(summary, global_step)
@@ -88,18 +91,21 @@ def calculate_rouge_scores(summaries, references, printScores=True, root=None, g
 def prepare_session_config():
   return tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
 
-def get_tprinter():
-  start_time = datetime.datetime.now()
-  def print_fn(*arg):
-    """print msg with a timestamp prefix"""
-    delta = datetime.datetime.now() - start_time
-    delta = datetime.timedelta(days=delta.days, seconds=delta.seconds)
+_tprint_start_time = datetime.datetime.now()
+def tprint(*arg):
+  """print msg with a timestamp prefix"""
+  delta = datetime.datetime.now() - _tprint_start_time
+  nday = delta.days
+  delta = datetime.timedelta(seconds=delta.seconds)
+  if nday == 0:
     print('  [%s] +%s: ' % (datetime.datetime.now().replace(microsecond=0).isoformat(' '), delta), *arg)
-  return print_fn
+  else:
+    print('  [%s] +%dd %s: ' % (datetime.datetime.now().replace(microsecond=0).isoformat(' '), nday, delta), *arg)
+
 
 def _Train(model, data_filepath):
   """Runs model training."""
-  tprint = get_tprinter()
+
   tprint('build the model graph')
   model.build_graph()
   #print('  tf.trainable_variables:')
@@ -189,7 +195,6 @@ def _Eval(model, data_batcher, vocab=None):
 
 def _Infer(model, data_filepath, global_step=None):
   """Runs model training."""
-  tprint = get_tprinter()
   tprint('build the model graph')
   model.build_graph()
 
@@ -242,8 +247,22 @@ def _Infer(model, data_filepath, global_step=None):
     tprint('end of inferring at global_step', global_step)
     calculate_rouge_scores(summaries, references, root=decode_root, global_step=global_step)
 
+def check_progress_periodically(sleep_before_first_check = 3*60, check_interval = FLAGS.check_interval):
+  time.sleep(sleep_before_first_check)
+  while True:
+    start_time = datetime.datetime.now()
+    res = subprocess.run('make decode', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    pairs = [line.split()[-2:] for line in res.stdout.decode().split('\n') if line]
+    global_step = next(pair for pair in pairs if pair[0] == 'global_step')[1]
+    scores = [p[1] for p in pairs if p[0].startswith('ROUGE-')]
+    tprint('ROUGE(1/2/L) =', ' / '.join(scores), 'at global_step =', global_step)
+    timedelta = datetime.datetime.now() - start_time
+    time.sleep(check_interval - timedelta.total_seconds() % check_interval)
+
 
 def main(unused_argv):
+  tf.set_random_seed(FLAGS.random_seed)
+
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
       min_lr=0.01,  # min learning rate.
@@ -260,19 +279,17 @@ def main(unused_argv):
       beam_size=FLAGS.beam_size)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
-
-  tf.set_random_seed(FLAGS.random_seed)
+  model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
 
   if hps.mode == 'train':
-    model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
+    # start a thread to check progress then start training
+    if FLAGS.check_interval is not None:
+      threading.Thread(target=check_progress_periodically, daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'eval':
-    model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
     _Eval(model, vocab=vocab)
   elif hps.mode == 'decode':
-    model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
     _Infer(model, FLAGS.data_path, FLAGS.decode_train_step)
-    print('decode done.')
 
 
 if __name__ == '__main__':
