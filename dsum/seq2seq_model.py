@@ -52,6 +52,17 @@ class Seq2SeqAttentionModel(object):
     to_return = [self._predicted_ids, self._article_strings, self._summary_strings]
     return sess.run(to_return)
 
+  def read_inputs(self, sess):
+    """read inputs from dataset for naive baseline or test purpose.
+    returns:
+      article_strings: string of [batch_size]
+      summary_strings: string of [batch_size]
+      articles: int32 of [batch_size, max_encoding_len]
+      targets: int32 of [batch_size, max_decoding_len]
+    """
+    to_return = [self._article_strings, self._summary_strings, self._articles, self._targets]
+    return sess.run(to_return)
+
   def initialize_dataset(self, sess, data_filepath):
     sess.run(self._iterator.initializer,
              feed_dict = {self._data_filepath: data_filepath})
@@ -64,12 +75,14 @@ class Seq2SeqAttentionModel(object):
 
     def _parse_line(line):
       article_ids, _, article_text, summary_ids, _, summary_text = self._vocab.parse_article(line.decode())
+      article_ids = article_ids[:hps.enc_timesteps]
       article_len = len(article_ids)
+      summary_ids = summary_ids[:hps.dec_timesteps - 1]
       summary_len = len(summary_ids)
       return (
           np.array(article_ids + [pad_id] * (hps.enc_timesteps - article_len), np.int32),
           np.int32(article_len),
-          np.array([start_id] + summary_ids + [end_id] * (hps.dec_timesteps - summary_len), np.int32),
+          np.array([start_id] + summary_ids + [end_id] + [pad_id] * (hps.dec_timesteps - 1 - summary_len), np.int32),
           np.int32(summary_len),
           article_text,
           summary_text,)
@@ -88,7 +101,7 @@ class Seq2SeqAttentionModel(object):
     dataset = tf.data.TextLineDataset(self._data_filepath).prefetch(hps.batch_size * 100)
     dataset = dataset.map(lambda line: tf.py_func(_parse_line, [line], [tf.int32, tf.int32, tf.int32, tf.int32, tf.string, tf.string], stateful=False))
     dataset = dataset.map(fix_shapes)
-    if hps.mode != 'decode':
+    if hps.mode != 'decode' and hps.mode != 'naive':
       dataset = dataset.repeat()
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
     dataset = dataset.prefetch(1)
@@ -129,11 +142,14 @@ class Seq2SeqAttentionModel(object):
         with tf.variable_scope('encoder%d' % layer_i):
           cell_fw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           cell_bw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
-          (rnn_outputs, (fw_state, _)) = tf.nn.bidirectional_dynamic_rnn(
+          (rnn_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
               cell_fw, cell_bw, emb_encoder_inputs,
               sequence_length=article_lens, dtype=tf.float32, time_major=True)
           emb_encoder_inputs = tf.concat(rnn_outputs, 2)
       emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
+
+      initial_dec_state = fw_state
+      #initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], 0), hps.num_hidden)
 
       projection_layer = tf.layers.Dense(vsize, use_bias=True)
 
@@ -146,8 +162,7 @@ class Seq2SeqAttentionModel(object):
           decoder = tf.contrib.seq2seq.BasicDecoder(
             cell = cell_decoder,
             helper = helper,
-            initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=fw_state))
-            #initial_state = fw_state)
+            initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=initial_dec_state))
           outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
           model_outputs = projection_layer(outputs.rnn_output, scope='decoder/dense')
           with tf.variable_scope('loss'):
@@ -175,7 +190,7 @@ class Seq2SeqAttentionModel(object):
             initial_state=initial_state,
             beam_width=hps.beam_size,
             output_layer=projection_layer)
-          outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(my_decoder, maximum_iterations=30, output_time_major=True)
+          outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(my_decoder, maximum_iterations=hps.dec_timesteps, output_time_major=True)
           self._predicted_ids = tf.transpose(outputs.predicted_ids[:, :, 0])
 
   def _add_train_op(self):

@@ -22,6 +22,8 @@ class Vocab():
 		self.token_oov_id = self._add_word(dg.TOKEN_OOV)
 		self.token_start_id = self._add_word(dg.TOKEN_START)
 		self.token_end_id = self._add_word(dg.TOKEN_END)
+		self.token_eos_id = self._add_word(dg.TOKEN_EOS)
+		SPECIAL_TOKEN_COUNT = len(self._word_to_id)
 
 		with open(vocab_file_path) as f:
 			for line in f:
@@ -29,12 +31,12 @@ class Vocab():
 				if len(parts) != 2:
 					raise ValueError('Invalid vocab file, line = [%s]' % line)
 				self._add_word(parts[0])
-				if len(self._word_to_id) >= vocab_size_cap + 4: # 4 special tokens added before
+				if len(self._word_to_id) >= vocab_size_cap + SPECIAL_TOKEN_COUNT: # special tokens added before
 					break
 
 		self._static_vocab_size = len(self._word_to_id)
-		print('load %d tokens (including 4 special tokens, %d index tokens) into vocab.' %
-			(self.get_vocab_size(), self._index_vocab_size))
+		print('load %d tokens (including %d special tokens, %d index tokens) into vocab.' %
+			(self.get_vocab_size(), SPECIAL_TOKEN_COUNT, self._index_vocab_size))
 
 	def _add_word(self, word):
 		if word in self._word_to_id:
@@ -66,19 +68,18 @@ class Vocab():
 			return self._id_to_word[id]
 		elif id >= self._static_vocab_size and id < self.get_vocab_size():
 			rid = id - self._static_vocab_size
+			word = reference[rid] if rid < len(reference) else dg.TOKEN_OOV
 			if markup:
-				return '__%s_(%d/%d)' % (reference[rid], rid, self.get_id_by_word(reference[rid]))
+				return '__%s_(%d/%d)' % (word, rid, self.get_id_by_word(word))
 			else:
-				return reference[rid] if rid < len(reference) else dg.TOKEN_OOV
+				return word
 		else:
 			raise ValueError('Invalid vocab id: %s' % id)
 
-	def parse_article(self, article_line, article_sent_limit=2, summary_sent_limit=1):
+	def parse_article(self, article_line):
 		_, summary, article = article_line.split('\t')
-		article_tokens = [word for sent in article.split(dg.TOKEN_EOS_SPACES)[:article_sent_limit]
-				for word in sent.split()]
-		summary_tokens = [word for sent in summary.split(dg.TOKEN_EOS_SPACES)[:summary_sent_limit]
-				for word in sent.split()]
+		article_tokens = [word for word in article.split()]
+		summary_tokens = [word for word in summary.split()]
 		article_ids = [self.get_id_by_word(word, article_tokens) for word in article_tokens]
 		summary_ids = [self.get_id_by_word(word, article_tokens) for word in summary_tokens]
 		return article_ids, article_tokens, article, summary_ids, summary_tokens, summary

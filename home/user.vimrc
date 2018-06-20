@@ -4,6 +4,9 @@ set nu
 set hlsearch
 set incsearch
 
+set ignorecase
+set smartcase
+
 syntax on
 colorscheme desert
 

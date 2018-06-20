@@ -3,7 +3,7 @@ CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
 -include Makefile.config
-DATASOURCES ?= Gigaword
+DATASOURCES ?= DailyMail
 TAG ?= notag
 PORT ?= 2345
 
@@ -33,7 +33,7 @@ labeled-data: training.articles training.vocab test.articles test-sample.article
 
 %.articles: data_generic.py $(addsuffix /data.md5, $(DATASOURCES))
 	cat $(addsuffix /$*.articles, $(DATASOURCES)) \
-		| python3 $< filter - 2 120 30 \
+		| python3 $< filter-articles - '$(DATASOURCES)' \
 		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) \
 		> $@
 
@@ -77,5 +77,7 @@ decode: labeled-data
 		--beam_size=8
 
 cdecode: labeled-data
-	watch -n 3600 $(MAKE) decode
+	watch -n 7200 $(MAKE) decode
 
+naive: labeled-data
+	python3 summarization.py --mode=naive --log_root=model --batch_size=25 --data_path=test.articles --vocab_path=training.vocab
