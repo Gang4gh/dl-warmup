@@ -3,7 +3,7 @@ CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
 -include Makefile.config
-DATASOURCES ?= DailyMail
+DATASOURCES ?= CNN DailyMail
 TAG ?= notag
 PORT ?= 2345
 
@@ -46,13 +46,13 @@ test-sample.articles: test.articles
 # training/test actions
 tb tensorboard:
 	pkill -f tensorboard\ --port\ $(PORT); sleep 1
-	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir model &
+	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir model 2>/dev/null &
 	
 tm trainmodel: labeled-data
-	python3 summarization.py $(ARGS) \
-		--mode=train --batch_size=64 --check_interval=3600 \
+	python3 summarization.py --mode=train \
+		--batch_size=64 --check_interval=3600 \
 		--data_path=training.articles --vocab_path=training.vocab \
-		--enable_logfile=True --log_root=model
+		--enable_logfile=True --log_root=model $(ARGS)
 
 cleanmodel:
 	rm -rf model
@@ -71,10 +71,10 @@ tc trainingcenter: labeled-data
 	$(MAKE) -C $(TRAINING_ROOT) train
 
 decode: labeled-data
-	python3 summarization.py $(ARGS) \
-		--mode=decode --log_root=model --batch_size=25 \
+	python3 summarization.py --mode=decode \
+		--log_root=model --batch_size=20 \
 		--data_path=test-sample.articles --vocab_path=training.vocab \
-		--beam_size=8
+		--beam_size=8 $(ARGS)
 
 cdecode: labeled-data
 	watch -n 7200 $(MAKE) decode

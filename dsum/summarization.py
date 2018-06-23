@@ -158,7 +158,7 @@ def _Train(model, data_filepath):
         elapsed_time = time.time() - last_timestamp
         speed = elapsed_time / max(1, global_step - last_step)
         last_timestamp, last_step = last_timestamp + elapsed_time, global_step
-        logging.info('finish global_step %d, speed is %f sec/step', global_step, speed)
+        logging.info('finish global_step %d, speed = %f sec/step', global_step, speed)
 
       if ckpt_timer.should_trigger_for_step(global_step):
         ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
