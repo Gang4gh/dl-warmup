@@ -52,7 +52,7 @@ tm trainmodel: labeled-data
 	python3 summarization.py $(ARGS) \
 		--mode=train --batch_size=64 --check_interval=3600 \
 		--data_path=training.articles --vocab_path=training.vocab \
-		--log_root=model
+		--enable_logfile=True --log_root=model
 
 cleanmodel:
 	rm -rf model

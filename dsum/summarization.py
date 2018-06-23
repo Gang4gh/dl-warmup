@@ -24,8 +24,9 @@ import time
 import datetime
 import threading
 import subprocess
-
+import logging
 import tensorflow as tf
+
 from vocab import Vocab
 import seq2seq_model
 import data_generic as dg
@@ -60,11 +61,39 @@ tf.app.flags.DEFINE_bool('truncate_input', False,
 tf.app.flags.DEFINE_integer('random_seed', 17, 'A seed value for randomness.')
 tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
-tf.app.flags.DEFINE_bool('write_global_step', False, 'whether write global_step/sec to summary.')
 tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
 tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
 tf.app.flags.DEFINE_integer('check_interval', None, 'interval in seconds to calculate ROUGE via `make decode`.')
+tf.app.flags.DEFINE_bool('enable_logfile', False, 'whether write logging.debug() to log files.')
 
+
+def setup_logging():
+  class ElapsedFormatter():
+    def __init__(self):
+      self.start_time = time.time()
+    def format(self, record):
+      elapsed = int(record.created - self.start_time)
+      return '+%dd %02d:%02d:%02d | %s' % (elapsed / 3600 / 24, elapsed / 3600, elapsed / 60 % 60, elapsed % 60, record.getMessage())
+
+  stdout_handler = logging.StreamHandler(sys.stdout)
+  stdout_handler.setLevel(logging.INFO)
+  stdout_handler.setFormatter(ElapsedFormatter())
+  handlers = [stdout_handler]
+  if FLAGS.enable_logfile:
+    if not os.path.exists(FLAGS.log_root):
+      os.mkdir(FLAGS.log_root)
+    log_file = os.path.join(FLAGS.log_root, 'log-%d.txt' % int(time.time()))
+    file_handler = logging.FileHandler(filename=log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(fmt='[%(asctime)s] %(filename)s#%(lineno)d %(levelname)-5s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    handlers.append(file_handler)
+  logging.basicConfig(
+      level = logging.DEBUG,
+      handlers = handlers
+  )
+  logging.getLogger('tensorflow').propagate = False
+  tf.logging.set_verbosity(tf.logging.WARN)
+  logging.debug('commandline: %s' % ' '.join(sys.argv))
 
 def calculate_rouge_scores(summaries, references, max_length=None, printScores=True, root=None, global_step=None):
   rouge = Pythonrouge(summary_file_exist=False,
@@ -76,10 +105,10 @@ def calculate_rouge_scores(summaries, references, max_length=None, printScores=T
                         resampling=True, samples=1000, favor=True, p=0.5)
   score = rouge.calc_score()
   if printScores:
-    tprint('ROUGE(1/2/L) F1 Scores:')
-    tprint('>   ROUGE-1-F: %f' % score['ROUGE-1-F'])
-    tprint('>   ROUGE-2-F: %f' % score['ROUGE-2-F'])
-    tprint('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
+    logging.info('ROUGE(1/2/L) F1 Scores:')
+    logging.info('>   ROUGE-1-F: %f' % score['ROUGE-1-F'])
+    logging.info('>   ROUGE-2-F: %f' % score['ROUGE-2-F'])
+    logging.info('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
 
   if root is not None and global_step is not None:
     for key in ['ROUGE-1-F','ROUGE-2-F','ROUGE-L-F']:
@@ -91,25 +120,14 @@ def calculate_rouge_scores(summaries, references, max_length=None, printScores=T
 def prepare_session_config():
   return tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
 
-_tprint_start_time = datetime.datetime.now()
-def tprint(*arg):
-  """print msg with a timestamp prefix"""
-  delta = datetime.datetime.now() - _tprint_start_time
-  nday = delta.days
-  delta = datetime.timedelta(seconds=delta.seconds)
-  if nday == 0:
-    print('  [%s] +%s: ' % (datetime.datetime.now().replace(microsecond=0).isoformat(' '), delta), *arg)
-  else:
-    print('  [%s] +%dd %s: ' % (datetime.datetime.now().replace(microsecond=0).isoformat(' '), nday, delta), *arg)
-
 
 def _Train(model, data_filepath):
   """Runs model training."""
 
-  tprint('build the model graph')
+  logging.info('build the model graph')
   model.build_graph()
-  #print('  tf.trainable_variables:')
-  #for var in tf.trainable_variables(): print('    %s' % var)
+  logging.debug('tf.trainable_variables:')
+  for var in tf.trainable_variables(): logging.debug('  %s' % var)
 
   ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=12, max_to_keep=3)
   ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_secs)
@@ -118,11 +136,11 @@ def _Train(model, data_filepath):
     # initialize or restore model
     ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
     if ckpt_path is None:
-      tprint('initialize variables')
+      logging.info('initialize model variables')
       _ = sess.run(tf.global_variables_initializer())
       summary_writer = tf.summary.FileWriter(FLAGS.log_root, graph=sess.graph)
     else:
-      tprint('restore model from', ckpt_path)
+      logging.info('restore model from %s', ckpt_path)
       ckpt_saver.restore(sess, ckpt_path)
       summary_writer = tf.summary.FileWriter(FLAGS.log_root)
 
@@ -131,28 +149,25 @@ def _Train(model, data_filepath):
     global_step = sess.run(model.global_step)
 
     # main loop
-    last_timestamp = time.time() if FLAGS.write_global_step else None
-    tprint('start of training at global_step', global_step)
+    last_timestamp, last_step = time.time(), global_step
+    logging.info('start of training at global_step %d', global_step)
     while global_step < FLAGS.max_run_steps:
       (_, summary, _, global_step) = model.run_train_step(sess)
 
       if global_step <= 10 or global_step <= 100 and global_step % 10 == 0 or global_step % 1000 == 0:
-        tprint('global_step', global_step, 'is done')
+        elapsed_time = time.time() - last_timestamp
+        speed = elapsed_time / max(1, global_step - last_step)
+        last_timestamp, last_step = last_timestamp + elapsed_time, global_step
+        logging.info('finish global_step %d, speed is %f sec/step', global_step, speed)
 
       if ckpt_timer.should_trigger_for_step(global_step):
         ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
         ckpt_timer.update_last_triggered_step(global_step)
 
-      # write summaries
       summary_writer.add_summary(summary, global_step)
-      if FLAGS.write_global_step:
-        elapsed_time = time.time() - last_timestamp
-        last_timestamp += elapsed_time
-        steps_per_sec = 1 / elapsed_time if elapsed_time > 0. else float('inf')
-        summary_writer.add_summary(tf.Summary(value=[tf.Summary.Value(tag='global_step/sec', simple_value=steps_per_sec)]), global_step)
 
     ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
-    tprint('end of training at global_step', global_step)
+    logging.info('end of training at global_step %d', global_step)
 
 
 def _Eval(model, data_batcher, vocab=None):
@@ -195,7 +210,7 @@ def _Eval(model, data_batcher, vocab=None):
 
 def _Infer(model, data_filepath, global_step=None):
   """Runs model training."""
-  tprint('build the model graph')
+  logging.info('build the model graph')
   model.build_graph()
 
   decode_root = os.path.join(FLAGS.log_root, 'decode')
@@ -208,7 +223,7 @@ def _Infer(model, data_filepath, global_step=None):
     ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
     if global_step is not None:
       ckpt_path = '%s-%d' % (ckpt_path.split('-')[0], global_step)
-    tprint('restore model from', ckpt_path)
+    logging.info('restore model from %s', ckpt_path)
     ckpt_saver.restore(sess, ckpt_path)
 
     model.initialize_dataset(sess, data_filepath)
@@ -217,7 +232,7 @@ def _Infer(model, data_filepath, global_step=None):
     result_file = os.path.join(decode_root, 'summary-%06d-%d.txt' % (global_step, int(time.time())))
 
     # main loop
-    tprint('start of inferring at global_step', global_step)
+    logging.info('start of inferring at global_step %d', global_step)
     summaries, references = [], []
     with open(result_file, 'w') as result:
       batch_count = 0
@@ -245,14 +260,14 @@ def _Infer(model, data_filepath, global_step=None):
 
         batch_count += 1
         if batch_count % 40 == 0:
-          tprint('batch_count =', batch_count)
-    tprint('end of inferring at global_step', global_step)
+          logging.info('finished batch_count = %d', batch_count)
+    logging.info('end of inferring at global_step %d', global_step)
     calculate_rouge_scores(summaries, references, max_length=model._hps.dec_timesteps, root=decode_root, global_step=global_step)
 
 
 def _naive_baseline(model, data_filepath, sentence_count=3):
   """ dump inputs from tensorflow dataset api and measure the naive baseline (first N sentences) """
-  tprint('setup model input')
+  logging.info('setup model input')
   model._setup_model_input()
 
   with tf.Session(config=prepare_session_config()) as sess:
@@ -282,7 +297,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
           summaries.append(naive_summary)
           references.append(refer_summary)
         batch_count += 1
-    tprint('calculate ROUGE scores')
+    logging.info('calculate ROUGE scores')
     calculate_rouge_scores(summaries, references, max_length=model._hps.dec_timesteps)
 
 
@@ -295,14 +310,17 @@ def check_progress_periodically(sleep_before_first_check = 3*60, check_interval 
     scores = [p[1] for p in pairs if p[0].startswith('ROUGE-')]
     if len(scores) == 3:
       global_step = next((pair for pair in pairs if pair[0] == 'global_step'), [0, -1])[1]
-      tprint('ROUGE(1/2/L) =', ' / '.join(scores), 'at global_step =', global_step)
+      logging.info('ROUGE(1/2/L) = %s at global_step = %s', ' / '.join(scores), global_step)
     else:
-      tprint('Error:', res.stdout, res.stderr)
+      logging.error('Error when calculate ROUGE')
+      logging.debug('Error stdout = %s', res.stdout.decode())
+      logging.debug('Error stderr = %s', res.stderr.decode())
     timedelta = datetime.datetime.now() - start_time
     time.sleep(check_interval - timedelta.total_seconds() % check_interval)
 
 
 def main(unused_argv):
+  setup_logging()
   tf.set_random_seed(FLAGS.random_seed)
 
   hps = seq2seq_model.HParams(

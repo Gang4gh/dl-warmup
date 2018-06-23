@@ -15,6 +15,7 @@
 
 """sequence-to-Sequence with attention model"""
 
+import logging
 import numpy as np
 import tensorflow as tf
 
@@ -105,7 +106,7 @@ class Seq2SeqAttentionModel(object):
       dataset = dataset.repeat()
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
     dataset = dataset.prefetch(1)
-    #print('input shape:', dataset)
+    logging.debug('dataset shape: %s', dataset)
     self._iterator = dataset.make_initializable_iterator()
 
     next_res = self._iterator.get_next()
@@ -149,7 +150,8 @@ class Seq2SeqAttentionModel(object):
       emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
 
       initial_dec_state = fw_state
-      #initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], 0), hps.num_hidden)
+      #initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], -1), hps.num_hidden)
+      #initial_dec_state = tf.contrib.rnn.LSTMStateTuple(initial_dec_state[0], initial_dec_state[1])
 
       projection_layer = tf.layers.Dense(vsize, use_bias=True)
 
@@ -165,11 +167,9 @@ class Seq2SeqAttentionModel(object):
             initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=initial_dec_state))
           outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
           model_outputs = projection_layer(outputs.rnn_output, scope='decoder/dense')
-          with tf.variable_scope('loss'):
-            max_len = tf.shape(model_outputs)[0]
-            model_outputs = tf.pad(model_outputs, [[0, hps.dec_timesteps - max_len], [0,0], [0,0]])
-            self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
-            tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
+          max_len = tf.shape(model_outputs)[0]
+          self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_len, :], loss_weights[:max_len, :])
+          tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
         else:
           emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)
           article_lens = tf.contrib.seq2seq.tile_batch(article_lens, multiplier=hps.beam_size)

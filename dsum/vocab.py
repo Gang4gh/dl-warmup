@@ -2,6 +2,7 @@
 
 import glob
 import random
+import logging
 
 import data_generic as dg
 
@@ -35,7 +36,7 @@ class Vocab():
 					break
 
 		self._static_vocab_size = len(self._word_to_id)
-		print('load %d tokens (including %d special tokens, %d index tokens) into vocab.' %
+		logging.info('load %d tokens (including %d special tokens, %d index tokens) into vocab.' %
 			(self.get_vocab_size(), SPECIAL_TOKEN_COUNT, self._index_vocab_size))
 
 	def _add_word(self, word):
@@ -58,8 +59,10 @@ class Vocab():
 			try:
 				rid = reference.index(word)
 				if rid >= self._index_vocab_size:
-					raise IndexError('Invalid index token id, rid = %d' % rid)
-				return self._static_vocab_size + rid
+					logging.warning('rid(%d) is out of index_vocab_size(%d)', rid, self._index_vocab_size)
+					return self.token_oov_id
+				else:
+					return self._static_vocab_size + rid
 			except ValueError:
 				return self.token_oov_id
 
