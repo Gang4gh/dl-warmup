@@ -21,10 +21,10 @@ import tensorflow as tf
 
 from collections import namedtuple
 HParams = namedtuple('HParams',
-                     'mode, min_lr, lr, batch_size, '
-                     'enc_layers, enc_timesteps, dec_timesteps, '
-                     'min_input_len, num_hidden, emb_dim, max_grad_norm, '
-                     'num_softmax_samples, beam_size')
+                     'mode batch_size '
+                     'enc_layers enc_timesteps dec_timesteps '
+                     'num_hidden emb_dim '
+                     'beam_size')
 
 
 class Seq2SeqAttentionModel(object):

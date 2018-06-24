@@ -35,35 +35,19 @@ import data_generic as dg
 from pythonrouge.pythonrouge import Pythonrouge
 
 FLAGS = tf.app.flags.FLAGS
-tf.app.flags.DEFINE_string('data_path',
-                           '', 'Path expression to tf.Example.')
-tf.app.flags.DEFINE_string('vocab_path',
-                           '', 'Path expression to text vocabulary file.')
-tf.app.flags.DEFINE_string('log_root', '', 'Directory for model root.')
+tf.app.flags.DEFINE_string('data_path', '', 'path expression to tf.Example.')
+tf.app.flags.DEFINE_string('vocab_path', '', 'path expression to text vocabulary file.')
+tf.app.flags.DEFINE_string('log_root', '', 'directory for model root.')
 tf.app.flags.DEFINE_string('mode', 'train', 'train/eval/decode mode')
-tf.app.flags.DEFINE_integer('max_run_steps', 10000000,
-                            'Maximum number of run steps.')
-tf.app.flags.DEFINE_integer('max_article_sentences', 2,
-                            'Max number of first sentences to use from the '
-                            'article')
-tf.app.flags.DEFINE_integer('max_abstract_sentences', 100,
-                            'Max number of first sentences to use from the '
-                            'abstract')
-tf.app.flags.DEFINE_integer('beam_size', 4,
-                            'beam size for beam search decoding.')
-tf.app.flags.DEFINE_integer('eval_interval_secs', 60, 'How often to run eval.')
-tf.app.flags.DEFINE_integer('checkpoint_secs', 1200, 'How often to checkpoint.')
-tf.app.flags.DEFINE_bool('use_bucketing', False,
-                         'Whether bucket articles of similar length.')
-tf.app.flags.DEFINE_bool('truncate_input', False,
-                         'Truncate inputs that are too long. If False, '
-                         'examples that are too long are discarded.')
-tf.app.flags.DEFINE_integer('random_seed', 17, 'A seed value for randomness.')
-tf.app.flags.DEFINE_integer('batch_size', 128, 'The mini-batch size for training.')
+tf.app.flags.DEFINE_integer('max_run_steps', 10000000, 'maximum number of run steps.')
+tf.app.flags.DEFINE_integer('beam_size', 4, 'beam size for beam search decoding.')
+tf.app.flags.DEFINE_integer('checkpoint_secs', 1200, 'how often to checkpoint.')
+tf.app.flags.DEFINE_integer('random_seed', 17, 'a seed value for randomness.')
+tf.app.flags.DEFINE_integer('batch_size', 128, 'the mini-batch size for training.')
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
 tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
+tf.app.flags.DEFINE_integer('eval_rouge_interval', None, 'interval to calculate ROUGE via `make decode`.')
 tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
-tf.app.flags.DEFINE_integer('check_interval', None, 'interval in seconds to calculate ROUGE via `make decode`.')
 tf.app.flags.DEFINE_bool('enable_logfile', False, 'whether write logging.debug() to log files.')
 
 
@@ -177,7 +161,7 @@ def _Eval(model, data_batcher, vocab=None):
   summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_root, 'eval'))
   sess = tf.Session(config=prepare_session_config())
   while True:
-    time.sleep(FLAGS.eval_interval_secs)
+    time.sleep(60)
     try:
       ckpt_state = tf.train.get_checkpoint_state(FLAGS.log_root)
     except tf.errors.OutOfRangeError as e:
@@ -301,7 +285,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
     calculate_rouge_scores(summaries, references, max_length=model._hps.dec_timesteps)
 
 
-def check_progress_periodically(sleep_before_first_check = 3*60, check_interval = FLAGS.check_interval):
+def check_progress_periodically(sleep_before_first_check = 3*60, check_interval = FLAGS.eval_rouge_interval):
   time.sleep(sleep_before_first_check)
   while True:
     start_time = datetime.datetime.now()
@@ -325,17 +309,12 @@ def main(unused_argv):
 
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
-      min_lr=0.01,      # min learning rate.
-      lr=0.15,          # learning rate
       batch_size=FLAGS.batch_size,
       enc_layers=4,
       enc_timesteps=400,
       dec_timesteps=100,
-      min_input_len=2,  # discard articles/summaries < than this
       num_hidden=256,   # for rnn cell
       emb_dim=128,      # If 0, don't use embedding
-      max_grad_norm=2,
-      num_softmax_samples=0,  # If 0, no sampled softmax.
       beam_size=FLAGS.beam_size)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
@@ -343,7 +322,7 @@ def main(unused_argv):
 
   if hps.mode == 'train':
     # start a thread to check progress then start training
-    if FLAGS.check_interval is not None:
+    if FLAGS.eval_rouge_interval is not None:
       threading.Thread(target=check_progress_periodically, daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'eval':
