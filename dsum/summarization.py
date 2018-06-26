@@ -285,8 +285,8 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
     calculate_rouge_scores(summaries, references, max_length=model._hps.dec_timesteps)
 
 
-def check_progress_periodically(sleep_before_first_check = 3*60, check_interval = FLAGS.eval_rouge_interval):
-  time.sleep(sleep_before_first_check)
+def check_progress_periodically(warmup_delay, check_interval):
+  time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
     res = subprocess.run('make decode', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -323,7 +323,7 @@ def main(unused_argv):
   if hps.mode == 'train':
     # start a thread to check progress then start training
     if FLAGS.eval_rouge_interval is not None:
-      threading.Thread(target=check_progress_periodically, daemon=True).start()
+      threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.eval_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'eval':
     _Eval(model, vocab=vocab)

@@ -50,7 +50,7 @@ tb tensorboard:
 	
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
-		--batch_size=64 --check_interval=3600 \
+		--batch_size=64 --eval_rouge_interval=3600 \
 		--data_path=training.articles --vocab_path=training.vocab \
 		--enable_logfile=True --log_root=model $(ARGS)
 
