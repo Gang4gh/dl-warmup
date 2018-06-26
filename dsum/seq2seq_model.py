@@ -76,14 +76,25 @@ class Seq2SeqAttentionModel(object):
 
     def _parse_line(line):
       article_ids, _, article_text, summary_ids, _, summary_text = self._vocab.parse_article(line.decode())
-      article_ids = article_ids[:hps.enc_timesteps]
       article_len = len(article_ids)
-      summary_ids = summary_ids[:hps.dec_timesteps - 1]
+      if article_len < hps.enc_timesteps:
+        article_ids = article_ids + [pad_id] * (hps.enc_timesteps - article_len)
+      else:
+        article_ids = article_ids[:hps.enc_timesteps]
+        article_len = hps.enc_timesteps
+
       summary_len = len(summary_ids)
+      if summary_len <= hps.dec_timesteps - 1:
+        summary_ids = [start_id] + summary_ids + [end_id] + [pad_id] * (hps.dec_timesteps - 1 - summary_len)
+        summary_len += 1
+      else:
+        summary_ids = [start_id] + summary_ids[:hps.dec_timesteps]
+        summary_len = hps.dec_timesteps
+
       return (
-          np.array(article_ids + [pad_id] * (hps.enc_timesteps - article_len), np.int32),
+          np.array(article_ids, np.int32),
           np.int32(article_len),
-          np.array([start_id] + summary_ids + [end_id] + [pad_id] * (hps.dec_timesteps - 1 - summary_len), np.int32),
+          np.array(summary_ids, np.int32),
           np.int32(summary_len),
           article_text,
           summary_text,)
@@ -93,10 +104,10 @@ class Seq2SeqAttentionModel(object):
       summary_ids.set_shape([hps.dec_timesteps + 1])
       article_len.set_shape([])
       summary_len.set_shape([])
-      lossmask = tf.sequence_mask(summary_len + 1, hps.dec_timesteps, dtype=tf.float32)
+      lossmask = tf.sequence_mask(summary_len, hps.dec_timesteps, dtype=tf.float32)
       article_text.set_shape([])
       summary_text.set_shape([])
-      return article_ids, summary_ids[:-1], summary_ids[1:], lossmask, article_len, summary_len + 1, article_text, summary_text
+      return article_ids, summary_ids[:-1], summary_ids[1:], lossmask, article_len, summary_len, article_text, summary_text
 
     self._data_filepath = tf.placeholder(tf.string, shape=[])
     dataset = tf.data.TextLineDataset(self._data_filepath).prefetch(hps.batch_size * 100)

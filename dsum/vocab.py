@@ -91,7 +91,7 @@ class Vocab():
 def check_vocab_stats(article_path, vocab_path, vocab_cap = 50000, vocab_index_size = 120):
 	vocab = Vocab(vocab_path, vocab_cap, vocab_index_size)
 	line_count, total_word_count, index_word_count, oov_word_count = 0, 0, 0, 0
-	for line in open(article_path):
+	for line in open(article_path, encoding='utf-8'):
 		art_ids, _, _, summary_ids, _, _ = vocab.parse_article(line.strip())
 		line_count += 1
 		total_word_count += len(summary_ids)

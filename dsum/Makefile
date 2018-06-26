@@ -70,13 +70,13 @@ tc trainingcenter: labeled-data
 	echo PORT ?= $(PORT) >> $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
 
-decode: labeled-data
+decode:
 	python3 summarization.py --mode=decode \
 		--log_root=model --batch_size=20 \
 		--data_path=test-sample.articles --vocab_path=training.vocab \
 		--beam_size=8 $(ARGS)
 
-cdecode: labeled-data
+cdecode:
 	watch -n 7200 $(MAKE) decode
 
 naive: labeled-data

@@ -217,7 +217,7 @@ def _Infer(model, data_filepath, global_step=None):
     # main loop
     logging.info('start of inferring at global_step %d', global_step)
     summaries, references = [], []
-    with open(result_file, 'w') as result:
+    with open(result_file, 'w', encoding='utf-8') as result:
       batch_count = 0
       while True:
         try:
@@ -258,7 +258,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
     result_file = os.path.join(FLAGS.log_root, 'naive-head-%d-log.txt' % sentence_count)
     summaries, references = [], []
-    with open(result_file, 'w') as result:
+    with open(result_file, 'w', encoding='utf-8') as result:
       batch_count = 0
       while True:
         try:
