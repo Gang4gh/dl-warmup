@@ -31,9 +31,6 @@ from vocab import Vocab
 import seq2seq_model
 import data_generic as dg
 
-# install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
-from pythonrouge.pythonrouge import Pythonrouge
-
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('data_path', '', 'path expression to tf.Example.')
 tf.app.flags.DEFINE_string('vocab_path', '', 'path expression to text vocabulary file.')
@@ -80,6 +77,8 @@ def setup_logging():
   logging.debug('commandline: %s' % ' '.join(sys.argv))
 
 def calculate_rouge_scores(summaries, references, max_length=None, printScores=True, root=None, global_step=None):
+  # install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
+  from pythonrouge.pythonrouge import Pythonrouge
   rouge = Pythonrouge(summary_file_exist=False,
                         summary=summaries, reference=references,
                         n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
@@ -97,7 +96,7 @@ def calculate_rouge_scores(summaries, references, max_length=None, printScores=T
   if root is not None and global_step is not None:
     for key in ['ROUGE-1-F','ROUGE-2-F','ROUGE-L-F']:
       swriter = tf.summary.FileWriter(os.path.join(root, key))
-      summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE(recall)', simple_value=score[key])])
+      summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE', simple_value=score[key])])
       swriter.add_summary(summary, global_step)
       swriter.close()
 
