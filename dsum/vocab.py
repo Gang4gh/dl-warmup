@@ -26,7 +26,7 @@ class Vocab():
 		self.token_eos_id = self._add_word(dg.TOKEN_EOS)
 		SPECIAL_TOKEN_COUNT = len(self._word_to_id)
 
-		with open(vocab_file_path) as f:
+		with open(vocab_file_path, encoding='utf-8') as f:
 			for line in f:
 				parts = line.split()
 				if len(parts) != 2:
