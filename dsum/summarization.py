@@ -76,9 +76,11 @@ def setup_logging():
   tf.logging.set_verbosity(tf.logging.WARN)
   logging.debug('commandline: %s' % ' '.join(sys.argv))
 
-def calculate_rouge_scores(summaries, references, max_length=None, printScores=True, root=None, global_step=None):
+def calculate_rouge_scores(summaries, references, max_length, root=None, global_step=None):
   # install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
   from pythonrouge.pythonrouge import Pythonrouge
+
+  logging.info('calculate ROUGE scores of %d summaries' % len(summaries))
   rouge = Pythonrouge(summary_file_exist=False,
                         summary=summaries, reference=references,
                         n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
@@ -87,11 +89,10 @@ def calculate_rouge_scores(summaries, references, max_length=None, printScores=T
                         use_cf=False, cf=95, scoring_formula='average',
                         resampling=True, samples=1000, favor=True, p=0.5)
   score = rouge.calc_score()
-  if printScores:
-    logging.info('ROUGE(1/2/L) F1 Scores:')
-    logging.info('>   ROUGE-1-F: %f' % score['ROUGE-1-F'])
-    logging.info('>   ROUGE-2-F: %f' % score['ROUGE-2-F'])
-    logging.info('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
+  logging.info('ROUGE(1/2/L) F1 Scores:')
+  logging.info('>   ROUGE-1-F: %f' % score['ROUGE-1-F'])
+  logging.info('>   ROUGE-2-F: %f' % score['ROUGE-2-F'])
+  logging.info('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
 
   if root is not None and global_step is not None:
     for key in ['ROUGE-1-F','ROUGE-2-F','ROUGE-L-F']:
@@ -215,7 +216,7 @@ def _Infer(model, data_filepath, global_step=None):
     result_file = os.path.join(decode_root, 'summary-%06d-%d.txt' % (global_step, int(time.time())))
 
     # main loop
-    logging.info('start of inferring at global_step %d', global_step)
+    logging.info('begin of inferring at global_step %d', global_step)
     summaries, references = [], []
     with open(result_file, 'w', encoding='utf-8') as result:
       batch_count = 0
@@ -245,7 +246,7 @@ def _Infer(model, data_filepath, global_step=None):
         if batch_count % 40 == 0:
           logging.info('finished batch_count = %d', batch_count)
     logging.info('end of inferring at global_step %d', global_step)
-    calculate_rouge_scores(summaries, references, max_length=model._hps.dec_timesteps, root=decode_root, global_step=global_step)
+    calculate_rouge_scores(summaries, references, model._hps.dec_timesteps, root=decode_root, global_step=global_step)
 
 
 def _naive_baseline(model, data_filepath, sentence_count=3):
@@ -280,13 +281,12 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
           summaries.append(naive_summary)
           references.append(refer_summary)
         batch_count += 1
-    logging.info('calculate ROUGE scores')
-    calculate_rouge_scores(summaries, references, max_length=model._hps.dec_timesteps)
+    calculate_rouge_scores(summaries, references, model._hps.dec_timesteps)
 
 
 def check_progress_periodically(warmup_delay, check_interval):
   # when run in philly, default data/vocab paths in Makefile are incorrect, so set the correct values in ARGS
-  ARGS = '--data_path=%s --vocab_path=%s' % (FLAGS.data_path.replace('training.articles', 'test-sample.articles'), FLAGS.vocab_path)
+  ARGS = '--data_path=%s --vocab_path=%s --log_root=%s' % (FLAGS.data_path.replace('training.articles', 'test-sample.articles'), FLAGS.vocab_path, FLAGS.log_root)
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
