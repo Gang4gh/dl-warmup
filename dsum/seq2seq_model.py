@@ -120,6 +120,9 @@ class Seq2SeqAttentionModel(object):
     logging.debug('dataset shape: %s', dataset)
     self._iterator = dataset.make_initializable_iterator()
 
+    iterator_state = tf.contrib.data.make_saveable_from_iterator(self._iterator)
+    tf.add_to_collection(tf.GraphKeys.SAVEABLE_OBJECTS, iterator_state)
+
     next_res = self._iterator.get_next()
     self._articles, self._abstracts, self._targets, self._loss_weights, self._article_lens, self._abstract_lens, self._article_strings, self._summary_strings = next_res
     #self._articles = tf.reshape(self._articles, [hps.batch_size, hps.enc_timesteps])

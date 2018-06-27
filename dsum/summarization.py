@@ -123,18 +123,17 @@ def _Train(model, data_filepath):
       logging.info('initialize model variables')
       _ = sess.run(tf.global_variables_initializer())
       summary_writer = tf.summary.FileWriter(FLAGS.log_root, graph=sess.graph)
+      model.initialize_dataset(sess, data_filepath)
     else:
       logging.info('restore model from %s', ckpt_path)
       ckpt_saver.restore(sess, ckpt_path)
       summary_writer = tf.summary.FileWriter(FLAGS.log_root)
 
-    model.initialize_dataset(sess, data_filepath)
-
-    global_step = sess.run(model.global_step)
+    global_step = sess.run(model.global_step) - 1
 
     # main loop
     last_timestamp, last_step = time.time(), global_step
-    logging.info('start of training at global_step %d', global_step)
+    logging.info('start of training at global_step %d', global_step + 1)
     while global_step < FLAGS.max_run_steps:
       (_, summary, _, global_step) = model.run_train_step(sess)
 
@@ -285,8 +284,10 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 
 def check_progress_periodically(warmup_delay, check_interval):
-  # when run in philly, default data/vocab paths in Makefile are incorrect, so set the correct values in ARGS
-  ARGS = '--data_path=%s --vocab_path=%s --log_root=%s' % (FLAGS.data_path.replace('training.articles', 'test-sample.articles'), FLAGS.vocab_path, FLAGS.log_root)
+  # when run in philly, default data/vocab/log paths in Makefile are incorrect, so set the correct values in ARGS
+  ARGS = '--data_path=%s --vocab_path=%s --log_root=%s' % (
+      FLAGS.data_path.replace('training.articles', 'test-sample.articles'),
+      FLAGS.vocab_path, FLAGS.log_root)
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
