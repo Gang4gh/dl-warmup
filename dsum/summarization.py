@@ -285,10 +285,12 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 
 def check_progress_periodically(warmup_delay, check_interval):
+  # when run in philly, default data/vocab paths in Makefile are incorrect, so set the correct values in ARGS
+  ARGS = '--data_path=%s --vocab_path=%s' % (FLAGS.data_path.replace('training.articles', 'test-sample.articles'), FLAGS.vocab_path)
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
-    res = subprocess.run('make decode', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    res = subprocess.run('make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     pairs = [line.split()[-2:] for line in res.stdout.decode().split('\n') if line]
     scores = [p[1] for p in pairs if p[0].startswith('ROUGE-')]
     if len(scores) == 3:
