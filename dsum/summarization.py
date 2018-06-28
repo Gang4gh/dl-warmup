@@ -54,7 +54,8 @@ def setup_logging():
       self.start_time = time.time()
     def format(self, record):
       elapsed = int(record.created - self.start_time)
-      return '+%dd %02d:%02d:%02d | %s' % (elapsed / 3600 / 24, elapsed / 3600, elapsed / 60 % 60, elapsed % 60, record.getMessage())
+      created = time.strftime('%D %H:%M:%S', time.localtime(record.created))
+      return '%s | +%dd %02d:%02d:%02d | %s' % (created, elapsed / 3600 / 24, elapsed / 3600 % 24, elapsed / 60 % 60, elapsed % 60, record.getMessage())
 
   stdout_handler = logging.StreamHandler(sys.stdout)
   stdout_handler.setLevel(logging.INFO)
@@ -113,7 +114,7 @@ def _Train(model, data_filepath):
   logging.debug('tf.trainable_variables:')
   for var in tf.trainable_variables(): logging.debug('  %s' % var)
 
-  ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=12, max_to_keep=3)
+  ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=6, max_to_keep=3)
   ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_secs)
 
   with tf.Session(config=prepare_session_config()) as sess:
@@ -324,7 +325,7 @@ def main(unused_argv):
 
   if hps.mode == 'train':
     # start a thread to check progress then start training
-    if FLAGS.eval_rouge_interval is not None:
+    if FLAGS.eval_rouge_interval:
       threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.eval_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'eval':

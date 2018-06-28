@@ -110,13 +110,13 @@ class Seq2SeqAttentionModel(object):
       return article_ids, summary_ids[:-1], summary_ids[1:], lossmask, article_len, summary_len, article_text, summary_text
 
     self._data_filepath = tf.placeholder(tf.string, shape=[])
-    dataset = tf.data.TextLineDataset(self._data_filepath).prefetch(hps.batch_size * 100)
+    dataset = tf.data.TextLineDataset(self._data_filepath)
     dataset = dataset.map(lambda line: tf.py_func(_parse_line, [line], [tf.int32, tf.int32, tf.int32, tf.int32, tf.string, tf.string], stateful=False))
     dataset = dataset.map(fix_shapes)
     if hps.mode != 'decode' and hps.mode != 'naive':
       dataset = dataset.repeat()
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
-    dataset = dataset.prefetch(1)
+    dataset = dataset.prefetch(10)
     logging.debug('dataset shape: %s', dataset)
     self._iterator = dataset.make_initializable_iterator()
 
@@ -150,8 +150,10 @@ class Seq2SeqAttentionModel(object):
       with tf.variable_scope('embedding'):
         embedding = tf.get_variable('embedding', [vsize, hps.emb_dim],
             initializer=tf.truncated_normal_initializer(stddev=1e-4))
-        emb_encoder_inputs = tf.nn.embedding_lookup(embedding, encoder_inputs)
-        emb_decoder_inputs = tf.nn.embedding_lookup(embedding, decoder_inputs)
+        #emb_encoder_inputs = tf.nn.embedding_lookup(embedding, encoder_inputs)
+        #emb_decoder_inputs = tf.nn.embedding_lookup(embedding, decoder_inputs)
+        emb_encoder_inputs = tf.gather(embedding, encoder_inputs)
+        emb_decoder_inputs = tf.gather(embedding, decoder_inputs)
  
       for layer_i in range(hps.enc_layers):
         with tf.variable_scope('encoder%d' % layer_i):
@@ -183,6 +185,8 @@ class Seq2SeqAttentionModel(object):
           model_outputs = projection_layer(outputs.rnn_output, scope='decoder/dense')
           max_len = tf.shape(model_outputs)[0]
           self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_len, :], loss_weights[:max_len, :])
+          #model_outputs = tf.pad(model_outputs, [[0, hps.dec_timesteps - max_len], [0,0], [0,0]])
+          #self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
           tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
         else:
           emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)
