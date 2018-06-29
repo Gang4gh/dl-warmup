@@ -26,7 +26,7 @@ class Vocab():
 		self.token_eos_id = self._add_word(dg.TOKEN_EOS)
 		SPECIAL_TOKEN_COUNT = len(self._word_to_id)
 
-		with open(vocab_file_path, encoding='utf-8') as f:
+		with open(vocab_file_path) as f:
 			for line in f:
 				parts = line.split()
 				if len(parts) != 2:
@@ -91,7 +91,7 @@ class Vocab():
 def check_vocab_stats(article_path, vocab_path, vocab_cap = 50000, vocab_index_size = 120):
 	vocab = Vocab(vocab_path, vocab_cap, vocab_index_size)
 	line_count, total_word_count, index_word_count, oov_word_count = 0, 0, 0, 0
-	for line in open(article_path, encoding='utf-8'):
+	for line in open(article_path):
 		art_ids, _, _, summary_ids, _, _ = vocab.parse_article(line.strip())
 		line_count += 1
 		total_word_count += len(summary_ids)

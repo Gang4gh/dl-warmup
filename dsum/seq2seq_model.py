@@ -104,10 +104,9 @@ class Seq2SeqAttentionModel(object):
       summary_ids.set_shape([hps.dec_timesteps + 1])
       article_len.set_shape([])
       summary_len.set_shape([])
-      lossmask = tf.sequence_mask(summary_len, hps.dec_timesteps, dtype=tf.float32)
       article_text.set_shape([])
       summary_text.set_shape([])
-      return article_ids, summary_ids[:-1], summary_ids[1:], lossmask, article_len, summary_len, article_text, summary_text
+      return article_ids, summary_ids, article_len, summary_len, article_text, summary_text
 
     self._data_filepath = tf.placeholder(tf.string, shape=[])
     dataset = tf.data.TextLineDataset(self._data_filepath)
@@ -116,7 +115,7 @@ class Seq2SeqAttentionModel(object):
     if hps.mode != 'decode' and hps.mode != 'naive':
       dataset = dataset.repeat()
     dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
-    dataset = dataset.prefetch(10)
+    dataset = dataset.prefetch(4)
     logging.debug('dataset shape: %s', dataset)
     self._iterator = dataset.make_initializable_iterator()
 
@@ -124,11 +123,9 @@ class Seq2SeqAttentionModel(object):
     tf.add_to_collection(tf.GraphKeys.SAVEABLE_OBJECTS, iterator_state)
 
     next_res = self._iterator.get_next()
-    self._articles, self._abstracts, self._targets, self._loss_weights, self._article_lens, self._abstract_lens, self._article_strings, self._summary_strings = next_res
+    self._articles, self._targets, self._article_lens, self._abstract_lens, self._article_strings, self._summary_strings = next_res
     #self._articles = tf.reshape(self._articles, [hps.batch_size, hps.enc_timesteps])
-    #self._abstracts = tf.reshape(self._abstracts, [hps.batch_size, hps.dec_timesteps])
-    #self._targets = tf.reshape(self._targets, [hps.batch_size, hps.dec_timesteps])
-    #self._loss_weights = tf.reshape(self._loss_weights, [hps.batch_size, hps.dec_timesteps]) #tf.float32
+    #self._targets = tf.reshape(self._targets, [hps.batch_size, hps.dec_timesteps + 1])
     #self._article_lens = tf.reshape(self._article_lens, [hps.batch_size])
     #self._abstract_lens = tf.reshape(self._abstract_lens, [hps.batch_size])
 
@@ -140,9 +137,9 @@ class Seq2SeqAttentionModel(object):
 
     with tf.variable_scope('seq2seq'):
       encoder_inputs = tf.transpose(self._articles)
-      decoder_inputs = tf.transpose(self._abstracts)
-      targets = tf.transpose(self._targets)
-      loss_weights = tf.transpose(self._loss_weights)
+      decoder_inputs = tf.transpose(self._targets[:,:-1])
+      targets = tf.transpose(self._targets[:,1:])
+      loss_weights = tf.transpose(tf.sequence_mask(self._abstract_lens, hps.dec_timesteps, dtype=tf.float32))
       article_lens = self._article_lens
       abstract_lens = self._abstract_lens
 
@@ -191,13 +188,13 @@ class Seq2SeqAttentionModel(object):
         else:
           emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)
           article_lens = tf.contrib.seq2seq.tile_batch(article_lens, multiplier=hps.beam_size)
-          fw_state = tf.contrib.seq2seq.tile_batch(fw_state, multiplier=hps.beam_size)
+          initial_dec_state = tf.contrib.seq2seq.tile_batch(initial_dec_state, multiplier=hps.beam_size)
 
           cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
           cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
 
-          initial_state = cell_decoder.zero_state(hps.batch_size * hps.beam_size, tf.float32).clone(cell_state=fw_state)
+          initial_state = cell_decoder.zero_state(hps.batch_size * hps.beam_size, tf.float32).clone(cell_state=initial_dec_state)
           start_token_ids = tf.fill([hps.batch_size], self._vocab.token_start_id)
           end_token_id = self._vocab.token_end_id
 

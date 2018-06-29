@@ -46,7 +46,7 @@ _config_CnnDM = _FilterConfig(name = 'CNN/DailyMail_config',
 def filter_articles(filefn, data_source):
 	config = _config_Gigaword if data_source == 'Gigaword' else _config_CnnDM
 
-	f = sys.stdin if filefn == '-' else open(filefn, encoding='utf-8')
+	f = sys.stdin if filefn == '-' else open(filefn)
 	for l in f:
 		splits = l.strip().split('\t')
 		if len(splits) != 3:
@@ -78,7 +78,7 @@ def filter_articles(filefn, data_source):
 def build_vocab(filefn, max_allowed_freq):
 	counter = collections.Counter()
 
-	for l in open(filefn, encoding='utf-8'):
+	for l in open(filefn):
 		splits = l.strip().split("\t")
 		if len(splits) != 3:
 			continue
@@ -97,7 +97,7 @@ def build_vocab(filefn, max_allowed_freq):
 def count_titles(filefn, max_allowed_count):
 	counter = collections.Counter()
 
-	for l in open(filefn, encoding='utf-8'):
+	for l in open(filefn):
 		splits = l.strip().split("\t")
 		if len(splits) != 3:
 			continue
@@ -112,7 +112,7 @@ def count_titles(filefn, max_allowed_count):
 def calc_histogram(filefn):
 	data = ({}, {})
 
-	for l in open(filefn, encoding='utf-8'):
+	for l in open(filefn):
 		splits = l.strip().split("\t")
 		if len(splits) != 3:
 			continue

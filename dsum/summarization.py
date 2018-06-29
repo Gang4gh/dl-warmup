@@ -44,6 +44,7 @@ tf.app.flags.DEFINE_integer('batch_size', 128, 'the mini-batch size for training
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
 tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
 tf.app.flags.DEFINE_integer('eval_rouge_interval', None, 'interval to calculate ROUGE via `make decode`.')
+tf.app.flags.DEFINE_integer('encoding_layer', 4, 'number of encoder layers.')
 tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
 tf.app.flags.DEFINE_bool('enable_logfile', False, 'whether write logging.debug() to log files.')
 
@@ -78,7 +79,7 @@ def setup_logging():
   logging.debug('commandline: %s' % ' '.join(sys.argv))
 
 def calculate_rouge_scores(summaries, references, max_length, root=None, global_step=None):
-  # install pythonrouge by: pip install git+https://github.com/tagucci/pythonrouge.git
+  # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
   from pythonrouge.pythonrouge import Pythonrouge
 
   logging.info('calculate ROUGE scores of %d summaries' % len(summaries))
@@ -138,7 +139,7 @@ def _Train(model, data_filepath):
     while global_step < FLAGS.max_run_steps:
       (_, summary, _, global_step) = model.run_train_step(sess)
 
-      if global_step <= 10 or global_step <= 100 and global_step % 10 == 0 or global_step % 1000 == 0:
+      if global_step <= 10 or global_step <= 100 and global_step % 60 == 0 or global_step % 1000 == 0:
         elapsed_time = time.time() - last_timestamp
         speed = elapsed_time / max(1, global_step - last_step)
         last_timestamp, last_step = last_timestamp + elapsed_time, global_step
@@ -218,7 +219,7 @@ def _Infer(model, data_filepath, global_step=None):
     # main loop
     logging.info('begin of inferring at global_step %d', global_step)
     summaries, references = [], []
-    with open(result_file, 'w', encoding='utf-8') as result:
+    with open(result_file, 'w') as result:
       batch_count = 0
       while True:
         try:
@@ -259,7 +260,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
     result_file = os.path.join(FLAGS.log_root, 'naive-head-%d-log.txt' % sentence_count)
     summaries, references = [], []
-    with open(result_file, 'w', encoding='utf-8') as result:
+    with open(result_file, 'w') as result:
       batch_count = 0
       while True:
         try:
@@ -285,14 +286,14 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 
 def check_progress_periodically(warmup_delay, check_interval):
-  # when run in philly, default data/vocab/log paths in Makefile are incorrect, so set the correct values in ARGS
+  # when run in Philly, default data/vocab/log paths in Makefile are incorrect, set them in ARGS
   ARGS = '--data_path=%s --vocab_path=%s --log_root=%s' % (
       FLAGS.data_path.replace('training.articles', 'test-sample.articles'),
       FLAGS.vocab_path, FLAGS.log_root)
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
-    res = subprocess.run('make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    res = subprocess.run('LANG=C.UTF-8 make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     pairs = [line.split()[-2:] for line in res.stdout.decode().split('\n') if line]
     scores = [p[1] for p in pairs if p[0].startswith('ROUGE-')]
     if len(scores) == 3:
@@ -307,13 +308,12 @@ def check_progress_periodically(warmup_delay, check_interval):
 
 
 def main(unused_argv):
-  setup_logging()
   tf.set_random_seed(FLAGS.random_seed)
 
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
       batch_size=FLAGS.batch_size,
-      enc_layers=4,
+      enc_layers=FLAGS.encoding_layer,
       enc_timesteps=400,
       dec_timesteps=100,
       num_hidden=256,   # for rnn cell
@@ -337,4 +337,7 @@ def main(unused_argv):
 
 
 if __name__ == '__main__':
+  import locale
+  locale.setlocale(locale.LC_ALL, 'C.UTF-8') # set locale to ensure UTF-8
+  setup_logging() # setting up logging for both stdout and log files
   tf.app.run()
