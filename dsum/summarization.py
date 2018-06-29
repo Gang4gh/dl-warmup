@@ -44,7 +44,7 @@ tf.app.flags.DEFINE_integer('batch_size', 128, 'the mini-batch size for training
 tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
 tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
 tf.app.flags.DEFINE_integer('eval_rouge_interval', None, 'interval to calculate ROUGE via `make decode`.')
-tf.app.flags.DEFINE_integer('encoding_layer', 4, 'number of encoder layers.')
+tf.app.flags.DEFINE_integer('encoding_layer', 1, 'number of encoder layers.')
 tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
 tf.app.flags.DEFINE_bool('enable_logfile', False, 'whether write logging.debug() to log files.')
 
@@ -97,7 +97,7 @@ def calculate_rouge_scores(summaries, references, max_length, root=None, global_
   logging.info('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
 
   if root is not None and global_step is not None:
-    for key in ['ROUGE-1-F','ROUGE-2-F','ROUGE-L-F']:
+    for key in ['ROUGE-1-F', 'ROUGE-2-F']:
       swriter = tf.summary.FileWriter(os.path.join(root, key))
       summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE', simple_value=score[key])])
       swriter.add_summary(summary, global_step)
@@ -308,6 +308,7 @@ def check_progress_periodically(warmup_delay, check_interval):
 
 
 def main(unused_argv):
+  setup_logging() # setting up logging for both stdout and log files
   tf.set_random_seed(FLAGS.random_seed)
 
   hps = seq2seq_model.HParams(
@@ -324,7 +325,7 @@ def main(unused_argv):
   model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
 
   if hps.mode == 'train':
-    # start a thread to check progress then start training
+    # start a thread to check progress periodically during training
     if FLAGS.eval_rouge_interval:
       threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.eval_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
@@ -339,5 +340,4 @@ def main(unused_argv):
 if __name__ == '__main__':
   import locale
   locale.setlocale(locale.LC_ALL, 'C.UTF-8') # set locale to ensure UTF-8
-  setup_logging() # setting up logging for both stdout and log files
   tf.app.run()

@@ -6,6 +6,7 @@ TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 DATASOURCES ?= CNN DailyMail
 TAG ?= notag
 PORT ?= 2345
+TB_DIR ?= model
 
 
 all: labeled-data
@@ -46,7 +47,7 @@ test-sample.articles: test.articles
 # training/test actions
 tb tensorboard:
 	pkill -f tensorboard\ --port\ $(PORT); sleep 1
-	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir model 2>/dev/null &
+	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(TB_DIR) 2>/dev/null &
 	
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
