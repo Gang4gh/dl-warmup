@@ -59,7 +59,7 @@ class Seq2SeqAttentionModel(object):
       article_strings: string of [batch_size]
       summary_strings: string of [batch_size]
       articles: int32 of [batch_size, max_encoding_len]
-      targets: int32 of [batch_size, max_decoding_len]
+      targets: int32 of [batch_size, max_decoding_len + 1]
     """
     to_return = [self._article_strings, self._summary_strings, self._articles, self._targets]
     return sess.run(to_return)

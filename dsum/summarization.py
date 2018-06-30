@@ -25,31 +25,43 @@ import datetime
 import threading
 import subprocess
 import logging
+import argparse
 import tensorflow as tf
 
 from vocab import Vocab
 import seq2seq_model
 import data_generic as dg
 
-FLAGS = tf.app.flags.FLAGS
-tf.app.flags.DEFINE_string('data_path', '', 'path expression to tf.Example.')
-tf.app.flags.DEFINE_string('vocab_path', '', 'path expression to text vocabulary file.')
-tf.app.flags.DEFINE_string('log_root', '', 'directory for model root.')
-tf.app.flags.DEFINE_string('mode', 'train', 'train/eval/decode mode')
-tf.app.flags.DEFINE_integer('max_run_steps', 10000000, 'maximum number of run steps.')
-tf.app.flags.DEFINE_integer('beam_size', 4, 'beam size for beam search decoding.')
-tf.app.flags.DEFINE_integer('checkpoint_secs', 1200, 'how often to checkpoint.')
-tf.app.flags.DEFINE_integer('random_seed', 17, 'a seed value for randomness.')
-tf.app.flags.DEFINE_integer('batch_size', 128, 'the mini-batch size for training.')
-tf.app.flags.DEFINE_integer('decode_train_step', None, 'specify a train_step for the decode procedure.')
-tf.app.flags.DEFINE_integer('vocab_size', 50000, 'use only top vocab_size tokens from a .vocab file.')
-tf.app.flags.DEFINE_integer('eval_rouge_interval', None, 'interval to calculate ROUGE via `make decode`.')
-tf.app.flags.DEFINE_integer('encoding_layer', 1, 'number of encoder layers.')
-tf.app.flags.DEFINE_bool('enable_pointer', True, 'whether enable pointer mechanism.')
-tf.app.flags.DEFINE_bool('enable_logfile', False, 'whether write logging.debug() to log files.')
+parser = argparse.ArgumentParser(description='train or evaluate deep summarization models')
+parser.add_argument('--mode', choices=['train', 'decode', 'naive'], help='running mode', required=True)
+parser.add_argument('--data_path', help='the target .articles data file path', required=True)
+parser.add_argument('--vocab_path', help='the .vocab file path', required=True)
+parser.add_argument('--model_root', help='root folder of models/checkpoints', required=True)
+parser.add_argument('--log_root', help='root folder of summary/log files, will use [model_root] as the default')
+parser.add_argument('--max_run_steps', type=int, default=1000000, help='maximum number of training steps')
+parser.add_argument('--beam_size', type=int, default=4, help='beam size for beam search')
+parser.add_argument('--checkpoint_interval', type=int, default=1200, help='how often to write a checkpoint')
+parser.add_argument('--random_seed', type=int, default=17, help='a seed value for randomness')
+parser.add_argument('--batch_size', type=int, default=128, help='the mini-batch size for training')
+parser.add_argument('--decode_train_step', type=int, help='specify a train_step for the decode procedure')
+parser.add_argument('--eval_rouge_interval', type=int, default=0, help='interval to calculate ROUGE via `make decode`')
+parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
+parser.add_argument('--encoding_layer', type=int, default=4, help='number of encoder layers')
+parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
+parser.add_argument('--enable_logfile', type=int, default=1, help='whether to write logging.debug() to log files')
+
+FLAGS, _ = parser.parse_known_args()
+FLAGS.vocab_path = os.path.join(os.path.split(FLAGS.data_path)[0], FLAGS.vocab_path)
+FLAGS.log_root = FLAGS.log_root or FLAGS.model_root
 
 
-def setup_logging():
+def prepare_context():
+  import locale
+  locale.setlocale(locale.LC_ALL, 'C.UTF-8') # set locale to ensure UTF-8 on all environments
+
+  if not os.path.exists(FLAGS.log_root):
+    os.mkdir(FLAGS.log_root)
+
   class ElapsedFormatter():
     def __init__(self):
       self.start_time = time.time()
@@ -63,9 +75,7 @@ def setup_logging():
   stdout_handler.setFormatter(ElapsedFormatter())
   handlers = [stdout_handler]
   if FLAGS.enable_logfile:
-    if not os.path.exists(FLAGS.log_root):
-      os.mkdir(FLAGS.log_root)
-    log_file = os.path.join(FLAGS.log_root, 'log-%d.txt' % int(time.time()))
+    log_file = os.path.join(FLAGS.log_root, 'log-%s-%d.txt' % (FLAGS.mode, int(time.time())))
     file_handler = logging.FileHandler(filename=log_file)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(fmt='[%(asctime)s] %(filename)s#%(lineno)d %(levelname)-5s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
@@ -76,7 +86,9 @@ def setup_logging():
   )
   logging.getLogger('tensorflow').propagate = False
   tf.logging.set_verbosity(tf.logging.WARN)
+
   logging.debug('commandline: %s' % ' '.join(sys.argv))
+  logging.debug('FLAGS: %s' % FLAGS)
 
 def calculate_rouge_scores(summaries, references, max_length, root=None, global_step=None):
   # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
@@ -116,11 +128,11 @@ def _Train(model, data_filepath):
   for var in tf.trainable_variables(): logging.debug('  %s' % var)
 
   ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=6, max_to_keep=3)
-  ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_secs)
+  ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_interval)
 
   with tf.Session(config=prepare_session_config()) as sess:
     # initialize or restore model
-    ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
+    ckpt_path = tf.train.latest_checkpoint(FLAGS.model_root)
     if ckpt_path is None:
       logging.info('initialize model variables')
       _ = sess.run(tf.global_variables_initializer())
@@ -139,58 +151,20 @@ def _Train(model, data_filepath):
     while global_step < FLAGS.max_run_steps:
       (_, summary, _, global_step) = model.run_train_step(sess)
 
-      if global_step <= 10 or global_step <= 100 and global_step % 60 == 0 or global_step % 1000 == 0:
+      if global_step <= 10 or global_step <= 300 and global_step % 50 == 0 or global_step % 1000 == 0:
         elapsed_time = time.time() - last_timestamp
         speed = elapsed_time / max(1, global_step - last_step)
         last_timestamp, last_step = last_timestamp + elapsed_time, global_step
         logging.info('finish global_step %d, speed = %f sec/step', global_step, speed)
 
       if ckpt_timer.should_trigger_for_step(global_step):
-        ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
+        ckpt_saver.save(sess, os.path.join(FLAGS.model_root, 'model.ckpt'), global_step=global_step)
         ckpt_timer.update_last_triggered_step(global_step)
 
       summary_writer.add_summary(summary, global_step)
 
-    ckpt_saver.save(sess, os.path.join(FLAGS.log_root, 'model.ckpt'), global_step=global_step)
+    ckpt_saver.save(sess, os.path.join(FLAGS.model_root, 'model.ckpt'), global_step=global_step)
     logging.info('end of training at global_step %d', global_step)
-
-
-def _Eval(model, data_batcher, vocab=None):
-  """Runs model eval."""
-  model.build_graph()
-  saver = tf.train.Saver()
-  summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_root, 'eval'))
-  sess = tf.Session(config=prepare_session_config())
-  while True:
-    time.sleep(60)
-    try:
-      ckpt_state = tf.train.get_checkpoint_state(FLAGS.log_root)
-    except tf.errors.OutOfRangeError as e:
-      tf.logging.error('Cannot restore checkpoint: %s', e)
-      continue
-
-    if not (ckpt_state and ckpt_state.model_checkpoint_path):
-      tf.logging.info('No model to eval yet at %s', FLAGS.log_root)
-      continue
-
-    tf.logging.info('Loading checkpoint %s', ckpt_state.model_checkpoint_path)
-    saver.restore(sess, ckpt_state.model_checkpoint_path)
-
-    (article_batch, abstract_batch, targets, article_lens, abstract_lens,
-     loss_weights, _, _) = data_batcher.NextBatch()
-    (summaries, _, train_step) = model.run_eval_step(
-        sess, article_batch, abstract_batch, targets, article_lens,
-        abstract_lens, loss_weights)
-    tf.logging.info(
-        'article:  %s',
-        ' '.join(data.Ids2Words(article_batch[0][:].tolist(), vocab)))
-    tf.logging.info(
-        'abstract: %s',
-        ' '.join(data.Ids2Words(abstract_batch[0][:].tolist(), vocab)))
-
-    summary_writer.add_summary(summaries, train_step)
-    if train_step % 100 == 0:
-      summary_writer.flush()
 
 
 def _Infer(model, data_filepath, global_step=None):
@@ -205,7 +179,7 @@ def _Infer(model, data_filepath, global_step=None):
 
   with tf.Session(config=prepare_session_config()) as sess:
     # restore model
-    ckpt_path = tf.train.latest_checkpoint(FLAGS.log_root)
+    ckpt_path = tf.train.latest_checkpoint(FLAGS.model_root)
     if global_step is not None:
       ckpt_path = '%s-%d' % (ckpt_path.split('-')[0], global_step)
     logging.info('restore model from %s', ckpt_path)
@@ -287,13 +261,13 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 def check_progress_periodically(warmup_delay, check_interval):
   # when run in Philly, default data/vocab/log paths in Makefile are incorrect, set them in ARGS
-  ARGS = '--data_path=%s --vocab_path=%s --log_root=%s' % (
-      FLAGS.data_path.replace('training.articles', 'test-sample.articles'),
-      FLAGS.vocab_path, FLAGS.log_root)
+  ARGS = '--model_root=%s --data_path=%s' % (
+      FLAGS.model_root,
+      FLAGS.data_path.replace('training.articles', 'test-sample.articles'))
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
-    res = subprocess.run('LANG=C.UTF-8 make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    res = subprocess.run('make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     pairs = [line.split()[-2:] for line in res.stdout.decode().split('\n') if line]
     scores = [p[1] for p in pairs if p[0].startswith('ROUGE-')]
     if len(scores) == 3:
@@ -308,7 +282,6 @@ def check_progress_periodically(warmup_delay, check_interval):
 
 
 def main(unused_argv):
-  setup_logging() # setting up logging for both stdout and log files
   tf.set_random_seed(FLAGS.random_seed)
 
   hps = seq2seq_model.HParams(
@@ -338,6 +311,5 @@ def main(unused_argv):
 
 
 if __name__ == '__main__':
-  import locale
-  locale.setlocale(locale.LC_ALL, 'C.UTF-8') # set locale to ensure UTF-8
+  prepare_context() # prepare locale, logging and output folder
   tf.app.run()

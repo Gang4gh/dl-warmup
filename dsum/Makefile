@@ -50,10 +50,9 @@ tb tensorboard:
 	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(TB_DIR) 2>/dev/null &
 	
 tm trainmodel: labeled-data
-	python3 summarization.py --mode=train \
-		--batch_size=64 --eval_rouge_interval=3600 \
+	python3 summarization.py --mode=train --model_root=model \
 		--data_path=training.articles --vocab_path=training.vocab \
-		--enable_logfile=True --log_root=model $(ARGS)
+		--batch_size=64 --eval_rouge_interval=3600 $(ARGS)
 
 cleanmodel:
 	rm -rf model
@@ -72,13 +71,12 @@ tc trainingcenter: labeled-data
 	$(MAKE) -C $(TRAINING_ROOT) train
 
 decode:
-	python3 summarization.py --mode=decode \
-		--log_root=model --batch_size=20 \
+	python3 summarization.py --mode=decode --model_root=model \
 		--data_path=test-sample.articles --vocab_path=training.vocab \
-		--beam_size=8 $(ARGS)
+		--batch_size=20 --beam_size=8 --enable_logfile=0 $(ARGS)
 
 cdecode:
 	watch -n 7200 $(MAKE) decode
 
 naive: labeled-data
-	python3 summarization.py --mode=naive --log_root=model --batch_size=25 --data_path=test.articles --vocab_path=training.vocab
+	python3 summarization.py --mode=naive --model_root=model --data_path=test.articles --vocab_path=training.vocab --batch_size=25
