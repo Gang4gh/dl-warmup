@@ -35,9 +35,9 @@ import data_generic as dg
 parser = argparse.ArgumentParser(description='train or evaluate deep summarization models')
 parser.add_argument('--mode', choices=['train', 'decode', 'naive'], help='running mode', required=True)
 parser.add_argument('--data_path', help='the target .articles data file path', required=True)
-parser.add_argument('--vocab_path', help='the .vocab file path', required=True)
-parser.add_argument('--model_root', help='root folder of models/checkpoints', required=True)
-parser.add_argument('--log_root', help='root folder of summary/log files, will use [model_root] as the default')
+parser.add_argument('--vocab_path', default='training.vocab', help='the .vocab file path')
+parser.add_argument('--model_root', help='root folder of models/checkpoints/summaries', required=True)
+parser.add_argument('--log_root', help='root folder of logs, will use [model_root] as the default')
 parser.add_argument('--max_run_steps', type=int, default=1000000, help='maximum number of training steps')
 parser.add_argument('--beam_size', type=int, default=4, help='beam size for beam search')
 parser.add_argument('--checkpoint_interval', type=int, default=1200, help='how often to write a checkpoint')
@@ -59,6 +59,8 @@ def prepare_context():
   import locale
   locale.setlocale(locale.LC_ALL, 'C.UTF-8') # set locale to ensure UTF-8 on all environments
 
+  if not os.path.exists(FLAGS.model_root):
+    os.mkdir(FLAGS.model_root)
   if not os.path.exists(FLAGS.log_root):
     os.mkdir(FLAGS.log_root)
 
@@ -136,12 +138,12 @@ def _Train(model, data_filepath):
     if ckpt_path is None:
       logging.info('initialize model variables')
       _ = sess.run(tf.global_variables_initializer())
-      summary_writer = tf.summary.FileWriter(FLAGS.log_root, graph=sess.graph)
+      summary_writer = tf.summary.FileWriter(FLAGS.model_root, graph=sess.graph)
       model.initialize_dataset(sess, data_filepath)
     else:
       logging.info('restore model from %s', ckpt_path)
       ckpt_saver.restore(sess, ckpt_path)
-      summary_writer = tf.summary.FileWriter(FLAGS.log_root)
+      summary_writer = tf.summary.FileWriter(FLAGS.model_root)
 
     global_step = sess.run(model.global_step) - 1
 
@@ -172,7 +174,7 @@ def _Infer(model, data_filepath, global_step=None):
   logging.info('build the model graph')
   model.build_graph()
 
-  decode_root = os.path.join(FLAGS.log_root, 'decode')
+  decode_root = os.path.join(FLAGS.model_root, 'decode')
   if not os.path.exists(decode_root):
     os.mkdir(decode_root)
   ckpt_saver = tf.train.Saver()
@@ -232,7 +234,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
   with tf.Session(config=prepare_session_config()) as sess:
     model.initialize_dataset(sess, data_filepath)
 
-    result_file = os.path.join(FLAGS.log_root, 'naive-head-%d-log.txt' % sentence_count)
+    result_file = os.path.join(FLAGS.model_root, 'naive-head-%d-summary.txt' % sentence_count)
     summaries, references = [], []
     with open(result_file, 'w') as result:
       batch_count = 0
@@ -260,10 +262,11 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 
 def check_progress_periodically(warmup_delay, check_interval):
-  # when run in Philly, default data/vocab/log paths in Makefile are incorrect, set them in ARGS
-  ARGS = '--model_root=%s --data_path=%s' % (
-      FLAGS.model_root,
-      FLAGS.data_path.replace('training.articles', 'test-sample.articles'))
+  # when run in Philly, some arguments in Makefile may be incorrect, so set them in ARGS
+  passby_attributes = ['model_root', 'data_path', 'encoding_layer']
+  decode_flags = vars(FLAGS)
+  decode_flags['data_path'] = FLAGS.data_path.replace('training.articles', 'test-sample.articles')
+  ARGS = ' '.join(['--%s=%s' % (name, decode_flags[name]) for name in passby_attributes])
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()
@@ -281,7 +284,7 @@ def check_progress_periodically(warmup_delay, check_interval):
     time.sleep(check_interval - timedelta.total_seconds() % check_interval)
 
 
-def main(unused_argv):
+def main(argv):
   tf.set_random_seed(FLAGS.random_seed)
 
   hps = seq2seq_model.HParams(
@@ -302,8 +305,6 @@ def main(unused_argv):
     if FLAGS.eval_rouge_interval:
       threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.eval_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
-  elif hps.mode == 'eval':
-    _Eval(model, vocab=vocab)
   elif hps.mode == 'decode':
     _Infer(model, FLAGS.data_path, FLAGS.decode_train_step)
   elif hps.mode == 'naive':
