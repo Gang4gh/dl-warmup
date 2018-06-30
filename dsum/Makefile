@@ -52,7 +52,7 @@ tb tensorboard:
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
 		--model_root=model --data_path=training.articles \
-		--batch_size=4 --eval_rouge_interval=3600 $(ARGS)
+		--batch_size=64 --eval_rouge_interval=3600 $(ARGS)
 
 cleanmodel:
 	rm -rf model

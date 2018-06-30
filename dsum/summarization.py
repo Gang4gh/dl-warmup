@@ -34,9 +34,9 @@ import data_generic as dg
 
 parser = argparse.ArgumentParser(description='train or evaluate deep summarization models')
 parser.add_argument('--mode', choices=['train', 'decode', 'naive'], help='running mode', required=True)
+parser.add_argument('--model_root', help='root folder of models/checkpoints/summaries', required=True)
 parser.add_argument('--data_path', help='the target .articles data file path', required=True)
 parser.add_argument('--vocab_path', default='training.vocab', help='the .vocab file path')
-parser.add_argument('--model_root', help='root folder of models/checkpoints/summaries', required=True)
 parser.add_argument('--log_root', help='root folder of logs, will use [model_root] as the default')
 parser.add_argument('--max_run_steps', type=int, default=1000000, help='maximum number of training steps')
 parser.add_argument('--beam_size', type=int, default=4, help='beam size for beam search')
@@ -44,14 +44,15 @@ parser.add_argument('--checkpoint_interval', type=int, default=1200, help='how o
 parser.add_argument('--random_seed', type=int, default=17, help='a seed value for randomness')
 parser.add_argument('--batch_size', type=int, default=128, help='the mini-batch size for training')
 parser.add_argument('--decode_train_step', type=int, help='specify a train_step for the decode procedure')
-parser.add_argument('--eval_rouge_interval', type=int, default=0, help='interval to calculate ROUGE via `make decode`')
+parser.add_argument('--log_rouge_interval', type=int, default=0, help='interval to ouptut ROUGE via `make decode`')
+parser.add_argument('--log_loss_interval', type=int, default=1000, help='interval to output loss to console')
 parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
 parser.add_argument('--encoding_layer', type=int, default=4, help='number of encoder layers')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_logfile', type=int, default=1, help='whether to write logging.debug() to log files')
 
 FLAGS, _ = parser.parse_known_args()
-FLAGS.vocab_path = os.path.join(os.path.split(FLAGS.data_path)[0], FLAGS.vocab_path)
+FLAGS.vocab_path = os.path.join(os.path.dirname(FLAGS.data_path), FLAGS.vocab_path)
 FLAGS.log_root = FLAGS.log_root or FLAGS.model_root
 
 
@@ -89,8 +90,8 @@ def prepare_context():
   logging.getLogger('tensorflow').propagate = False
   tf.logging.set_verbosity(tf.logging.WARN)
 
-  logging.debug('commandline: %s' % ' '.join(sys.argv))
-  logging.debug('FLAGS: %s' % FLAGS)
+  logging.info('commandline: %s' % ' '.join(sys.argv))
+  logging.info('FLAGS: %s' % FLAGS)
 
 def calculate_rouge_scores(summaries, references, max_length, root=None, global_step=None):
   # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
@@ -151,13 +152,13 @@ def _Train(model, data_filepath):
     last_timestamp, last_step = time.time(), global_step
     logging.info('start of training at global_step %d', global_step + 1)
     while global_step < FLAGS.max_run_steps:
-      (_, summary, _, global_step) = model.run_train_step(sess)
+      (_, summary, loss, global_step) = model.run_train_step(sess)
 
-      if global_step <= 10 or global_step <= 300 and global_step % 50 == 0 or global_step % 1000 == 0:
+      if global_step <= 10 or global_step <= 300 and global_step % 50 == 0 or global_step % FLAGS.log_loss_interval == 0:
         elapsed_time = time.time() - last_timestamp
         speed = elapsed_time / max(1, global_step - last_step)
         last_timestamp, last_step = last_timestamp + elapsed_time, global_step
-        logging.info('finish global_step %d, speed = %f sec/step', global_step, speed)
+        logging.info('finish global_step %d, loss = %f, speed = %f sec/step', global_step, loss, speed)
 
       if ckpt_timer.should_trigger_for_step(global_step):
         ckpt_saver.save(sess, os.path.join(FLAGS.model_root, 'model.ckpt'), global_step=global_step)
@@ -302,8 +303,8 @@ def main(argv):
 
   if hps.mode == 'train':
     # start a thread to check progress periodically during training
-    if FLAGS.eval_rouge_interval:
-      threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.eval_rouge_interval), daemon=True).start()
+    if FLAGS.log_rouge_interval:
+      threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.log_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'decode':
     _Infer(model, FLAGS.data_path, FLAGS.decode_train_step)
