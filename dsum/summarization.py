@@ -38,7 +38,7 @@ parser.add_argument('--model_root', help='root folder of models/checkpoints/summ
 parser.add_argument('--data_path', help='the target .articles data file path', required=True)
 parser.add_argument('--vocab_path', default='training.vocab', help='the .vocab file path')
 parser.add_argument('--log_root', help='root folder of logs, will use [model_root] as the default')
-parser.add_argument('--max_run_steps', type=int, default=1000000, help='maximum number of training steps')
+parser.add_argument('--max_train_step', type=int, default=1000000, help='maximum number of training steps')
 parser.add_argument('--beam_size', type=int, default=4, help='beam size for beam search')
 parser.add_argument('--checkpoint_interval', type=int, default=1200, help='how often to write a checkpoint')
 parser.add_argument('--random_seed', type=int, default=17, help='a seed value for randomness')
@@ -49,7 +49,7 @@ parser.add_argument('--log_loss_interval', type=int, default=1000, help='interva
 parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
 parser.add_argument('--encoding_layer', type=int, default=4, help='number of encoder layers')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
-parser.add_argument('--enable_logfile', type=int, default=1, help='whether to write logging.debug() to log files')
+parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
 
 FLAGS, _ = parser.parse_known_args()
 FLAGS.vocab_path = os.path.join(os.path.dirname(FLAGS.data_path), FLAGS.vocab_path)
@@ -77,7 +77,7 @@ def prepare_context():
   stdout_handler.setLevel(logging.INFO)
   stdout_handler.setFormatter(ElapsedFormatter())
   handlers = [stdout_handler]
-  if FLAGS.enable_logfile:
+  if FLAGS.enable_log2file:
     log_file = os.path.join(FLAGS.log_root, 'log-%s-%d.txt' % (FLAGS.mode, int(time.time())))
     file_handler = logging.FileHandler(filename=log_file)
     file_handler.setLevel(logging.DEBUG)
@@ -150,15 +150,15 @@ def _Train(model, data_filepath):
 
     # main loop
     last_timestamp, last_step = time.time(), global_step
-    logging.info('start of training at global_step %d', global_step + 1)
-    while global_step < FLAGS.max_run_steps:
+    logging.info('start of training at step %d', global_step + 1)
+    while global_step < FLAGS.max_train_step:
       (_, summary, loss, global_step) = model.run_train_step(sess)
 
       if global_step <= 10 or global_step <= 300 and global_step % 50 == 0 or global_step % FLAGS.log_loss_interval == 0:
         elapsed_time = time.time() - last_timestamp
         speed = elapsed_time / max(1, global_step - last_step)
         last_timestamp, last_step = last_timestamp + elapsed_time, global_step
-        logging.info('finish global_step %d, loss = %f, speed = %f sec/step', global_step, loss, speed)
+        logging.info('step %d: loss = %f, speed = %f sec/step', global_step, loss, speed)
 
       if ckpt_timer.should_trigger_for_step(global_step):
         ckpt_saver.save(sess, os.path.join(FLAGS.model_root, 'model.ckpt'), global_step=global_step)
@@ -167,7 +167,7 @@ def _Train(model, data_filepath):
       summary_writer.add_summary(summary, global_step)
 
     ckpt_saver.save(sess, os.path.join(FLAGS.model_root, 'model.ckpt'), global_step=global_step)
-    logging.info('end of training at global_step %d', global_step)
+    logging.info('end of training at step %d', global_step)
 
 
 def _Infer(model, data_filepath, global_step=None):
@@ -264,10 +264,10 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 def check_progress_periodically(warmup_delay, check_interval):
   # when run in Philly, some arguments in Makefile may be incorrect, so set them in ARGS
-  passby_attributes = ['model_root', 'data_path', 'encoding_layer']
-  decode_flags = vars(FLAGS)
+  convey_attributes = ['model_root', 'data_path', 'encoding_layer']
+  decode_flags = vars(FLAGS).copy()
   decode_flags['data_path'] = FLAGS.data_path.replace('training.articles', 'test-sample.articles')
-  ARGS = ' '.join(['--%s=%s' % (name, decode_flags[name]) for name in passby_attributes])
+  ARGS = ' '.join(['--%s=%s' % (name, decode_flags[name]) for name in convey_attributes])
   time.sleep(warmup_delay)
   while True:
     start_time = datetime.datetime.now()

@@ -6,7 +6,7 @@ TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 DATASOURCES ?= CNN DailyMail
 TAG ?= notag
 PORT ?= 2345
-TB_DIR ?= model
+MDIR ?= model
 
 
 all: labeled-data
@@ -47,12 +47,12 @@ test-sample.articles: test.articles
 # training/test actions
 tb tensorboard:
 	pkill -f tensorboard\ --port\ $(PORT); sleep 1
-	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(TB_DIR) 2>/dev/null &
+	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
 	
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
 		--model_root=model --data_path=training.articles \
-		--batch_size=64 --eval_rouge_interval=3600 $(ARGS)
+		--batch_size=64 --log_rouge_interval=3600 $(ARGS)
 
 cleanmodel:
 	rm -rf model
@@ -73,10 +73,10 @@ tc trainingcenter: labeled-data
 decode:
 	python3 summarization.py --mode=decode \
 		--model_root=model --data_path=test-sample.articles \
-		--batch_size=20 --beam_size=8 --enable_logfile=0 $(ARGS)
+		--batch_size=20 --beam_size=8 --enable_log2file=0 $(ARGS)
 
 cdecode:
-	watch -n 7200 $(MAKE) decode
+	watch -n 3600 $(MAKE) decode
 
 naive: labeled-data
-	python3 summarization.py --mode=naive --model_root=model --data_path=test.articles --batch_size=25
+	python3 summarization.py --mode=naive --model_root=model --data_path=test.articles

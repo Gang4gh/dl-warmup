@@ -38,17 +38,6 @@ class Seq2SeqAttentionModel(object):
     to_return = [self._train_op, self._summaries, self._loss, self.global_step]
     return sess.run(to_return)
 
-  def run_eval_step(self, sess, article_batch, abstract_batch, targets,
-                    article_lens, abstract_lens, loss_weights):
-    to_return = [self._summaries, self._loss, self.global_step]
-    return sess.run(to_return,
-                    feed_dict={self._articles: article_batch,
-                               self._abstracts: abstract_batch,
-                               self._targets: targets,
-                               self._article_lens: article_lens,
-                               self._abstract_lens: abstract_lens,
-                               self._loss_weights: loss_weights})
-
   def run_infer_step(self, sess):
     to_return = [self._predicted_ids, self._article_strings, self._summary_strings]
     return sess.run(to_return)
@@ -65,6 +54,7 @@ class Seq2SeqAttentionModel(object):
     return sess.run(to_return)
 
   def initialize_dataset(self, sess, data_filepath):
+    logging.info('initialize dataset data_filepath = %s' % data_filepath)
     sess.run(self._iterator.initializer,
              feed_dict = {self._data_filepath: data_filepath})
 
@@ -137,8 +127,8 @@ class Seq2SeqAttentionModel(object):
 
     with tf.variable_scope('seq2seq'):
       encoder_inputs = tf.transpose(self._articles)
-      decoder_inputs = tf.transpose(self._targets[:,:-1])
-      targets = tf.transpose(self._targets[:,1:])
+      decoder_inputs = tf.transpose(self._targets[:, :-1])
+      targets = tf.transpose(self._targets[:, 1:])
       loss_weights = tf.transpose(tf.sequence_mask(self._abstract_lens, hps.dec_timesteps, dtype=tf.float32))
       article_lens = self._article_lens
       abstract_lens = self._abstract_lens
