@@ -55,6 +55,8 @@ FLAGS, _ = parser.parse_known_args()
 FLAGS.vocab_path = os.path.join(os.path.dirname(FLAGS.data_path), FLAGS.vocab_path)
 FLAGS.log_root = FLAGS.log_root or FLAGS.model_root
 
+FLAGS.summary_root = os.path.join(FLAGS.model_root, 'tb')
+
 
 def prepare_context():
   import locale
@@ -62,6 +64,8 @@ def prepare_context():
 
   if not os.path.exists(FLAGS.model_root):
     os.mkdir(FLAGS.model_root)
+  if not os.path.exists(FLAGS.summary_root):
+    os.mkdir(FLAGS.summary_root)
   if not os.path.exists(FLAGS.log_root):
     os.mkdir(FLAGS.log_root)
 
@@ -139,13 +143,12 @@ def _Train(model, data_filepath):
     if ckpt_path is None:
       logging.info('initialize model variables')
       _ = sess.run(tf.global_variables_initializer())
-      summary_writer = tf.summary.FileWriter(FLAGS.model_root, graph=sess.graph)
       model.initialize_dataset(sess, data_filepath)
     else:
       logging.info('restore model from %s', ckpt_path)
       ckpt_saver.restore(sess, ckpt_path)
-      summary_writer = tf.summary.FileWriter(FLAGS.model_root)
 
+    summary_writer = tf.summary.FileWriter(FLAGS.summary_root, graph=sess.graph if ckpt_path is None else None)
     global_step = sess.run(model.global_step) - 1
 
     # main loop
@@ -224,7 +227,7 @@ def _Infer(model, data_filepath, global_step=None):
         if batch_count % 40 == 0:
           logging.info('finished batch_count = %d', batch_count)
     logging.info('end of inferring at global_step %d', global_step)
-    calculate_rouge_scores(summaries, references, model._hps.dec_timesteps, root=decode_root, global_step=global_step)
+    calculate_rouge_scores(summaries, references, model._hps.dec_timesteps, root=FLAGS.summary_root, global_step=global_step)
 
 
 def _naive_baseline(model, data_filepath, sentence_count=3):
