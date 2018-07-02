@@ -5,3 +5,4 @@
 	default = simple
 [core]
 	pager = less -x1,5
+	editor = vi
