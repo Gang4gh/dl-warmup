@@ -24,7 +24,7 @@ HParams = namedtuple('HParams',
                      'mode batch_size '
                      'enc_layers enc_timesteps dec_timesteps '
                      'num_hidden emb_dim '
-                     'beam_size')
+                     'beam_size init_dec_state')
 
 
 class Seq2SeqAttentionModel(object):
@@ -152,9 +152,11 @@ class Seq2SeqAttentionModel(object):
           emb_encoder_inputs = tf.concat(rnn_outputs, 2)
       emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
 
-      initial_dec_state = fw_state
-      #initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], -1), hps.num_hidden)
-      #initial_dec_state = tf.contrib.rnn.LSTMStateTuple(initial_dec_state[0], initial_dec_state[1])
+      if hps.init_dec_state == 'fwbw':
+        initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], -1), hps.num_hidden)
+        initial_dec_state = tf.contrib.rnn.LSTMStateTuple(initial_dec_state[0], initial_dec_state[1])
+      else:
+        initial_dec_state = fw_state
 
       projection_layer = tf.layers.Dense(vsize, use_bias=True)
 

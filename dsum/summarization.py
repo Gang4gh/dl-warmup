@@ -47,7 +47,8 @@ parser.add_argument('--decode_train_step', type=int, help='specify a train_step 
 parser.add_argument('--log_rouge_interval', type=int, default=0, help='interval to ouptut ROUGE via `make decode`')
 parser.add_argument('--log_loss_interval', type=int, default=1000, help='interval to output loss to console')
 parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
-parser.add_argument('--encoding_layer', type=int, default=4, help='number of encoder layers')
+parser.add_argument('--encoding_layer', type=int, default=1, help='number of encoder layers')
+parser.add_argument('--init_dec_state', default='fwbw', choices=['fw', 'fwbw'], help='the source of initial decoder state')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
 
@@ -267,7 +268,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 def check_progress_periodically(warmup_delay, check_interval):
   # when run in Philly, some arguments in Makefile may be incorrect, so set them in ARGS
-  convey_attributes = ['model_root', 'data_path', 'encoding_layer']
+  convey_attributes = ['model_root', 'data_path', 'encoding_layer', 'init_dec_state']
   decode_flags = vars(FLAGS).copy()
   decode_flags['data_path'] = FLAGS.data_path.replace('training.articles', 'test-sample.articles')
   ARGS = ' '.join(['--%s=%s' % (name, decode_flags[name]) for name in convey_attributes])
@@ -293,6 +294,7 @@ def main(argv):
 
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
+      init_dec_state=FLAGS.init_dec_state,
       batch_size=FLAGS.batch_size,
       enc_layers=FLAGS.encoding_layer,
       enc_timesteps=400,

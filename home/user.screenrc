@@ -7,13 +7,13 @@ termcapinfo xterm* ti@:te@
 caption always '%{= kw} %-w%{+u kg}%n %t%{-}%+w %-= | %{=b ky}@%H '
 
 # default screens
-screen -t training  1
-screen -t training2 2
-screen -t bash      3
-screen -t bash2     4
-screen -t bash3     5
-screen -t nvidiasmi 8 watch -n 3 nvidia-smi # monitor GPU utilization rate
-screen -t python3   9 python3 # put python at the end
+screen -t training   1
+screen -t training2  2
+screen -t bash       3
+screen -t bash2      4
+screen -t bash3      5
+screen -t nvidia-smi 8 watch -n 3 nvidia-smi # monitor GPU utilization rate
+screen -t python3    9 python3 # put python at the end
 select 3
 bind c screen 1 # window numbering starts at 1 not 0
 bind 0 select 10

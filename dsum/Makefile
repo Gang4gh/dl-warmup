@@ -73,7 +73,7 @@ tc trainingcenter: labeled-data
 decode:
 	python3 summarization.py --mode=decode \
 		--model_root=model --data_path=test-sample.articles \
-		--batch_size=20 --beam_size=8 --enable_log2file=0 $(ARGS)
+		--batch_size=20 --beam_size=4 --enable_log2file=0 $(ARGS)
 
 cdecode:
 	watch -n 3600 $(MAKE) decode
