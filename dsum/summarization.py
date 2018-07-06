@@ -302,7 +302,7 @@ def main(argv):
       dec_timesteps=100,
       num_hidden=256,   # for rnn cell
       emb_dim=128,
-      adam_epsilon=FLAGS.adam_psilon,
+      adam_epsilon=FLAGS.adam_epsilon,
       beam_size=FLAGS.beam_size)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
