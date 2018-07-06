@@ -24,7 +24,7 @@ HParams = namedtuple('HParams',
                      'mode batch_size '
                      'enc_layers enc_timesteps dec_timesteps '
                      'num_hidden emb_dim '
-                     'beam_size init_dec_state')
+                     'beam_size init_dec_state adam_epsilon')
 
 
 class Seq2SeqAttentionModel(object):
@@ -75,7 +75,7 @@ class Seq2SeqAttentionModel(object):
 
       summary_len = len(summary_ids)
       if summary_len <= hps.dec_timesteps - 1:
-        summary_ids = [start_id] + summary_ids + [end_id] + [pad_id] * (hps.dec_timesteps - 1 - summary_len)
+        summary_ids = [start_id] + summary_ids + [end_id] * (hps.dec_timesteps - summary_len)
         summary_len += 1
       else:
         summary_ids = [start_id] + summary_ids[:hps.dec_timesteps]
@@ -142,15 +142,16 @@ class Seq2SeqAttentionModel(object):
         emb_encoder_inputs = tf.gather(embedding, encoder_inputs)
         emb_decoder_inputs = tf.gather(embedding, decoder_inputs)
  
+      encoding_layer_inputs = emb_encoder_inputs
       for layer_i in range(hps.enc_layers):
         with tf.variable_scope('encoder%d' % layer_i):
           cell_fw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           cell_bw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           (rnn_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
-              cell_fw, cell_bw, emb_encoder_inputs,
+              cell_fw, cell_bw, encoding_layer_inputs,
               sequence_length=article_lens, dtype=tf.float32, time_major=True)
-          emb_encoder_inputs = tf.concat(rnn_outputs, 2)
-      emb_memory = tf.transpose(emb_encoder_inputs, [1, 0, 2])
+          encoding_layer_inputs = tf.concat([rnn_outputs[0], rnn_outputs[1], emb_encoder_inputs], 2)
+      emb_memory = tf.transpose(encoding_layer_inputs, [1, 0, 2])
 
       if hps.init_dec_state == 'fwbw':
         initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], -1), hps.num_hidden)
@@ -201,7 +202,7 @@ class Seq2SeqAttentionModel(object):
           self._predicted_ids = tf.transpose(outputs.predicted_ids[:, :, 0])
 
   def _add_train_op(self):
-    self._train_op = tf.train.AdamOptimizer().minimize(self._loss, global_step=self.global_step, name='train_op')
+    self._train_op = tf.train.AdamOptimizer(epsilon=self._hps.adam_epsilon).minimize(self._loss, global_step=self.global_step, name='train_op')
 
   def build_graph(self):
     self._setup_model_input()

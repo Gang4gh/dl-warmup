@@ -48,6 +48,7 @@ parser.add_argument('--log_rouge_interval', type=int, default=0, help='interval 
 parser.add_argument('--log_loss_interval', type=int, default=1000, help='interval to output loss to console')
 parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
 parser.add_argument('--encoding_layer', type=int, default=1, help='number of encoder layers')
+parser.add_argument('--adam_epsilon', type=float, default=1e-8, help='the epsilon used by adam')
 parser.add_argument('--init_dec_state', default='fwbw', choices=['fw', 'fwbw'], help='the source of initial decoder state')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
@@ -300,7 +301,8 @@ def main(argv):
       enc_timesteps=400,
       dec_timesteps=100,
       num_hidden=256,   # for rnn cell
-      emb_dim=128,      # If 0, don't use embedding
+      emb_dim=128,
+      adam_epsilon=FLAGS.adam_psilon,
       beam_size=FLAGS.beam_size)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
