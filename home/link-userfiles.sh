@@ -9,6 +9,13 @@ if [ "$1" == "setup" ] && [ "$2" == "$HOME" ]; then
 	for fi in $CONFIG_FILES; do
 		ln -srf user$fi ~/$fi
 	done
+	mkdir -p ~/.vim/after/syntax/
+	cat > ~/.vim/after/syntax/python.vim << EOL
+" Highlight docstrings as comments, not string, for Python
+syn region pythonDocstring  start=+^\s*[uU]\?[rR]\?"""+ end=+"""+ keepend excludenl contains=pythonEscape,@Spell,pythonDoctest,pythonDocTest2,pythonSpaceError
+syn region pythonDocstring  start=+^\s*[uU]\?[rR]\?'''+ end=+'''+ keepend excludenl contains=pythonEscape,@Spell,pythonDoctest,pythonDocTest2,pythonSpaceError
+hi def link pythonDocstring pythonComment
+EOL
 	echo done.
 else
 	echo Invalid arguments.
