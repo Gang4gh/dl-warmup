@@ -15,7 +15,7 @@ syntax on
 set t_Co:256
 colorscheme desert
 hi Constant ctermfg=darkgreen
-hi Identifier ctermfg=red
+hi Identifier ctermfg=lightgreen
 hi LineNr ctermfg=darkyellow
 
 " enable showing a '|' for each tab
