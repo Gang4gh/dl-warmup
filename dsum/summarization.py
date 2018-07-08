@@ -48,6 +48,7 @@ parser.add_argument('--log_rouge_interval', type=int, default=0, help='interval 
 parser.add_argument('--log_loss_interval', type=int, default=1000, help='interval to output loss to console')
 parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
 parser.add_argument('--encoding_layer', type=int, default=1, help='number of encoder layers')
+parser.add_argument('--embedding_dimension', type=int, default=128, help='the dimension of embedding vector')
 parser.add_argument('--adam_epsilon', type=float, default=1e-8, help='the epsilon used by adam')
 parser.add_argument('--init_dec_state', default='fwbw', choices=['fw', 'fwbw'], help='the source of initial decoder state')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
@@ -269,7 +270,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 def check_progress_periodically(warmup_delay, check_interval):
   # when run in Philly, some arguments in Makefile may be incorrect, so set them in ARGS
-  convey_attributes = ['model_root', 'data_path', 'encoding_layer', 'init_dec_state']
+  convey_attributes = ['model_root', 'data_path', 'encoding_layer', 'init_dec_state', 'vocab_size']
   decode_flags = vars(FLAGS).copy()
   decode_flags['data_path'] = FLAGS.data_path.replace('training.articles', 'test-sample.articles')
   ARGS = ' '.join(['--%s=%s' % (name, decode_flags[name]) for name in convey_attributes])
@@ -301,7 +302,7 @@ def main(argv):
       enc_timesteps=400,
       dec_timesteps=100,
       num_hidden=256,   # for rnn cell
-      emb_dim=128,
+      emb_dim=FLAGS.embedding_dimension,
       adam_epsilon=FLAGS.adam_epsilon,
       beam_size=FLAGS.beam_size)
 
@@ -311,7 +312,7 @@ def main(argv):
   if hps.mode == 'train':
     # start a thread to check progress periodically during training
     if FLAGS.log_rouge_interval:
-      threading.Thread(target=check_progress_periodically, args=(3*60, FLAGS.log_rouge_interval), daemon=True).start()
+      threading.Thread(target=check_progress_periodically, args=(10*60, FLAGS.log_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'decode':
     _Infer(model, FLAGS.data_path, FLAGS.decode_train_step)

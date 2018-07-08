@@ -52,7 +52,7 @@ tb tensorboard:
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
 		--model_root=model --data_path=training.articles \
-		--batch_size=64 --log_rouge_interval=3600 $(ARGS)
+		--batch_size=64 --log_rouge_interval=3600 --max_train_step=64000 $(ARGS)
 
 cleanmodel:
 	rm -rf model
@@ -80,3 +80,13 @@ cdecode:
 
 naive: labeled-data
 	python3 summarization.py --mode=naive --model_root=model --data_path=test.articles
+
+cptb:
+	@if [ '$(ID)' != '' ]; then \
+		for i in $(ID); do \
+			mkdir -p running_center/$(TAG)/_$$i; \
+			philly-fs -cp -r //philly/eu2/ipgsrch/sys/jobs/application_$$i/models/output-model-path/tb/* running_center/$(TAG)/_$$i; \
+		done; \
+		echo; \
+	else echo 'make cptb: please specify a valid ID'; \
+	fi
