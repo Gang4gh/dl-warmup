@@ -283,7 +283,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
 
 def check_progress_periodically(warmup_delay, check_interval):
   # when run in Philly, some arguments in Makefile may be incorrect, so set them in ARGS
-  convey_attributes = ['model_root', 'data_path', 'encoding_layer', 'init_dec_state', 'vocab_size', 'focus_sentence_id']
+  convey_attributes = ['model_root', 'data_path', 'encoding_layer', 'init_dec_state', 'vocab_size', 'focus_sentence_id', 'embedding_dimension']
   decode_flags = vars(FLAGS).copy()
   decode_flags['data_path'] = FLAGS.data_path.replace('training.articles', 'test-sample.articles')
   ARGS = ' '.join(['--%s=%s' % (name, decode_flags[name]) for name in convey_attributes if decode_flags[name] is not None])
