@@ -44,6 +44,7 @@ parser.add_argument('--checkpoint_interval', type=int, default=1200, help='how o
 parser.add_argument('--random_seed', type=int, default=17, help='a seed value for randomness')
 parser.add_argument('--batch_size', type=int, default=128, help='the mini-batch size for training')
 parser.add_argument('--decode_train_step', type=int, help='specify a train_step for the decode procedure')
+parser.add_argument('--decode_rouge_range', type=int, default=None, help='calculate ROUGE scores of parts of summaries')
 parser.add_argument('--log_rouge_interval', type=int, default=0, help='interval to ouptut ROUGE via `make decode`')
 parser.add_argument('--log_loss_interval', type=int, default=1000, help='interval to output loss to console')
 parser.add_argument('--vocab_size', type=int, default=10000, help='use only top vocab_size tokens from a .vocab file')
@@ -51,7 +52,7 @@ parser.add_argument('--encoding_layer', type=int, default=1, help='number of enc
 parser.add_argument('--embedding_dimension', type=int, default=128, help='the dimension of embedding vector')
 parser.add_argument('--adam_epsilon', type=float, default=1e-8, help='the epsilon used by adam')
 parser.add_argument('--init_dec_state', default='fwbw', choices=['fw', 'fwbw'], help='the source of initial decoder state')
-parser.add_argument('--decay_loss', type=float, default=1, help='decay loss_weights per step, default(1) means no decay')
+parser.add_argument('--decay_scale', type=float, default=1, help='decay scale of max/min weight, default value(1) means no decay')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
 
@@ -232,6 +233,16 @@ def _Infer(model, data_filepath, global_step=None):
           logging.info('finished batch_count = %d', batch_count)
     logging.info('end of inferring at global_step %d', global_step)
     calculate_rouge_scores(summaries, references, model._hps.dec_timesteps, root=FLAGS.summary_root, global_step=global_step)
+    if FLAGS.decode_rouge_range:
+      for i in range(FLAGS.decode_rouge_range):
+        logging.info('ROUGE # [%d]', i)
+        calculate_rouge_scores([s[i:i+1] for s in summaries], [[s[0][i:i+1]] for s in references], model._hps.dec_timesteps)
+        if i > 0 and i != FLAGS.decode_rouge_range - 1:
+          logging.info('ROUGE # [%d:]', i)
+          calculate_rouge_scores([s[i:] for s in summaries], [[s[0][i:]] for s in references], model._hps.dec_timesteps)
+        if i > 1:
+          logging.info('ROUGE # [:%d]', i)
+          calculate_rouge_scores([s[:i] for s in summaries], [[s[0][:i]] for s in references], model._hps.dec_timesteps)
 
 
 def _naive_baseline(model, data_filepath, sentence_count=3):
@@ -305,7 +316,7 @@ def main(argv):
       num_hidden=256,   # for rnn cell
       emb_dim=FLAGS.embedding_dimension,
       adam_epsilon=FLAGS.adam_epsilon,
-      decay_loss=FLAGS.decay_loss,
+      decay_scale=FLAGS.decay_scale,
       beam_size=FLAGS.beam_size)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
@@ -317,7 +328,7 @@ def main(argv):
       threading.Thread(target=check_progress_periodically, args=(10*60, FLAGS.log_rouge_interval), daemon=True).start()
     _Train(model, FLAGS.data_path)
   elif hps.mode == 'decode':
-    _Infer(model, FLAGS.data_path, FLAGS.decode_train_step)
+    _Infer(model, FLAGS.data_path, global_step=FLAGS.decode_train_step)
   elif hps.mode == 'naive':
     _naive_baseline(model, FLAGS.data_path)
 

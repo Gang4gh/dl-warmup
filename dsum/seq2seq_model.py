@@ -25,7 +25,7 @@ HParams = namedtuple('HParams',
                      'mode batch_size '
                      'enc_layers enc_timesteps dec_timesteps '
                      'num_hidden emb_dim '
-                     'beam_size init_dec_state adam_epsilon decay_loss')
+                     'beam_size init_dec_state adam_epsilon decay_scale')
 
 
 class Seq2SeqAttentionModel(object):
@@ -131,8 +131,8 @@ class Seq2SeqAttentionModel(object):
       decoder_inputs = tf.transpose(self._targets[:, :-1])
       targets = tf.transpose(self._targets[:, 1:])
       loss_masks = tf.transpose(tf.sequence_mask(self._abstract_lens, hps.dec_timesteps, dtype=tf.float32))
-      if hps.decay_loss > 1:
-        decay_factor = math.exp(math.log(1/hps.decay_loss) / (hps.dec_timesteps - 1))
+      if hps.decay_scale > 1:
+        decay_factor = math.exp(math.log(1 / hps.decay_scale) / (hps.dec_timesteps - 1))
         # weigths are normalized in sequence_loss, decay_base could be 1
         decay_base = hps.dec_timesteps * (1 - decay_factor) / (1 - decay_factor ** hps.dec_timesteps)
         decay_weights = tf.constant([[decay_base * decay_factor ** i] * hps.batch_size for i in range(hps.dec_timesteps)])
