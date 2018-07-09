@@ -25,7 +25,7 @@ HParams = namedtuple('HParams',
                      'mode batch_size '
                      'enc_layers enc_timesteps dec_timesteps '
                      'num_hidden emb_dim '
-                     'beam_size init_dec_state adam_epsilon decay_scale')
+                     'beam_size init_dec_state adam_epsilon decay_scale FLAGS')
 
 
 class Seq2SeqAttentionModel(object):
@@ -66,7 +66,7 @@ class Seq2SeqAttentionModel(object):
     end_id = self._vocab.token_end_id
 
     def _parse_line(line):
-      article_ids, _, article_text, summary_ids, _, summary_text = self._vocab.parse_article(line.decode())
+      article_ids, _, article_text, summary_ids, _, summary_text = self._vocab.parse_article(line.decode(), hps.FLAGS.focus_sentence_id)
       article_len = len(article_ids)
       if article_len < hps.enc_timesteps:
         article_ids = article_ids + [pad_id] * (hps.enc_timesteps - article_len)

@@ -79,8 +79,10 @@ class Vocab():
 		else:
 			raise ValueError('Invalid vocab id: %s' % id)
 
-	def parse_article(self, article_line):
+	def parse_article(self, article_line, sent_id):
 		_, summary, article = article_line.split('\t')
+		if sent_id is not None:
+			summary = ' '.join(summary.split(dg.TOKEN_EOS_SPACES)[sent_id:sent_id+1])
 		article_tokens = [word for word in article.split()]
 		summary_tokens = [word for word in summary.split()]
 		article_ids = [self.get_id_by_word(word, article_tokens) for word in article_tokens]

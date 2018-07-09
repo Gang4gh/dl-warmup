@@ -55,6 +55,7 @@ parser.add_argument('--init_dec_state', default='fwbw', choices=['fw', 'fwbw'], 
 parser.add_argument('--decay_scale', type=float, default=1, help='decay scale of max/min weight, default value(1) means no decay')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
+parser.add_argument('--focus_sentence_id', type=int, default=None, help='train on one sentence which is specified by id')
 
 FLAGS, _ = parser.parse_known_args()
 FLAGS.vocab_path = os.path.join(os.path.dirname(FLAGS.data_path), FLAGS.vocab_path)
@@ -317,7 +318,8 @@ def main(argv):
       emb_dim=FLAGS.embedding_dimension,
       adam_epsilon=FLAGS.adam_epsilon,
       decay_scale=FLAGS.decay_scale,
-      beam_size=FLAGS.beam_size)
+      beam_size=FLAGS.beam_size,
+      FLAGS=FLAGS)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)
   model = seq2seq_model.Seq2SeqAttentionModel(hps, vocab)
