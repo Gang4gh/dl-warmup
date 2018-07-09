@@ -15,6 +15,7 @@
 
 """sequence-to-Sequence with attention model"""
 
+import math
 import logging
 import numpy as np
 import tensorflow as tf
@@ -24,7 +25,7 @@ HParams = namedtuple('HParams',
                      'mode batch_size '
                      'enc_layers enc_timesteps dec_timesteps '
                      'num_hidden emb_dim '
-                     'beam_size init_dec_state adam_epsilon')
+                     'beam_size init_dec_state adam_epsilon decay_loss')
 
 
 class Seq2SeqAttentionModel(object):
@@ -54,7 +55,7 @@ class Seq2SeqAttentionModel(object):
     return sess.run(to_return)
 
   def initialize_dataset(self, sess, data_filepath):
-    logging.info('initialize dataset data_filepath = %s' % data_filepath)
+    logging.info('initialize dataset data_filepath = %s', data_filepath)
     sess.run(self._iterator.initializer,
              feed_dict = {self._data_filepath: data_filepath})
 
@@ -129,7 +130,16 @@ class Seq2SeqAttentionModel(object):
       encoder_inputs = tf.transpose(self._articles)
       decoder_inputs = tf.transpose(self._targets[:, :-1])
       targets = tf.transpose(self._targets[:, 1:])
-      loss_weights = tf.transpose(tf.sequence_mask(self._abstract_lens, hps.dec_timesteps, dtype=tf.float32))
+      loss_masks = tf.transpose(tf.sequence_mask(self._abstract_lens, hps.dec_timesteps, dtype=tf.float32))
+      if hps.decay_loss > 1:
+        decay_factor = math.exp(math.log(1/hps.decay_loss) / (hps.dec_timesteps - 1))
+        # weigths are normalized in sequence_loss, decay_base could be 1
+        decay_base = hps.dec_timesteps * (1 - decay_factor) / (1 - decay_factor ** hps.dec_timesteps)
+        decay_weights = tf.constant([[decay_base * decay_factor ** i] * hps.batch_size for i in range(hps.dec_timesteps)])
+        loss_weights = loss_masks * decay_weights
+        logging.info('apply decayed weights with decay_factor = %f, decay_base = %f', decay_factor, decay_base)
+      else:
+        loss_weights = loss_masks
       article_lens = self._article_lens
       abstract_lens = self._abstract_lens
 
@@ -177,7 +187,8 @@ class Seq2SeqAttentionModel(object):
           self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_len, :], loss_weights[:max_len, :])
           #model_outputs = tf.pad(model_outputs, [[0, hps.dec_timesteps - max_len], [0,0], [0,0]])
           #self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
-          tf.summary.scalar('loss', tf.minimum(12.0, self._loss))
+          self._loss = tf.minimum(12.0, self._loss)
+          tf.summary.scalar('loss', self._loss)
         else:
           emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)
           article_lens = tf.contrib.seq2seq.tile_batch(article_lens, multiplier=hps.beam_size)

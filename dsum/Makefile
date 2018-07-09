@@ -48,11 +48,14 @@ test-sample.articles: test.articles
 tb tensorboard:
 	pkill -f tensorboard\ --port\ $(PORT); sleep 1
 	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
-	
+
+tbr tensorboard_root:
+	$(MAKE) tb MDIR=. PORT=$(PORT)
+
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
 		--model_root=model --data_path=training.articles \
-		--batch_size=64 --log_rouge_interval=3600 --max_train_step=64000 $(ARGS)
+		--batch_size=32 --log_rouge_interval=3600 --max_train_step=64000 $(ARGS)
 
 cleanmodel:
 	rm -rf model

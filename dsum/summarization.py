@@ -46,11 +46,12 @@ parser.add_argument('--batch_size', type=int, default=128, help='the mini-batch 
 parser.add_argument('--decode_train_step', type=int, help='specify a train_step for the decode procedure')
 parser.add_argument('--log_rouge_interval', type=int, default=0, help='interval to ouptut ROUGE via `make decode`')
 parser.add_argument('--log_loss_interval', type=int, default=1000, help='interval to output loss to console')
-parser.add_argument('--vocab_size', type=int, default=50000, help='use only top vocab_size tokens from a .vocab file')
+parser.add_argument('--vocab_size', type=int, default=10000, help='use only top vocab_size tokens from a .vocab file')
 parser.add_argument('--encoding_layer', type=int, default=1, help='number of encoder layers')
 parser.add_argument('--embedding_dimension', type=int, default=128, help='the dimension of embedding vector')
 parser.add_argument('--adam_epsilon', type=float, default=1e-8, help='the epsilon used by adam')
 parser.add_argument('--init_dec_state', default='fwbw', choices=['fw', 'fwbw'], help='the source of initial decoder state')
+parser.add_argument('--decay_loss', type=float, default=1, help='decay loss_weights per step, default(1) means no decay')
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
 
@@ -97,14 +98,14 @@ def prepare_context():
   logging.getLogger('tensorflow').propagate = False
   tf.logging.set_verbosity(tf.logging.WARN)
 
-  logging.info('commandline: %s' % ' '.join(sys.argv))
-  logging.info('FLAGS: %s' % FLAGS)
+  logging.info('commandline: %s', ' '.join(sys.argv))
+  logging.info('FLAGS: %s', FLAGS)
 
 def calculate_rouge_scores(summaries, references, max_length, root=None, global_step=None):
   # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
   from pythonrouge.pythonrouge import Pythonrouge
 
-  logging.info('calculate ROUGE scores of %d summaries' % len(summaries))
+  logging.info('calculate ROUGE scores of %d summaries', len(summaries))
   rouge = Pythonrouge(summary_file_exist=False,
                         summary=summaries, reference=references,
                         n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
@@ -114,9 +115,9 @@ def calculate_rouge_scores(summaries, references, max_length, root=None, global_
                         resampling=True, samples=1000, favor=True, p=0.5)
   score = rouge.calc_score()
   logging.info('ROUGE(1/2/L) F1 Scores:')
-  logging.info('>   ROUGE-1-F: %f' % score['ROUGE-1-F'])
-  logging.info('>   ROUGE-2-F: %f' % score['ROUGE-2-F'])
-  logging.info('>   ROUGE-L-F: %f' % score['ROUGE-L-F'])
+  logging.info('>   ROUGE-1-F: %f', score['ROUGE-1-F'])
+  logging.info('>   ROUGE-2-F: %f', score['ROUGE-2-F'])
+  logging.info('>   ROUGE-L-F: %f', score['ROUGE-L-F'])
 
   if root is not None and global_step is not None:
     for key in ['ROUGE-1-F', 'ROUGE-2-F']:
@@ -135,7 +136,7 @@ def _Train(model, data_filepath):
   logging.info('build the model graph')
   model.build_graph()
   logging.debug('tf.trainable_variables:')
-  for var in tf.trainable_variables(): logging.debug('  %s' % var)
+  for var in tf.trainable_variables(): logging.debug('  %s', var)
 
   ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=6, max_to_keep=3)
   ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_interval)
@@ -304,6 +305,7 @@ def main(argv):
       num_hidden=256,   # for rnn cell
       emb_dim=FLAGS.embedding_dimension,
       adam_epsilon=FLAGS.adam_epsilon,
+      decay_loss=FLAGS.decay_loss,
       beam_size=FLAGS.beam_size)
 
   vocab = Vocab(FLAGS.vocab_path, FLAGS.vocab_size, hps.enc_timesteps if FLAGS.enable_pointer else 0)

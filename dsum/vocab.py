@@ -36,8 +36,8 @@ class Vocab():
 					break
 
 		self._static_vocab_size = len(self._word_to_id)
-		logging.info('load %d tokens (including %d special tokens, %d index tokens) into vocab.' %
-			(self.get_vocab_size(), SPECIAL_TOKEN_COUNT, self._index_vocab_size))
+		logging.info('load %d tokens (including %d special tokens, %d index tokens) into vocab.',
+			self.get_vocab_size(), SPECIAL_TOKEN_COUNT, self._index_vocab_size)
 
 	def _add_word(self, word):
 		if word in self._word_to_id:
