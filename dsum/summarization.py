@@ -56,6 +56,7 @@ parser.add_argument('--decay_scale', type=float, default=1, help='decay scale of
 parser.add_argument('--enable_pointer', type=int, default=1, help='whether to enable pointer mechanism')
 parser.add_argument('--enable_log2file', type=int, default=1, help='whether to write logging.debug() to log files')
 parser.add_argument('--focus_sentence_id', type=int, default=None, help='train on one sentence which is specified by id')
+parser.add_argument('--eos_scale', type=float, default=1, help='the scale to boost loss weights of EOS tokens')
 
 FLAGS, _ = parser.parse_known_args()
 FLAGS.vocab_path = os.path.join(os.path.dirname(FLAGS.data_path), FLAGS.vocab_path)

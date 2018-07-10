@@ -140,6 +140,9 @@ class Seq2SeqAttentionModel(object):
         logging.info('apply decayed weights with decay_factor = %f, decay_base = %f', decay_factor, decay_base)
       else:
         loss_weights = loss_masks
+      if hps.FLAGS.eos_scale > 1:
+        loss_weights = tf.where(tf.equal(decoder_inputs, tf.constant(self._vocab.token_eos_id)), loss_weights * hps.FLAGS.eos_scale, loss_weights)
+      #loss_weights = tf.Print(loss_weights, [loss_weights, decoder_inputs, self._summary_strings, tf.shape(self._summary_strings)], summarize=200)
       article_lens = self._article_lens
       abstract_lens = self._abstract_lens
 
