@@ -28,6 +28,28 @@ HParams = namedtuple('HParams',
                      'beam_size init_dec_state adam_epsilon decay_scale FLAGS')
 
 
+class StackedLayer(tf.layers.Layer):
+  """Stack multiple tf.layers.Layers"""
+  def __init__(self, layers, **kwargs):
+    super(StackedLayer, self).__init__(**kwargs)
+    self.layers = layers
+
+  def build(self, input_shape):
+    for l in self.layers:
+      l.build(input_shape)
+      input_shape = l.compute_output_shape(input_shape)
+    self.built = True
+
+  def call(self, inputs):
+    for l in self.layers:
+      inputs = l.call(inputs)
+    return inputs
+
+  def compute_output_shape(self, input_shape):
+    for l in self.layers:
+      input_shape = l.compute_output_shape(input_shape)
+    return input_shape
+
 class Seq2SeqAttentionModel(object):
   """Wrapper for Tensorflow model graph for text sum vectors."""
 
@@ -172,7 +194,10 @@ class Seq2SeqAttentionModel(object):
       else:
         initial_dec_state = fw_state
 
-      projection_layer = tf.layers.Dense(vsize, use_bias=True)
+      #projection_layer = tf.layers.Dense(vsize, use_bias=True)
+      layer1 = tf.layers.Dense(1024, use_bias=True) #, activation=tf.nn.relu)
+      layer2 = tf.layers.Dense(vsize, use_bias=True)
+      projection_layer = StackedLayer([layer1, layer2])
 
       with tf.variable_scope('decoder'):
         if hps.mode != 'decode':
@@ -183,13 +208,12 @@ class Seq2SeqAttentionModel(object):
           decoder = tf.contrib.seq2seq.BasicDecoder(
             cell = cell_decoder,
             helper = helper,
-            initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=initial_dec_state))
-          outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
-          model_outputs = projection_layer(outputs.rnn_output, scope='decoder/dense')
-          max_len = tf.shape(model_outputs)[0]
-          self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets[:max_len, :], loss_weights[:max_len, :])
-          #model_outputs = tf.pad(model_outputs, [[0, hps.dec_timesteps - max_len], [0,0], [0,0]])
-          #self._loss = tf.contrib.seq2seq.sequence_loss(model_outputs, targets, loss_weights)
+            initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=initial_dec_state),
+            output_layer=projection_layer)
+          outputs, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
+          outputs = outputs.rnn_output
+          max_len = tf.reduce_max(output_lengths)
+          self._loss = tf.contrib.seq2seq.sequence_loss(outputs, targets[:max_len, :], loss_weights[:max_len, :])
           self._loss = tf.minimum(12.0, self._loss)
           tf.summary.scalar('loss', self._loss)
         else:
