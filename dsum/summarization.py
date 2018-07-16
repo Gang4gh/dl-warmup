@@ -222,6 +222,9 @@ def _Infer(model, data_filepath, global_step=None):
             for wid in token_ids[i] if wid != model._vocab.token_end_id]
           tokens_print = [model._vocab.get_word_by_id(wid, reference=article_words, markup=True)
             for wid in token_ids[i] if wid != model._vocab.token_end_id]
+          while len(tokens_print) > 0 and tokens_print[-1] == dg.TOKEN_EOS:
+            tokens_rouge.pop()
+            tokens_print.pop()
           summary = ' '.join(tokens_print)
           result.write('# [%d]\nArticle = %s\nTitle   = %s\nSummary = %s\n'
               % (batch_count * FLAGS.batch_size + i, article_strings[i], summary_strings[i], summary))
