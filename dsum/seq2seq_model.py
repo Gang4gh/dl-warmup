@@ -231,7 +231,8 @@ class Seq2SeqAttentionModel(object):
       layer2 = tf.layers.Dense(vsize, use_bias=True)
       projection_layer = StackedLayer([layer1, layer2])
 
-      layer1_projection = tf.layers.Dense(2, use_bias=True)
+      layer1_proj_length = tf.layers.Dense(2, use_bias=True)
+      layer1_proj_coverage = tf.layers.Dense(hps.enc_timesteps, use_bias=True)
 
       with tf.variable_scope('decoder'):
         layer1_inputs = tf.ones([hps.FLAGS.model_max_sentence_count, hps.batch_size, 1])
@@ -248,7 +249,12 @@ class Seq2SeqAttentionModel(object):
         #layer1_outputs.rnn_output time_size x batch_size x output_dimension
         #layer1_outputs = tf.Print(layer1_outputs, [tf.shape(layer1_outputs), self.ss_count, layer1_outputs], summarize=300)
         layer1_outputs.set_shape([hps.FLAGS.model_max_sentence_count, hps.batch_size, hps.num_hidden])
-        layer1_last_sentence = layer1_projection(layer1_outputs)
+
+        layer1_last_sentence = layer1_proj_length(layer1_outputs)
+        layer1_targets = tf.one_hot(self.ss_count - 1, hps.FLAGS.model_max_sentence_count, dtype=tf.int32)
+        layer1_mask = tf.sequence_mask(self.ss_count, hps.FLAGS.model_max_sentence_count, dtype=tf.float32)
+        #layer1_targets = tf.Print(layer1_targets, [layer1_targets, self.ss_count, layer1_mask], summarize=300)
+        self._loss_1 = tf.contrib.seq2seq.sequence_loss(layer1_last_sentence, layer1_targets, layer1_mask)
 
         if hps.mode != 'decode':
           cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
@@ -264,10 +270,11 @@ class Seq2SeqAttentionModel(object):
 
             helper = tf.contrib.seq2seq.TrainingHelper(_inputs, _lengths, time_major=True)
             _cell_state = tf.contrib.rnn.LSTMStateTuple(layer1_outputs[i], tf.zeros_like(initial_dec_state[1]))
+            _cell_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=_cell_state)
             decoder = tf.contrib.seq2seq.BasicDecoder(
               cell = cell_decoder,
               helper = helper,
-              initial_state = cell_decoder.zero_state(hps.batch_size, tf.float32).clone(cell_state=_cell_state),
+              initial_state = _cell_state,
               output_layer=projection_layer)
             outputs, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True)
             outputs = outputs.rnn_output
@@ -279,6 +286,7 @@ class Seq2SeqAttentionModel(object):
           targets = tf.concat(layer2_targets, 0)
           loss_weights = tf.concat(layer2_weights, 0)
           self._loss = tf.contrib.seq2seq.sequence_loss(outputs, targets, loss_weights)
+          self._loss += self._loss_1
           tf.summary.scalar('loss', self._loss)
         else:
           predicted_ids = []
