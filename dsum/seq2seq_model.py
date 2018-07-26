@@ -110,22 +110,24 @@ class Seq2SeqAttentionModel(object):
         if ind == 0 or val == eos_id:
           summary_sentence_ids.append([])
           continue
+        if val == end_id: break
         summary_sentence_ids[-1].append(val)
-      if len(summary_sentence_ids) < 8:
-        summary_sentence_ids = summary_sentence_ids + [[]] * (8 - len(summary_sentence_ids))
+      if len(summary_sentence_ids) < hps.FLAGS.model_max_sentence_count:
+        summary_sentence_ids = summary_sentence_ids + [[] for _ in range(hps.FLAGS.model_max_sentence_count - len(summary_sentence_ids))]
       else:
-        summary_sentence_ids = summary_sentence_ids[:8]
+        summary_sentence_ids = summary_sentence_ids[:hps.FLAGS.model_max_sentence_count]
       summary_sentence_count = max(ind for ind, val in enumerate(summary_sentence_ids) if len(val) > 0) + 1
       summary_sentence_lengths = []
-      for ind in range(8):
+      for ind in range(hps.FLAGS.model_max_sentence_count):
         ids = summary_sentence_ids[ind]
         length = len(ids)
-        if length <= 30 - 1:
-          summary_sentence_ids[ind] = [start_id] + ids + [end_id] * (30 - length)
+        if length <= hps.FLAGS.model_max_sentence_length - 1:
+          summary_sentence_ids[ind] = [start_id] + ids + [end_id] * (hps.FLAGS.model_max_sentence_length - length)
           summary_sentence_lengths.append(length + 1)
+          #summary_sentence_lengths.append(length + 1 if length > 0 else 0)
         else:
-          summary_sentence_ids[ind] = [start_id] + ids[:30]
-          summary_sentence_lengths.append(30)
+          summary_sentence_ids[ind] = [start_id] + ids[:hps.FLAGS.model_max_sentence_length]
+          summary_sentence_lengths.append(hps.FLAGS.model_max_sentence_length)
 
       return (
           np.array(article_ids, np.int32),
@@ -147,8 +149,8 @@ class Seq2SeqAttentionModel(object):
       article_text.set_shape([])
       summary_text.set_shape([])
       ss_count.set_shape([])
-      ss_lengths.set_shape([8])
-      ss_ids.set_shape([8, 30 + 1])
+      ss_lengths.set_shape([hps.FLAGS.model_max_sentence_count])
+      ss_ids.set_shape([hps.FLAGS.model_max_sentence_count, hps.FLAGS.model_max_sentence_length + 1])
       return article_ids, summary_ids, article_len, summary_len, article_text, summary_text, ss_count, ss_lengths, ss_ids
 
     self._data_filepath = tf.placeholder(tf.string, shape=[])
@@ -232,7 +234,7 @@ class Seq2SeqAttentionModel(object):
       layer1_projection = tf.layers.Dense(2, use_bias=True)
 
       with tf.variable_scope('decoder'):
-        layer1_inputs = tf.ones([8, hps.batch_size, 1])
+        layer1_inputs = tf.ones([hps.FLAGS.model_max_sentence_count, hps.batch_size, 1])
         layer1_decoder_cell = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
         layer1_helper = tf.contrib.seq2seq.TrainingHelper(layer1_inputs, self.ss_count, time_major=True)
         layer1_decoder = tf.contrib.seq2seq.BasicDecoder(
@@ -242,21 +244,23 @@ class Seq2SeqAttentionModel(object):
         layer1_outputs, layer1_states, layer1_output_lengths = tf.contrib.seq2seq.dynamic_decode(layer1_decoder, output_time_major=True)
         layer1_outputs = layer1_outputs.rnn_output
         layer1_max_length = tf.reduce_max(layer1_output_lengths)
-        layer1_outputs = tf.pad(layer1_outputs, [[0, 8 - layer1_max_length], [0, 0], [0, 0]])
+        layer1_outputs = tf.pad(layer1_outputs, [[0, hps.FLAGS.model_max_sentence_count - layer1_max_length], [0, 0], [0, 0]])
         #layer1_outputs.rnn_output time_size x batch_size x output_dimension
         #layer1_outputs = tf.Print(layer1_outputs, [tf.shape(layer1_outputs), self.ss_count, layer1_outputs], summarize=300)
+        layer1_outputs.set_shape([hps.FLAGS.model_max_sentence_count, hps.batch_size, hps.num_hidden])
+        layer1_last_sentence = layer1_projection(layer1_outputs)
 
         if hps.mode != 'decode':
           cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
           cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
           layer2_outputs, layer2_targets, layer2_weights = [], [], []
-          for i in range(8):
+          for i in range(hps.FLAGS.model_max_sentence_count):
             _inputs = tf.transpose(self.ss_ids[:, i, :-1])
             _inputs = tf.gather(embedding, _inputs)
             _targets = tf.transpose(self.ss_ids[:, i, 1:])
             _lengths = self.ss_lengths[:, i]
-            _masks = tf.transpose(tf.sequence_mask(_lengths, 30, dtype=tf.float32))
+            _masks = tf.transpose(tf.sequence_mask(_lengths, hps.FLAGS.model_max_sentence_length, dtype=tf.float32))
 
             helper = tf.contrib.seq2seq.TrainingHelper(_inputs, _lengths, time_major=True)
             _cell_state = tf.contrib.rnn.LSTMStateTuple(layer1_outputs[i], tf.zeros_like(initial_dec_state[1]))
@@ -275,7 +279,6 @@ class Seq2SeqAttentionModel(object):
           targets = tf.concat(layer2_targets, 0)
           loss_weights = tf.concat(layer2_weights, 0)
           self._loss = tf.contrib.seq2seq.sequence_loss(outputs, targets, loss_weights)
-          self._loss = tf.minimum(12.0, self._loss)
           tf.summary.scalar('loss', self._loss)
         else:
           predicted_ids = []
@@ -286,7 +289,7 @@ class Seq2SeqAttentionModel(object):
           cell_decoder = tf.contrib.seq2seq.AttentionWrapper(cell_decoder, attention, attention_layer_size=hps.num_hidden)
           start_token_ids = tf.fill([hps.batch_size], self._vocab.token_start_id)
           end_token_id = self._vocab.token_end_id
-          for i in range(8):
+          for i in range(hps.FLAGS.model_max_sentence_count):
             _cell_state = tf.contrib.rnn.LSTMStateTuple(layer1_outputs[i], tf.zeros_like(initial_dec_state[1]))
             _cell_state = tf.contrib.seq2seq.tile_batch(_cell_state, multiplier=hps.beam_size)
             _cell_state = cell_decoder.zero_state(hps.batch_size * hps.beam_size, tf.float32).clone(cell_state=_cell_state)
@@ -298,7 +301,7 @@ class Seq2SeqAttentionModel(object):
               initial_state=_cell_state,
               beam_width=hps.beam_size,
               output_layer=projection_layer)
-            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(my_decoder, maximum_iterations=30, output_time_major=True)
+            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(my_decoder, maximum_iterations=hps.FLAGS.model_max_sentence_length, output_time_major=True)
             predicted_ids.append(tf.transpose(outputs.predicted_ids[:, :, 0]))
             predicted_ids.append([[self._vocab.token_eos_id]] * hps.batch_size)
           self._predicted_ids = tf.concat(predicted_ids, -1)
