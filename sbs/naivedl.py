@@ -4,7 +4,6 @@ import random
 import collections
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
 from tensorflow.keras.layers import Input, Embedding, LSTM, Dense
 from sklearn.metrics import accuracy_score
 
@@ -28,16 +27,16 @@ def prepare_dataset(vocab, batch_size, data):
 		ids = [vocab.get_id_by_word(w) for w in text.split()[:max_word_count]]
 		return [vocab.token_pad_id] * (max_word_count - len(ids)) + ids
 
-	x0 = [words_to_ids(rec.query, 20) for rec in data]
-	x1 = [words_to_ids(rec.snippet1, 120) for rec in data]
-	x2 = [words_to_ids(rec.snippet2, 120) for rec in data]
+	x0 = [words_to_ids(rec.query, 16) for rec in data]
+	x1 = [words_to_ids(rec.snippet1, 100) for rec in data]
+	x2 = [words_to_ids(rec.snippet2, 100) for rec in data]
 	y = tf.keras.utils.to_categorical([rec.label+1 for rec in data], 3)
 	return [x0, x1, x2], y
 
 def build_and_train_model(batch_size, model_dir, training_set, validation_set):
-	query_input = Input(shape=(20,), dtype='int32')
-	snippet1_input = Input(shape=(120,), dtype='int32')
-	snippet2_input = Input(shape=(120,), dtype='int32')
+	query_input = Input(shape=(16,), dtype='int32')
+	snippet1_input = Input(shape=(100,), dtype='int32')
+	snippet2_input = Input(shape=(100,), dtype='int32')
 
 	embedding = Embedding(input_dim=50000, output_dim=128)
 	query_embedding = embedding(query_input)
@@ -50,7 +49,7 @@ def build_and_train_model(batch_size, model_dir, training_set, validation_set):
 	snippet1_encoding = snippet_lstm(snippet1_embedding)
 	snippet2_encoding = snippet_lstm(snippet2_embedding)
 
-	all_encoding = keras.layers.concatenate([query_encoding, snippet1_encoding, snippet2_encoding])
+	all_encoding = tf.keras.layers.concatenate([query_encoding, snippet1_encoding, snippet2_encoding])
 	X = Dense(256, activation='relu')(all_encoding)
 	X = Dense(256, activation='relu')(X)
 	X = Dense(256, activation='relu')(X)
@@ -61,12 +60,14 @@ def build_and_train_model(batch_size, model_dir, training_set, validation_set):
 
 	model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-	checkpoint_path = model_dir + '/cp.{epoch:02d}.ckpt'
-	cp_callback = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, verbose=1)
-	es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_acc', patience=100)
-	tb_callback = tf.keras.callbacks.TensorBoard(log_dir='{0}/tb'.format(model_dir))
+	callbacks = [
+		tf.keras.callbacks.ModelCheckpoint(model_dir + '/cp.{epoch:02d}.ckpt', verbose=1),
+		tf.keras.callbacks.ModelCheckpoint(model_dir + '/cp.best.ckpt', verbose=1, save_best_only=True),
+		tf.keras.callbacks.EarlyStopping(monitor='val_acc', patience=3),
+		tf.keras.callbacks.TensorBoard(log_dir='{0}/tb'.format(model_dir)),
+		]
 
-	model.fit(*training_set, epochs=2, batch_size=batch_size, callbacks=[cp_callback, es_callback, tb_callback], validation_data=validation_set)
+	model.fit(*training_set, epochs=100, batch_size=batch_size, callbacks=callbacks, validation_data=validation_set)
 	model.save(model_dir + '/model')
 
 	return model
@@ -92,6 +93,7 @@ if __name__ == '__main__':
 	print('training/validation/test set sizes : %d/%d/%d' % (len(training_set[0][0]), len(validation_set[0][0]), len(test_set[0][0])))
 
 	model = build_and_train_model(cfg.batch_size, cfg.model_dir, training_set, validation_set)
+	model = tf.keras.models.load_model(model_dir + '/cp.best.ckpt')
 	pred = np.argmax(model.predict(test_set[0], batch_size=cfg.batch_size), -1)
 
 	acc = accuracy_score(np.argmax(test_set[1], -1), pred)
