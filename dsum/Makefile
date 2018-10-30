@@ -39,7 +39,7 @@ labeled-data: training.articles training.vocab test.articles test-sample.article
 		> $@
 
 %.vocab: %.articles data_generic.py
-	python3 $(word 2,$^) build-vocab $< | sort -k2nr -k1 > $@
+	python3 $(word 2,$^) build-vocab $< 3 1,2 10 | sort -k2nr -k1 > $@
 
 test-sample.articles: test.articles
 	head -n 4000 $< > $@

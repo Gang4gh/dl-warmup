@@ -75,16 +75,22 @@ def filter_articles(filefn, data_source):
 		print('\t'.join([doc_id, summary, article]))
 
 
-def build_vocab(filefn, max_allowed_freq):
+def build_vocab(filefn, column_count, build_column_indexes, max_allowed_freq):
+	column_count = int(column_count)
+	build_column_indexes = [int(idx) for idx in build_column_indexes.split(',')]
+	max_allowed_freq = int(max_allowed_freq)
+
+	if column_count <= 0 or any(idx < 0 or idx >= column_count for idx in build_column_indexes):
+		raise ValueError('invalid arguments to build_vocab')
+
 	counter = collections.Counter()
 
 	for l in open(filefn):
 		splits = l.strip().split("\t")
-		if len(splits) != 3:
+		if len(splits) != column_count:
 			continue
-		_, title, article = splits
-		counter.update(title.split())
-		counter.update(article.split())
+		for idx in build_column_indexes:
+			counter.update(splits[idx].split())
 
 	del counter[TOKEN_EOS]
 
@@ -141,7 +147,7 @@ if __name__ == '__main__':
 	filefn = sys.argv[2] if len(sys.argv) > 2 else None
 
 	if cmd == 'build-vocab':
-		build_vocab(filefn, 10)
+		build_vocab(filefn, *sys.argv[3:])
 	elif cmd == 'filter-articles':
 		filter_articles(filefn, sys.argv[3])
 	elif cmd == 'count-title':
