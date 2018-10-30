@@ -93,7 +93,7 @@ if __name__ == '__main__':
 	print('training/validation/test set sizes : %d/%d/%d' % (len(training_set[0][0]), len(validation_set[0][0]), len(test_set[0][0])))
 
 	model = build_and_train_model(cfg.batch_size, cfg.model_dir, training_set, validation_set)
-	model = tf.keras.models.load_model(model_dir + '/cp.best.ckpt')
+	model = tf.keras.models.load_model(cfg.model_dir + '/cp.best.ckpt')
 	pred = np.argmax(model.predict(test_set[0], batch_size=cfg.batch_size), -1)
 
 	acc = accuracy_score(np.argmax(test_set[1], -1), pred)
