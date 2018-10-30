@@ -57,19 +57,16 @@ def build_and_train_model(batch_size, model_dir, training_set, validation_set):
 
 	model = tf.keras.models.Model(inputs=[query_input, snippet1_input, snippet2_input], outputs=[y])
 	model.summary()
-
 	model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
 	callbacks = [
-		tf.keras.callbacks.ModelCheckpoint(model_dir + '/cp.{epoch:02d}.ckpt', verbose=1),
-		tf.keras.callbacks.ModelCheckpoint(model_dir + '/cp.best.ckpt', verbose=1, save_best_only=True),
-		tf.keras.callbacks.EarlyStopping(monitor='val_acc', patience=3),
+		tf.keras.callbacks.ModelCheckpoint(model_dir + '/cp.best.model', save_best_only=True),
+		tf.keras.callbacks.EarlyStopping(monitor='val_acc', patience=5),
 		tf.keras.callbacks.TensorBoard(log_dir='{0}/tb'.format(model_dir)),
 		]
 
 	model.fit(*training_set, epochs=100, batch_size=batch_size, callbacks=callbacks, validation_data=validation_set)
-	model.save(model_dir + '/model')
-
+	model = tf.keras.models.load_model(model_dir + '/cp.best.model')
 	return model
 
 Config = collections.namedtuple('Config', 'data_path vocab_path model_dir batch_size')
@@ -93,9 +90,7 @@ if __name__ == '__main__':
 	print('training/validation/test set sizes : %d/%d/%d' % (len(training_set[0][0]), len(validation_set[0][0]), len(test_set[0][0])))
 
 	model = build_and_train_model(cfg.batch_size, cfg.model_dir, training_set, validation_set)
-	model = tf.keras.models.load_model(cfg.model_dir + '/cp.best.ckpt')
 	pred = np.argmax(model.predict(test_set[0], batch_size=cfg.batch_size), -1)
 
 	acc = accuracy_score(np.argmax(test_set[1], -1), pred)
 	print('accuracy on test_set :', acc)
-
