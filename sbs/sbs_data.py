@@ -6,7 +6,7 @@ from sklearn.metrics import accuracy_score
 
 SBSPair = collections.namedtuple('SBSPair', 'query snippet1 snippet2 weight label')
 
-def load_data(data_file):
+def load_data(data_file='sbsdatacleaned20181008_flips_tokLower.tsv'):
 	data = []
 	prev = None
 	with open(data_file) as f:
