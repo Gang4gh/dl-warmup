@@ -35,7 +35,7 @@ def prepare_dataset(vocab, batch_size, data, swap_left_and_right=False):
 		x0, x1, x2, y = x0 + x0, x1 + x2, x2 + x1, y + [2-val for val in y]
 	return [x0, x1, x2], tf.keras.utils.to_categorical(y, 3)
 
-def build_and_train_model(batch_size, model_dir, training_set, validation_set):
+def build_and_train_model(batch_size, model_dir, training_set):
 	query_input = Input(shape=(16,), dtype='int32')
 	snippet1_input = Input(shape=(100,), dtype='int32')
 	snippet2_input = Input(shape=(100,), dtype='int32')
@@ -67,14 +67,14 @@ def build_and_train_model(batch_size, model_dir, training_set, validation_set):
 		tf.keras.callbacks.TensorBoard(log_dir='{0}/tb'.format(model_dir)),
 		]
 
-	model.fit(*training_set, epochs=100, batch_size=batch_size, callbacks=callbacks, validation_data=validation_set)
+	model.fit(*training_set, epochs=100, batch_size=batch_size, callbacks=callbacks, validation_split=0.1)
 	model = tf.keras.models.load_model(model_dir + '/cp.best.model')
 	return model
 
 Config = collections.namedtuple('Config', 'vocab_path model_dir batch_size')
 cfg = Config(
 	vocab_path = 'trainingdata.vocab',
-	model_dir = 'model_v1101',
+	model_dir = 'model',
 	batch_size = 512,
 	)
 
@@ -82,13 +82,10 @@ def train_then_predict(training_data, test_data):
 	config_environment(cfg.model_dir)
 
 	vocab = Vocab(cfg.vocab_path, 50000)
-	val_offset = len(training_data) // 10 # split 10% training data as validation data
-	training_set = prepare_dataset(vocab, cfg.batch_size, training_data[:-val_offset])
-	validation_set = prepare_dataset(vocab, cfg.batch_size, training_data[-val_offset:])
+	training_set = prepare_dataset(vocab, cfg.batch_size*10, training_data)
 	test_set = prepare_dataset(vocab, 1, test_data)
-	print('training/validation/test set sizes : %d/%d/%d' % (len(training_set[0][0]), len(validation_set[0][0]), len(test_set[0][0])))
 
-	model = build_and_train_model(cfg.batch_size, cfg.model_dir, training_set, validation_set)
+	model = build_and_train_model(cfg.batch_size, cfg.model_dir, training_set)
 	pred = np.argmax(model.predict(test_set[0], batch_size=cfg.batch_size), -1)
 	return [val-1 for val in pred]
 
