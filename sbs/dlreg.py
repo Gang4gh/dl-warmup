@@ -30,17 +30,17 @@ def prepare_dataset(vocab, batch_size, data, swap_left_and_right=False):
 	x0 = [words_to_ids(rec.query, 16) for rec in data]
 	x1 = [words_to_ids(rec.snippet1, 100) for rec in data]
 	x2 = [words_to_ids(rec.snippet2, 100) for rec in data]
-	y = [rec.label+1 for rec in data]
+	y = [(rec.label+1)/2 for rec in data]
 	if swap_left_and_right:
-		x0, x1, x2, y = x0 + x0, x1 + x2, x2 + x1, y + [2-val for val in y]
-	return [x0, x1, x2], tf.keras.utils.to_categorical(y, 3)
+		x0, x1, x2, y = x0 + x0, x1 + x2, x2 + x1, y + [1-val for val in y]
+	return [x0, x1, x2], y
 
 def build_and_train_model(batch_size, model_dir, training_set):
 	query_input = Input(shape=(16,), dtype='int32')
 	snippet1_input = Input(shape=(100,), dtype='int32')
 	snippet2_input = Input(shape=(100,), dtype='int32')
 
-	embedding = Embedding(input_dim=50000, output_dim=64)
+	embedding = Embedding(input_dim=50000, output_dim=128)
 	query_embedding = embedding(query_input)
 	snippet1_embedding = embedding(snippet1_input)
 	snippet2_embedding = embedding(snippet2_input)
@@ -55,15 +55,15 @@ def build_and_train_model(batch_size, model_dir, training_set):
 	X = Dense(256, activation='relu')(all_encoding)
 	X = Dense(256, activation='relu')(X)
 	X = Dense(256, activation='relu')(X)
-	y = Dense(3, activation='softmax')(X)
+	y = Dense(1, activation='sigmoid')(X)
 
 	model = tf.keras.models.Model(inputs=[query_input, snippet1_input, snippet2_input], outputs=[y])
 	#model.summary()
-	model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+	model.compile(optimizer='adam', loss='mse')
 
 	callbacks = [
 		tf.keras.callbacks.ModelCheckpoint(model_dir + '/cp.best.model', save_best_only=True),
-		tf.keras.callbacks.EarlyStopping(monitor='val_acc', patience=2),
+		tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2),
 		tf.keras.callbacks.TensorBoard(log_dir='{0}/tb'.format(model_dir)),
 		]
 
@@ -74,11 +74,11 @@ def build_and_train_model(batch_size, model_dir, training_set):
 Config = collections.namedtuple('Config', 'vocab_path model_dir batch_size')
 cfg = Config(
 	vocab_path = 'trainingdata.vocab',
-	model_dir = 'model',
+	model_dir = 'model_reg',
 	batch_size = 512,
 	)
 
-def train_then_predict(training_data, test_data):
+def train_then_predict(training_data, test_data, delta_range):
 	config_environment(cfg.model_dir)
 
 	vocab = Vocab(cfg.vocab_path, 50000)
@@ -86,8 +86,15 @@ def train_then_predict(training_data, test_data):
 	test_set = prepare_dataset(vocab, 1, test_data)
 
 	model = build_and_train_model(cfg.batch_size, cfg.model_dir, training_set)
-	pred = np.argmax(model.predict(test_set[0], batch_size=cfg.batch_size), -1)
-	return [val-1 for val in pred]
+	best_acc, best_delta = -1, None
+	for delta in range(0, delta_range, 2):
+		pred = model.predict(training_set[0], batch_size=cfg.batch_size)
+		pred = [-1 if val < 0.5 - delta/100 else (0 if val < 0.5 + delta/100 else 1) for val in pred]
+		acc = accuracy_score([rec.label for rec in training_data[:len(pred)]], pred)
+		if acc > best_acc:
+			best_acc, best_delta = acc, delta
+	pred = model.predict(test_set[0], batch_size=cfg.batch_size)
+	return [-1 if val < 0.5 - best_delta/100 else (0 if val < 0.5 + best_delta/100 else 1) for val in pred]
 
 if __name__ == '__main__':
 	training_data, test_data = load_data() # struct data members: query snippet1 snippet2 weight label
@@ -97,10 +104,10 @@ if __name__ == '__main__':
 
 	acc2, acc3 = [], []
 	for i in range(10):
-		pred = train_then_predict(training_data, test_data)
+		pred = train_then_predict(training_data, test_data, 33)
 		acc3.append(accuracy_score([rec.label for rec in test_data], pred))
 
-		pred = train_then_predict(training_data2, test_data2)
+		pred = train_then_predict(training_data2, test_data2, 1)
 		acc2.append(accuracy_score([rec.label for rec in test_data2], pred))
 
 		print('[{}] Binary classification accuracy on test_set : min={}, max={}, median={}'.format(i, np.min(acc2), np.max(acc2), np.median(acc2)))
