@@ -127,7 +127,7 @@ class Seq2SeqAttentionModel(object):
     dataset = dataset.map(fix_shapes)
     if hps.mode != 'decode' and hps.mode != 'naive':
       dataset = dataset.repeat()
-    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(hps.batch_size))
+    dataset = dataset.batch(hps.batch_size)
     dataset = dataset.prefetch(4)
     logging.debug('dataset shape: %s', dataset)
     self._iterator = dataset.make_initializable_iterator()
