@@ -82,7 +82,7 @@ cdecode:
 	watch -n 3600 $(MAKE) decode
 
 naive: labeled-data
-	python3 summarization.py --mode=naive --model_root=model --data_path=test.articles $(ARGS)
+	python3 summarization.py --mode=naive --model_root=model --data_path=test-sample.articles $(ARGS)
 
 cptb:
 	@if [ '$(ID)' != '' ]; then \
