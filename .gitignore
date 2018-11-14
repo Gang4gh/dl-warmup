@@ -113,3 +113,8 @@ dsum/**/*.split-urls
 dsum/**/*.vocab
 dsum/**/*.merged
 dsum/**/data.md5
+
+# for sbs classifier work in 'sbs' folder
+sbs/*.tsv
+sbs/*.vocab
+sbs/model*/

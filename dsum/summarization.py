@@ -119,10 +119,13 @@ def calculate_rouge_scores(summaries, references, max_length, root=None, global_
                         use_cf=False, cf=95, scoring_formula='average',
                         resampling=True, samples=1000, favor=True, p=0.5)
   score = rouge.calc_score()
-  logging.info('ROUGE(1/2/L) F1 Scores:')
-  logging.info('>   ROUGE-1-F: %f', score['ROUGE-1-F'])
-  logging.info('>   ROUGE-2-F: %f', score['ROUGE-2-F'])
-  logging.info('>   ROUGE-L-F: %f', score['ROUGE-L-F'])
+  logging.info('ROUGE(1/2/L) Scores:')
+  logging.info('>   ROUGE-1-R/F1: %f / %f', score['ROUGE-1-R'], score['ROUGE-1-F'])
+  logging.info('>   ROUGE-2-R/F1: %f / %f', score['ROUGE-2-R'], score['ROUGE-2-F'])
+  logging.info('>   ROUGE-L-R/F1: %f / %f', score['ROUGE-L-R'], score['ROUGE-L-F'])
+  avg_token_count = sum(len(' '.join(summary).split()) for summary in summaries) / len(summaries)
+  avg_token_count_ref = sum(len(' '.join(summary[0]).split()) for summary in references) / len(references)
+  logging.info('>   averageToken: %f / %f', avg_token_count, avg_token_count_ref)
 
   if root is not None and global_step is not None:
     for key in ['ROUGE-1-F', 'ROUGE-2-F']:
@@ -252,7 +255,7 @@ def _Infer(model, data_filepath, global_step=None):
           calculate_rouge_scores([s[:i] for s in summaries], [[s[0][:i]] for s in references], model._hps.dec_timesteps)
 
 
-def _naive_baseline(model, data_filepath, sentence_count=3):
+def _naive_baseline(model, data_filepath, max_sentence_count, max_token_count):
   """ dump inputs from tensorflow dataset api and measure the naive baseline (first N sentences) """
   logging.info('setup model input')
   model._setup_model_input()
@@ -260,7 +263,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
   with tf.Session(config=prepare_session_config()) as sess:
     model.initialize_dataset(sess, data_filepath)
 
-    result_file = os.path.join(FLAGS.model_root, 'naive-head-%d-summary.txt' % sentence_count)
+    result_file = os.path.join(FLAGS.model_root, 'naive-head-%d-summary.txt' % max_sentence_count)
     summaries, references = [], []
     with open(result_file, 'w') as result:
       batch_count = 0
@@ -278,7 +281,7 @@ def _naive_baseline(model, data_filepath, sentence_count=3):
                  article_strings[i], ' '.join([str(id) for id in article_tokens[i] if id != model._vocab.token_pad_id]),
                  summary_strings[i], ' '.join([str(id) for id in summary_tokens[i] if id != model._vocab.token_pad_id]),
                  ))
-          naive_summary = article_strings[i].split(dg.TOKEN_EOS_SPACES)[:sentence_count]
+          naive_summary = [' '.join(' '.join(article_strings[i].split(dg.TOKEN_EOS_SPACES)[:max_sentence_count]).split()[:max_token_count])]
           refer_summary = [summary_strings[i].split(dg.TOKEN_EOS_SPACES)]
           result.write('Refer Summary = %s\nNaive Summary = %s\n' % (refer_summary, naive_summary))
           summaries.append(naive_summary)
@@ -338,8 +341,7 @@ def main(argv):
   elif hps.mode == 'decode':
     _Infer(model, FLAGS.data_path, global_step=FLAGS.decode_train_step)
   elif hps.mode == 'naive':
-    _naive_baseline(model, FLAGS.data_path)
-
+    _naive_baseline(model, FLAGS.data_path, max_sentence_count=3, max_token_count=999)
 
 if __name__ == '__main__':
   prepare_context() # prepare locale, logging and output folder

@@ -75,10 +75,10 @@ def filter_articles(filefn, data_source):
 		print('\t'.join([doc_id, summary, article]))
 
 
-def build_vocab(filefn, column_count, build_column_indexes, min_word_freq):
+def build_vocab(filefn, column_count, build_column_indexes, max_allowed_freq):
 	column_count = int(column_count)
 	build_column_indexes = [int(idx) for idx in build_column_indexes.split(',')]
-	min_word_freq = int(min_word_freq)
+	max_allowed_freq = int(max_allowed_freq)
 
 	if column_count <= 0 or any(idx < 0 or idx >= column_count for idx in build_column_indexes):
 		raise ValueError('invalid arguments to build_vocab')
@@ -95,7 +95,7 @@ def build_vocab(filefn, column_count, build_column_indexes, min_word_freq):
 	del counter[TOKEN_EOS]
 
 	for word, count in counter.most_common():
-		if count < min_word_freq:
+		if count < max_allowed_freq:
 			break
 		print(word, count)
 
