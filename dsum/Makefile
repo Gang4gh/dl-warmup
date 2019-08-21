@@ -3,7 +3,7 @@ CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
 -include Makefile.config
-DATASOURCES ?= CNN DailyMail
+DATASOURCES ?= Gigaword#CNN DailyMail
 TAG ?= notag
 PORT ?= 2345
 MDIR ?= model
@@ -55,7 +55,7 @@ tbr tensorboard_root:
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
 		--model_root=model --data_path=training.articles \
-		--batch_size=32 --log_rouge_interval=3600 --max_train_step=64000 $(ARGS)
+		--batch_size=32 --log_rouge_interval=3600 --max_train_step=256000 $(ARGS)
 
 cleanmodel:
 	rm -rf model
@@ -76,7 +76,7 @@ tc trainingcenter: labeled-data
 decode:
 	python3 summarization.py --mode=decode \
 		--model_root=model --data_path=test-sample.articles \
-		--batch_size=20 --beam_size=4 --enable_log2file=0 $(ARGS)
+		--batch_size=20 --beam_size=4 --enable_log2file=1 $(ARGS)
 
 cdecode:
 	watch -n 3600 $(MAKE) decode

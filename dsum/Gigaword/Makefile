@@ -1,4 +1,4 @@
-DATA_DIR=/home/gang/LDC2012T21/Data/data/xml/
+DATA_DIR=/media/hdd1T/home_backup/gang/LDC2012T21/Data/data/xml/
 TMP_DIR=articles/
 
 all: training.articles test.articles validation.articles
