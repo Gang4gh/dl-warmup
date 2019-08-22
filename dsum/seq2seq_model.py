@@ -121,7 +121,7 @@ class Seq2SeqAttentionModel(object):
       summary_text.set_shape([])
       return article_ids, summary_ids, article_len, summary_len, article_text, summary_text
 
-    self._data_filepath = tf.placeholder(tf.string, shape=[])
+    self._data_filepath = tf.compat.v1.placeholder(tf.string, shape=[])
     dataset = tf.data.TextLineDataset(self._data_filepath)
     dataset = dataset.map(lambda line: tf.py_func(_parse_line, [line], [tf.int32, tf.int32, tf.int32, tf.int32, tf.string, tf.string], stateful=False))
     dataset = dataset.map(fix_shapes)
@@ -132,8 +132,8 @@ class Seq2SeqAttentionModel(object):
     logging.debug('dataset shape: %s', dataset)
     self._iterator = dataset.make_initializable_iterator()
 
-    iterator_state = tf.contrib.data.make_saveable_from_iterator(self._iterator)
-    tf.add_to_collection(tf.GraphKeys.SAVEABLE_OBJECTS, iterator_state)
+    iterator_state = tf.data.experimental.make_saveable_from_iterator(self._iterator)
+    tf.compat.v1.add_to_collection(tf.compat.v1.GraphKeys.SAVEABLE_OBJECTS, iterator_state)
 
     next_res = self._iterator.get_next()
     self._articles, self._targets, self._article_lens, self._abstract_lens, self._article_strings, self._summary_strings = next_res
@@ -148,7 +148,7 @@ class Seq2SeqAttentionModel(object):
 
     uniform_initializer = tf.random_uniform_initializer(-0.1, 0.1)
 
-    with tf.variable_scope('seq2seq'):
+    with tf.compat.v1.variable_scope('seq2seq'):
       encoder_inputs = tf.transpose(self._articles)
       decoder_inputs = tf.transpose(self._targets[:, :-1])
       targets = tf.transpose(self._targets[:, 1:])
@@ -169,8 +169,8 @@ class Seq2SeqAttentionModel(object):
       abstract_lens = self._abstract_lens
 
       # Embedding shared by the input and outputs.
-      with tf.variable_scope('embedding'):
-        embedding = tf.get_variable('embedding', [vsize, hps.emb_dim],
+      with tf.compat.v1.variable_scope('embedding'):
+        embedding = tf.compat.v1.get_variable('embedding', [vsize, hps.emb_dim],
             initializer=tf.truncated_normal_initializer(stddev=1e-4))
         #emb_encoder_inputs = tf.nn.embedding_lookup(embedding, encoder_inputs)
         #emb_decoder_inputs = tf.nn.embedding_lookup(embedding, decoder_inputs)
@@ -179,7 +179,7 @@ class Seq2SeqAttentionModel(object):
  
       encoding_layer_inputs = emb_encoder_inputs
       for layer_i in range(hps.enc_layers):
-        with tf.variable_scope('encoder%d' % layer_i):
+        with tf.compat.v1.variable_scope('encoder%d' % layer_i):
           cell_fw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           cell_bw = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           (rnn_outputs, (fw_state, bw_state)) = tf.nn.bidirectional_dynamic_rnn(
@@ -189,17 +189,17 @@ class Seq2SeqAttentionModel(object):
       emb_memory = tf.transpose(encoding_layer_inputs, [1, 0, 2])
 
       if hps.init_dec_state == 'fwbw':
-        initial_dec_state = tf.layers.dense(tf.concat([fw_state, bw_state], -1), hps.num_hidden)
+        initial_dec_state = tf.keras.layers.Dense(hps.num_hidden)(tf.concat([fw_state, bw_state], -1))
         initial_dec_state = tf.contrib.rnn.LSTMStateTuple(initial_dec_state[0], initial_dec_state[1])
       else:
         initial_dec_state = fw_state
 
       #projection_layer = tf.layers.Dense(vsize, use_bias=True)
-      layer1 = tf.layers.Dense(1024, use_bias=True) #, activation=tf.nn.relu)
-      layer2 = tf.layers.Dense(vsize, use_bias=True)
+      layer1 = tf.compat.v1.layers.Dense(1024, use_bias=True) #, activation=tf.nn.relu)
+      layer2 = tf.compat.v1.layers.Dense(vsize, use_bias=True)
       projection_layer = StackedLayer([layer1, layer2])
 
-      with tf.variable_scope('decoder'):
+      with tf.compat.v1.variable_scope('decoder'):
         if hps.mode != 'decode':
           cell_decoder = tf.contrib.rnn.LSTMCell(hps.num_hidden, initializer=uniform_initializer)
           attention = tf.contrib.seq2seq.LuongAttention(hps.num_hidden, emb_memory, memory_sequence_length=article_lens)
@@ -215,7 +215,7 @@ class Seq2SeqAttentionModel(object):
           max_len = tf.reduce_max(output_lengths)
           self._loss = tf.contrib.seq2seq.sequence_loss(outputs, targets[:max_len, :], loss_weights[:max_len, :])
           self._loss = tf.minimum(12.0, self._loss)
-          tf.summary.scalar('loss', self._loss)
+          tf.compat.v1.summary.scalar('loss', self._loss)
         else:
           emb_memory = tf.contrib.seq2seq.tile_batch(emb_memory, multiplier=hps.beam_size)
           article_lens = tf.contrib.seq2seq.tile_batch(article_lens, multiplier=hps.beam_size)
@@ -240,13 +240,13 @@ class Seq2SeqAttentionModel(object):
           self._predicted_ids = tf.transpose(outputs.predicted_ids[:, :, 0])
 
   def _add_train_op(self):
-    self._train_op = tf.train.AdamOptimizer(epsilon=self._hps.adam_epsilon).minimize(self._loss, global_step=self.global_step, name='train_op')
+    self._train_op = tf.compat.v1.train.AdamOptimizer(epsilon=self._hps.adam_epsilon).minimize(self._loss, global_step=self.global_step, name='train_op')
 
   def build_graph(self):
     self._setup_model_input()
     self._add_seq2seq()
-    self.global_step = tf.train.get_or_create_global_step()
+    self.global_step = tf.compat.v1.train.get_or_create_global_step()
     if self._hps.mode == 'train':
       self._add_train_op()
-    self._summaries = tf.summary.merge_all()
+    self._summaries = tf.compat.v1.summary.merge_all()
 

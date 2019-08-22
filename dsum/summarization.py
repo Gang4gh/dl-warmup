@@ -25,6 +25,8 @@ import datetime
 import threading
 import subprocess
 import logging
+import absl.logging
+absl.logging._warn_preinit_stderr = False
 import argparse
 import tensorflow as tf
 
@@ -82,25 +84,34 @@ def prepare_context():
     def format(self, record):
       elapsed = int(record.created - self.start_time)
       created = time.strftime('%D %H:%M:%S', time.localtime(record.created))
-      return '%s | +%dd %02d:%02d:%02d | %s' % (created, elapsed / 3600 / 24, elapsed / 3600 % 24, elapsed / 60 % 60, elapsed % 60, record.getMessage())
+      return '%s | +%dd %02d:%02d:%02d | %s: %s' % (created, elapsed / 3600 / 24, elapsed / 3600 % 24, elapsed / 60 % 60, elapsed % 60, record.levelname[0], record.getMessage())
 
+  # create log handlers
+  handlers = []
   stdout_handler = logging.StreamHandler(sys.stdout)
   stdout_handler.setLevel(logging.INFO)
   stdout_handler.setFormatter(ElapsedFormatter())
-  handlers = [stdout_handler]
+  handlers.append(stdout_handler)
   if FLAGS.enable_log2file:
     log_file = os.path.join(FLAGS.log_root, 'log-%s-%d.txt' % (FLAGS.mode, int(time.time())))
     file_handler = logging.FileHandler(filename=log_file)
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(fmt='[%(asctime)s] %(filename)s#%(lineno)d %(levelname)-5s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
     handlers.append(file_handler)
-  logging.basicConfig(
-      level = logging.DEBUG,
-      handlers = handlers
-  )
-  logging.getLogger('tensorflow').propagate = False
-  tf.logging.set_verbosity(tf.logging.WARN)
+  
+  # fix a bug caused by absl.logging, see https://github.com/abseil/abseil-py/issues/99
+  fixAbslLoggingBug = True
+  if fixAbslLoggingBug:
+    logging.root.setLevel(logging.DEBUG)
+    absl.logging._absl_handler.setLevel(logging.INFO)
+    absl.logging._absl_handler.setFormatter(ElapsedFormatter())
+    if FLAGS.enable_log2file:
+      logging.root.addHandler(handlers[1])
+  else:
+    logging.basicConfig(level=logging.DEBUG, handlers=handlers)
 
+  #logging.getLogger('tensorflow').propagate = False
+  #tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.WARN)
   logging.info('commandline: %s', ' '.join(sys.argv))
   logging.info('FLAGS: %s', FLAGS)
 
@@ -133,7 +144,7 @@ def calculate_rouge_scores(summaries, references, max_length, root=None, global_
       swriter.close()
 
 def prepare_session_config():
-  return tf.ConfigProto(gpu_options=tf.GPUOptions(allow_growth=True))
+  return tf.compat.v1.ConfigProto(gpu_options=tf.compat.v1.GPUOptions(allow_growth=True))
 
 
 def _Train(model, data_filepath):
@@ -142,23 +153,23 @@ def _Train(model, data_filepath):
   logging.info('build the model graph')
   model.build_graph()
   logging.debug('tf.trainable_variables:')
-  for var in tf.trainable_variables(): logging.debug('  %s', var)
+  for var in tf.compat.v1.trainable_variables(): logging.debug('  %s', var)
 
-  ckpt_saver = tf.train.Saver(keep_checkpoint_every_n_hours=6, max_to_keep=3)
-  ckpt_timer = tf.train.SecondOrStepTimer(every_secs=FLAGS.checkpoint_interval)
+  ckpt_saver = tf.compat.v1.train.Saver(keep_checkpoint_every_n_hours=6, max_to_keep=3)
+  ckpt_timer = tf.estimator.SecondOrStepTimer(every_secs=FLAGS.checkpoint_interval)
 
-  with tf.Session(config=prepare_session_config()) as sess:
+  with tf.compat.v1.Session(config=prepare_session_config()) as sess:
     # initialize or restore model
     ckpt_path = tf.train.latest_checkpoint(FLAGS.model_root)
     if ckpt_path is None:
       logging.info('initialize model variables')
-      _ = sess.run(tf.global_variables_initializer())
+      _ = sess.run(tf.compat.v1.global_variables_initializer())
       model.initialize_dataset(sess, data_filepath)
     else:
       logging.info('restore model from %s', ckpt_path)
       ckpt_saver.restore(sess, ckpt_path)
 
-    summary_writer = tf.summary.FileWriter(FLAGS.summary_root, graph=sess.graph if ckpt_path is None else None)
+    summary_writer = tf.compat.v1.summary.FileWriter(FLAGS.summary_root, graph=sess.graph if ckpt_path is None else None)
     global_step = sess.run(model.global_step) - 1
 
     # main loop
@@ -286,6 +297,8 @@ def _naive_baseline(model, data_filepath, max_sentence_count, max_token_count):
 
 
 def check_progress_periodically(warmup_delay, check_interval):
+  logging.root.setLevel(logging.DEBUG) # fix for absl.loggng
+  logging.info('start a thread on check_progress_periodically()')
   # when run in Philly, some arguments in Makefile may be incorrect, so set them in ARGS
   convey_attributes = ['model_root', 'data_path', 'encoding_layer', 'init_dec_state', 'vocab_size', 'focus_sentence_id', 'embedding_dimension']
   decode_flags = vars(FLAGS).copy()
@@ -295,21 +308,21 @@ def check_progress_periodically(warmup_delay, check_interval):
   while True:
     start_time = datetime.datetime.now()
     res = subprocess.run('make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    pairs = [line.split()[-2:] for line in res.stdout.decode().split('\n') if line]
-    scores = [p[1] for p in pairs if p[0].startswith('ROUGE-')]
+    pairs = [line.split() for line in res.stdout.decode().split('\n') + res.stderr.decode().split('\n') if line]
+    scores = [p[-3] for p in pairs if len(p) > 3 and p[-4].startswith('ROUGE-')]
     if len(scores) == 3:
-      global_step = next((pair for pair in pairs if pair[0] == 'global_step'), [0, -1])[1]
+      global_step = next((pair for pair in pairs if len(pair) > 1 and pair[-2] == 'global_step'), [0, -1])[-1]
       logging.info('ROUGE(1/2/L) = %s at global_step = %s', ' / '.join(scores), global_step)
     else:
-      logging.error('Error when calculate ROUGE')
-      logging.debug('Error stdout = %s', res.stdout.decode())
-      logging.debug('Error stderr = %s', res.stderr.decode())
+      logging.error('Error when calculate ROUGE, scores = [%s]', scores)
+      logging.debug('Stdout = %s', res.stdout.decode())
+      logging.debug('Stderr = %s', res.stderr.decode())
     timedelta = datetime.datetime.now() - start_time
     time.sleep(check_interval - timedelta.total_seconds() % check_interval)
 
 
 def main(argv):
-  tf.set_random_seed(FLAGS.random_seed)
+  tf.compat.v1.set_random_seed(FLAGS.random_seed)
 
   hps = seq2seq_model.HParams(
       mode=FLAGS.mode,  # train, eval, decode
@@ -340,4 +353,4 @@ def main(argv):
 
 if __name__ == '__main__':
   prepare_context() # prepare locale, logging and output folder
-  tf.app.run()
+  tf.compat.v1.app.run()
