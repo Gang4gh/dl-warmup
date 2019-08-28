@@ -55,7 +55,7 @@ tbr tensorboard_root:
 tm trainmodel: labeled-data
 	python3 summarization.py --mode=train \
 		--model_root=model --data_path=training.articles \
-		--batch_size=32 --log_rouge_interval=3600 --max_train_step=256000 $(ARGS)
+		--batch_size=128 --log_rouge_interval=3600 --max_train_step=256000 $(ARGS)
 
 cleanmodel:
 	rm -rf model

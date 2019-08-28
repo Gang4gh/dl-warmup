@@ -139,7 +139,7 @@ def calculate_rouge_scores(summaries, references, max_length, root=None, global_
   if root is not None and global_step is not None:
     for key in ['ROUGE-1-F', 'ROUGE-2-F']:
       swriter = tf.summary.FileWriter(os.path.join(root, key))
-      summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE', simple_value=score[key])])
+      summary = tf.Summary(value=[tf.Summary.Value(tag='ROUGE(F1)', simple_value=score[key])])
       swriter.add_summary(summary, global_step)
       swriter.close()
 
@@ -309,10 +309,10 @@ def check_progress_periodically(warmup_delay, check_interval):
     start_time = datetime.datetime.now()
     res = subprocess.run('make decode "ARGS=%s"' % ARGS, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     pairs = [line.split() for line in res.stdout.decode().split('\n') + res.stderr.decode().split('\n') if line]
-    scores = [p[-3] for p in pairs if len(p) > 3 and p[-4].startswith('ROUGE-')]
+    scores = [p[-1] for p in pairs if len(p) > 3 and p[-4].startswith('ROUGE-')]
     if len(scores) == 3:
       global_step = next((pair for pair in pairs if len(pair) > 1 and pair[-2] == 'global_step'), [0, -1])[-1]
-      logging.info('ROUGE(1/2/L) = %s at global_step = %s', ' / '.join(scores), global_step)
+      logging.info('ROUGE-F1(1/2/L) = %s at global_step = %s', ' / '.join(scores), global_step)
     else:
       logging.error('Error when calculate ROUGE, scores = [%s]', scores)
       logging.debug('Stdout = %s', res.stdout.decode())
