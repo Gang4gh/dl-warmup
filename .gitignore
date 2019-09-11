@@ -118,3 +118,8 @@ dsum/**/data.md5
 sbs/*.tsv
 sbs/*.vocab
 sbs/model*/
+
+# for lm
+lm/model/
+lm/*.subwords
+lm/*.tar.gz
