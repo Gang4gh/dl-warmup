@@ -1,0 +1,9 @@
+# temp folder of raw data
+cap_title/raw
+
+# training/test data for dcap title task
+*.titles
+
+# dict files
+*.subwords
+

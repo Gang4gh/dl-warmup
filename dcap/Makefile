@@ -3,13 +3,14 @@ CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
 -include Makefile.config
-DATASOURCES ?= CNN DailyMail
+DATASOURCES ?= CapTitle #CNN DailyMail
 TAG ?= notag
 PORT ?= 2345
 MDIR ?= model
 
 
-all: labeled-data
+all:
+	python lt.py --mode=train
 
 clean:
 	rm -f */data.md5 *.articles *.vocab
@@ -17,32 +18,27 @@ clean:
 cleanall: clean
 	for ds in $(DATASOURCES); do $(MAKE) -C $$ds clean; done
 
-check:
-	@echo TAG is '$(TAG)'
-
 .DELETE_ON_ERROR:
 
 
 # data pre-processing
 %/data.md5:
 	$(MAKE) -j$(CPUS) -C $*
-	md5sum $*/*.articles > $@
+	md5sum $*/*.dcaptitles > $@
 keep-data-md5: $(addsuffix /data.md5, $(DATASOURCES))
 
-labeled-data: training.articles training.vocab test.articles test-sample.articles validation.articles
+labeled-data: training.dcaptitles test.dcaptitles
 	@echo labeled data is prepared from \'$(DATASOURCES)\'
 
-%.articles: data_generic.py $(addsuffix /data.md5, $(DATASOURCES))
-	cat $(addsuffix /$*.articles, $(DATASOURCES)) \
-		| python3 $< filter-articles - '$(DATASOURCES)' \
-		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) \
-		> $@
+all.dcaptitles: $(addsuffix /data.md5, $(DATASOURCES))
+	cat $(addsuffix /$*.dcaptitles, $(DATASOURCES)) \
+		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) > $@
 
-%.vocab: %.articles data_generic.py
-	python3 $(word 2,$^) build-vocab $< 3 1,2 10 | sort -k2nr -k1 > $@
-
-test-sample.articles: test.articles
+training.dcaptitles: all.dcaptitles
 	head -n 4000 $< > $@
+
+test.dcaptitles: all.dcaptitles
+	tail -n 10000 $< > $@
 
 # training/test actions
 tb tensorboard:
