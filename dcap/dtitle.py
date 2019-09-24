@@ -4,14 +4,17 @@ import time
 
 import tensorflow_datasets as tfds
 import tensorflow as tf
-#import numpy as np
+import numpy as np
 import argparse
 
 import transformer_model as tsfm
 
 parser = argparse.ArgumentParser(description='train or evaluate deep summarization models')
-parser.add_argument('--mode', choices=['train', 'eval', 'test'], help='train / eval mode', required=True)
+parser.add_argument('--mode', choices=['train', 'eval', 'check-data'], help='execuation mode: e.g. train, eval', required=True)
 parser.add_argument('--vocab', default='vocab', help='the vocab file for SubwordTextEncoder')
+parser.add_argument('--training_data', default='cap_title/training.titles')
+parser.add_argument('--test_data', default='cap_title/test.titles')
+parser.add_argument('--model_path', default='model')
 parser.add_argument('--batch_size', type=int, default=64, help='the mini-batch size for training')
 parser.add_argument('--shuffle_buffer_size', type=int, default=8192)
 parser.add_argument('--max_body_length', type=int, default=2048)
@@ -19,13 +22,8 @@ parser.add_argument('--max_title_length', type=int, default=50)
 FLAGS, _ = parser.parse_known_args()
 print('FLAGS = {}'.format(FLAGS))
 
-# load data and prepare dictionaries if necessary
-#examples, _ = tfds.load('ted_hrlr_translate/pt_to_en', with_info=True, as_supervised=True, shuffle_files=False)
-#val_examples = examples['validation']
-#print(next(iter(val_examples)))
-#sys.exit(0)
 
-train_examples = tf.data.TextLineDataset('cap_title/training.titles')
+train_examples = tf.data.TextLineDataset(FLAGS.training_data)
 train_examples = train_examples.map(lambda ln: tf.strings.split(ln, '\t')[1:])
 
 # load en/pt tokenizers
@@ -57,25 +55,10 @@ train_dataset = train_examples.map(tf_encode)
 train_dataset = train_dataset.filter(filter_max_length)
 # cache the dataset to memory to get a speedup while reading from it.
 #train_dataset = train_dataset.cache()
-train_dataset = train_dataset.shuffle(FLAGS.shuffle_buffer_size)
-train_dataset = train_dataset.padded_batch(FLAGS.batch_size, padded_shapes=([-1], [-1]), drop_remainder=True)
+#train_dataset = train_dataset.shuffle(FLAGS.shuffle_buffer_size)
+train_dataset = train_dataset.padded_batch(FLAGS.batch_size, padded_shapes=([FLAGS.max_title_length], [FLAGS.max_body_length]), drop_remainder=True)
 train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
-#for _ in range(3):
-#	print('\n{}: start of counting'.format(time.asctime()))
-#	item_count, start_time = 0, time.time()
-#	for (batch, (tar, inp)) in enumerate(train_dataset.take(501)):
-#		if batch == 0: start_time = time.time()
-#		if batch % 100 == 0: print('\tbatch = {} at {}'.format(batch, time.asctime()))
-#		item_count += FLAGS.batch_size
-#	print('item_count = {}, time_cost = {}'.format(item_count, time.time() - start_time))
-#	print('{}: end of counting'.format(time.asctime()))
-#sys.exit(0)
-
-#val_dataset = val_examples.map(tf_encode)
-#val_dataset = val_dataset.filter(filter_max_length).padded_batch(FLAGS.batch_size, padded_shapes=([-1], [-1]))
-#pt_batch, en_batch = next(iter(val_dataset))
-#print(pt_batch, en_batch)
 
 def loss_function(real, pred, loss_object):
 	mask = tf.math.logical_not(tf.math.equal(real, 0))
@@ -122,16 +105,15 @@ num_heads = 8
 vocab_size = tokenizer.vocab_size + 2
 dropout_rate = 0.1
 
-checkpoint_path = "./model/train"
-learning_rate = tsfm.CustomSchedule(d_model)
-optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
-
 def train_model():
 	transformer = tsfm.Transformer(num_layers, d_model, num_heads, dff,
 	                          vocab_size, FLAGS.max_body_length, FLAGS.max_title_length, dropout_rate)
 
+	learning_rate = tsfm.CustomSchedule(d_model)
+	optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+
 	ckpt = tf.train.Checkpoint(model=transformer, optimizer=optimizer)
-	ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
+	ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.model_path, max_to_keep=5)
 
 	# if a checkpoint exists, restore the latest checkpoint.
 	if ckpt_manager.latest_checkpoint:
@@ -199,7 +181,7 @@ def eval_model():
 	                          input_vocab_size, target_vocab_size, dropout_rate)
 
 	ckpt = tf.train.Checkpoint(model=transformer)
-	ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=None)
+	ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.model_path, max_to_keep=None)
 
 	# if a checkpoint exists, restore the latest checkpoint.
 	if ckpt_manager.latest_checkpoint:
@@ -255,8 +237,42 @@ def translate(sentence, tar_sentence, transformer):
 	print('Prediction: {}'.format(predicted_sentence))
 	print('Target    : {}'.format(tar_sentence))
 
+
+def check_data():
+	print('\n*** check test data')
+	test_batch_size = 2
+	test_examples = tf.data.TextLineDataset(FLAGS.test_data)
+	test_examples = test_examples.map(lambda ln: tf.strings.split(ln, '\t')[1:])
+	test_dataset = test_examples.map(tf_encode)
+	test_dataset = test_dataset.filter(filter_max_length).padded_batch(test_batch_size, padded_shapes=([-1], [-1]))
+	res = next(iter(test_dataset))
+	print('first {} samples in test data:\n{}'.format(test_batch_size, res))
+	for i in range(test_batch_size):
+		tokens = [i for i in res[0][i].numpy() if i < tokenizer.vocab_size and i > 0]
+		print('decoded example #{}:\n\t[{}]'.format(i, tokenizer.decode(tokens)))
+		print('\t' + '/'.join((tokenizer.decode([i]) for i in tokens if i < tokenizer.vocab_size and i > 0)))
+
+	print('\n*** check training data')
+	titles, bodies = [], []
+	lc, msg_step, dot_per_msg = 0, 100000, 40
+	for l in open(FLAGS.training_data, 'r', encoding='utf8'):
+		inputs = l.strip().split('\t')
+		title, body = encode(tf.constant(inputs[1]), tf.constant(inputs[2]))
+		titles.append(len(title))
+		bodies.append(len(body))
+		lc += 1
+		if lc % (msg_step//dot_per_msg) == 0: print('.', end='', flush=True)
+		if lc % msg_step == 0: print(' load {}k training examples'.format(lc//1000))
+		if lc == 500000: break
+	print('histogram of {} training examples:'.format(len(titles)))
+	print('title''s histogram: {}'.format(list(zip(*np.histogram(titles, bins = range(FLAGS.max_title_length+1), density=True)))))
+	print('body''s histogram: {}'.format(list(zip(*np.histogram(bodies, bins = range(0, FLAGS.max_body_length+10, 10), density=True)))))
+
+
 if FLAGS.mode == 'train':
 	train_model()
 elif FLAGS.mode == 'eval':
-	eval_model()
+	pass #eval_model()
+elif FLAGS.mode == 'check-data':
+	check_data()
 
