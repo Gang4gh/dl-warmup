@@ -7,3 +7,5 @@ cap_title/raw
 # dict files
 *.subwords
 
+# model dir
+model

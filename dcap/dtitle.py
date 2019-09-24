@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser(description='train or evaluate deep summarizati
 parser.add_argument('--mode', choices=['train', 'eval', 'test'], help='train / eval mode', required=True)
 parser.add_argument('--vocab', default='vocab', help='the vocab file for SubwordTextEncoder')
 parser.add_argument('--batch_size', type=int, default=64, help='the mini-batch size for training')
-parser.add_argument('--shuffle_buffer_size', type=int, default=20000)
+parser.add_argument('--shuffle_buffer_size', type=int, default=8192)
 parser.add_argument('--max_body_length', type=int, default=2048)
 parser.add_argument('--max_title_length', type=int, default=50)
 FLAGS, _ = parser.parse_known_args()
@@ -40,12 +40,12 @@ else:
 	tokenizer.save_to_file(FLAGS.vocab)
 	print('{}: prepare tokenizers and save to "{}".'.format(time.asctime(), FLAGS.vocab))
 
-def encode(lang1, lang2):
-	lang1 = [tokenizer.vocab_size] + tokenizer.encode(
-		lang1.numpy()) + [tokenizer.vocab_size+1]
-	lang2 = [tokenizer.vocab_size] + tokenizer.encode(
-		lang2.numpy()) + [tokenizer.vocab_size+1]
-	return lang1, lang2
+def encode(title, body):
+	title = [tokenizer.vocab_size] + tokenizer.encode(
+		title.numpy()) + [tokenizer.vocab_size+1]
+	body = [tokenizer.vocab_size] + tokenizer.encode(
+		body.numpy()) + [tokenizer.vocab_size+1]
+	return title, body
 
 def tf_encode(item):
 	return tf.py_function(encode, [item[0], item[1]], [tf.int64, tf.int64])
@@ -56,20 +56,21 @@ def filter_max_length(title, body):
 train_dataset = train_examples.map(tf_encode)
 train_dataset = train_dataset.filter(filter_max_length)
 # cache the dataset to memory to get a speedup while reading from it.
-train_dataset = train_dataset.cache()
+#train_dataset = train_dataset.cache()
 train_dataset = train_dataset.shuffle(FLAGS.shuffle_buffer_size)
-train_dataset = train_dataset.padded_batch(FLAGS.batch_size, padded_shapes=([-1], [-1]))
+train_dataset = train_dataset.padded_batch(FLAGS.batch_size, padded_shapes=([-1], [-1]), drop_remainder=True)
 train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
-for _ in range(3):
-	print('\n{}: start of counting'.format(time.asctime()))
-	item_count, start_time = 0, time.time()
-	for (batch, (tar, inp)) in enumerate(train_dataset.take(501)):
-		if batch % 100 == 0: print('\tbatch = {} at {}'.format(batch, time.asctime()))
-		item_count += FLAGS.batch_size
-	print('item_count = {}, time_cost = {}'.format(item_count, time.time() - start_time))
-	print('{}: end of counting'.format(time.asctime()))
-sys.exit(0)
+#for _ in range(3):
+#	print('\n{}: start of counting'.format(time.asctime()))
+#	item_count, start_time = 0, time.time()
+#	for (batch, (tar, inp)) in enumerate(train_dataset.take(501)):
+#		if batch == 0: start_time = time.time()
+#		if batch % 100 == 0: print('\tbatch = {} at {}'.format(batch, time.asctime()))
+#		item_count += FLAGS.batch_size
+#	print('item_count = {}, time_cost = {}'.format(item_count, time.time() - start_time))
+#	print('{}: end of counting'.format(time.asctime()))
+#sys.exit(0)
 
 #val_dataset = val_examples.map(tf_encode)
 #val_dataset = val_dataset.filter(filter_max_length).padded_batch(FLAGS.batch_size, padded_shapes=([-1], [-1]))
@@ -169,7 +170,7 @@ def train_model():
 		train_loss(loss)
 		train_accuracy(tar_real, predictions)
 
-	EPOCHS = 1 #50
+	EPOCHS = 50
 	print('Start of model training for {} epoch(es) at {}'.format(EPOCHS, time.asctime()))
 	for epoch in range(EPOCHS):
 		start = time.time()
@@ -183,15 +184,14 @@ def train_model():
 			if batch % 50 == 0 or batch <= 5:
 				print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f} at {}'.format(
 				       epoch + 1, batch, train_loss.result(), train_accuracy.result(), time.asctime()))
-		if (epoch + 1) % 5 == 0:
-			ckpt_save_path = ckpt_manager.save()
-			print('Saving checkpoint for epoch {} at {}'.format(epoch+1, ckpt_save_path))
-	if (epoch + 1) % 5 != 0:
+			if batch % 1000 == 0:
+				ckpt_save_path = ckpt_manager.save()
+				print('Saving checkpoint for epoch/batch {}/{} at {}'.format(epoch+1, batch, ckpt_save_path))
+
 		ckpt_save_path = ckpt_manager.save()
 		print('Saving checkpoint for epoch {} at {}'.format(epoch+1, ckpt_save_path))
-
-	print('Epoch {} Loss {:.4f} Accuracy {:.4f}'.format(epoch + 1, train_loss.result(), train_accuracy.result()))
-	print('Time taken for 1 epoch: {} secs\n'.format(time.time() - start))
+		print('Epoch {} Loss {:.4f} Accuracy {:.4f}'.format(epoch + 1, train_loss.result(), train_accuracy.result()))
+		print('Time taken for 1 epoch: {} secs\n'.format(time.time() - start))
 
 
 def eval_model():
