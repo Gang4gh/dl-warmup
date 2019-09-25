@@ -120,7 +120,7 @@ def train_model():
 	# if a checkpoint exists, restore the latest checkpoint.
 	if ckpt_manager.latest_checkpoint:
 		ckpt.restore(ckpt_manager.latest_checkpoint)
-		print('Latest checkpoint restored')
+		print('Latest checkpoint restored from {}'.format(ckpt_manager.latest_checkpoint))
 
 	train_loss = tf.keras.metrics.Mean(name='train_loss')
 	train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
