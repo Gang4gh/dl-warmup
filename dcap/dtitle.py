@@ -24,7 +24,7 @@ print('FLAGS = {}'.format(FLAGS))
 
 
 train_examples = tf.data.TextLineDataset(FLAGS.training_data)
-train_examples = train_examples.take(32*1024)
+train_examples = train_examples.take(512*1024)
 train_examples = train_examples.map(lambda ln: tf.strings.split(ln, '\t')[1:])
 
 # load en/pt tokenizers
@@ -97,7 +97,7 @@ def create_masks(inp, tar):
 	dec_target_padding_mask = create_padding_mask(tar)
 	combined_mask = tf.maximum(dec_target_padding_mask, look_ahead_mask)
   
-	return enc_padding_mask, combined_mask, dec_padding_mask
+	return enc_padding_mask, combined_mask
 
 num_layers = 4
 d_model = 128
@@ -142,17 +142,26 @@ def train_model():
 		tar_inp = tar[:, :-1]
 		tar_real = tar[:, 1:]
   
-		enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+		enc_padding_mask, look_ahead_mask = create_masks(inp, tar_inp)
   
 		with tf.GradientTape() as tape:
-			predictions, _ = transformer(inp, tar_inp, True, enc_padding_mask, combined_mask, dec_padding_mask)
+			predictions, _ = transformer(inp, tar_inp, True, enc_padding_mask, look_ahead_mask)
 			loss = loss_function(tar_real, predictions, loss_object)
 
 		gradients = tape.gradient(loss, transformer.trainable_variables)    
 		optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
   
 		train_loss(loss)
-		train_accuracy(tar_real, predictions)
+		train_accuracy(tar_real, predictions, sample_weight=tf.math.not_equal(tar_real, 0))
+#		tf.print(tar_real, summarize=100)
+#		tf.print(tf.argmax(predictions, axis=-1), summarize=100)
+
+	def save_checkpoint(epoch, batch):
+		ckpt_save_path = ckpt_manager.save()
+		print('Saving checkpoint for epoch/batch {}/{} at {}'.format(epoch+1, batch, ckpt_save_path))
+		print('Current Loss {:.4f} Accuracy {:.4f}.'.format(train_loss.result(), train_accuracy.result()))
+		train_loss.reset_states()
+		train_accuracy.reset_states()
 
 	EPOCHS = 50
 	print('Start of model training for {} epoch(es) at {}'.format(EPOCHS, time.asctime()))
@@ -165,17 +174,14 @@ def train_model():
 		for (batch, (tar, inp)) in enumerate(train_dataset):
 			train_step(inp, tar)
 			#print('{}: {} / {}'.format(batch, inp[0][:10], tar[0][:10]))
-			if batch % 100 == 0 or batch <= 5:
+			if batch % 100 == 0 or batch < 5:
 				print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f} at {}'.format(
 				       epoch + 1, batch, train_loss.result(), train_accuracy.result(), time.asctime()))
 			if batch % 10000 == 0 and batch > 0:
-				ckpt_save_path = ckpt_manager.save()
-				print('Saving checkpoint for epoch/batch {}/{} at {}'.format(epoch+1, batch, ckpt_save_path))
+				save_checkpoint(epoch, batch)
 
-		ckpt_save_path = ckpt_manager.save()
-		print('Saving checkpoint for epoch {} at {}'.format(epoch+1, ckpt_save_path))
-		print('Epoch {} Loss {:.4f} Accuracy {:.4f}'.format(epoch + 1, train_loss.result(), train_accuracy.result()))
-		print('Time taken for 1 epoch: {} secs\n'.format(time.time() - start))
+		save_checkpoint(epoch, batch)
+		print('Time taken for epoch#{}: {} secs\n'.format(epoch, time.time() - start))
 
 
 def eval_model():
