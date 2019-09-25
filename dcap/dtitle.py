@@ -115,7 +115,7 @@ def train_model():
 	optimizer = tf.keras.optimizers.Adam(learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
 	ckpt = tf.train.Checkpoint(model=transformer, optimizer=optimizer)
-	ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.model_path, max_to_keep=5)
+	ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.model_path, max_to_keep=50)
 
 	# if a checkpoint exists, restore the latest checkpoint.
 	if ckpt_manager.latest_checkpoint:
@@ -158,7 +158,7 @@ def train_model():
 
 	def save_checkpoint(epoch, batch):
 		ckpt_save_path = ckpt_manager.save()
-		print('Saving checkpoint for epoch/batch {}/{} at {}'.format(epoch+1, batch, ckpt_save_path))
+		print('Saving checkpoint for epoch/batch {}/{} at {}'.format(epoch, batch, ckpt_save_path))
 		print('Current Loss {:.4f} Accuracy {:.4f}.'.format(train_loss.result(), train_accuracy.result()))
 		train_loss.reset_states()
 		train_accuracy.reset_states()
@@ -176,7 +176,7 @@ def train_model():
 			#print('{}: {} / {}'.format(batch, inp[0][:10], tar[0][:10]))
 			if batch % 100 == 0 or batch < 5:
 				print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f} at {}'.format(
-				       epoch + 1, batch, train_loss.result(), train_accuracy.result(), time.asctime()))
+				       epoch, batch, train_loss.result(), train_accuracy.result(), time.asctime()))
 			if batch % 10000 == 0 and batch > 0:
 				save_checkpoint(epoch, batch)
 

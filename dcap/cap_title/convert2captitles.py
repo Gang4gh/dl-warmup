@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import os
 import re
 
 def convert_rawinput_to_captitles(fn_in):
