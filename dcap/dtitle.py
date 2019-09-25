@@ -15,15 +15,16 @@ parser.add_argument('--vocab', default='vocab', help='the vocab file for Subword
 parser.add_argument('--training_data', default='cap_title/training.titles')
 parser.add_argument('--test_data', default='cap_title/test.titles')
 parser.add_argument('--model_path', default='model')
-parser.add_argument('--batch_size', type=int, default=64, help='the mini-batch size for training')
+parser.add_argument('--batch_size', type=int, default=32, help='the mini-batch size for training')
 parser.add_argument('--shuffle_buffer_size', type=int, default=8192)
-parser.add_argument('--max_body_length', type=int, default=2048)
-parser.add_argument('--max_title_length', type=int, default=50)
+parser.add_argument('--max_body_length', type=int, default=1024)
+parser.add_argument('--max_title_length', type=int, default=48)
 FLAGS, _ = parser.parse_known_args()
 print('FLAGS = {}'.format(FLAGS))
 
 
 train_examples = tf.data.TextLineDataset(FLAGS.training_data)
+train_examples = train_examples.take(32*1024)
 train_examples = train_examples.map(lambda ln: tf.strings.split(ln, '\t')[1:])
 
 # load en/pt tokenizers
@@ -42,20 +43,21 @@ def encode(title, body):
 	title = [tokenizer.vocab_size] + tokenizer.encode(
 		title.numpy()) + [tokenizer.vocab_size+1]
 	body = [tokenizer.vocab_size] + tokenizer.encode(
-		body.numpy()) + [tokenizer.vocab_size+1]
+		body.numpy())[:FLAGS.max_body_length-2] + [tokenizer.vocab_size+1]
 	return title, body
 
 def tf_encode(item):
 	return tf.py_function(encode, [item[0], item[1]], [tf.int64, tf.int64])
 
 def filter_max_length(title, body):
-	return tf.logical_and(tf.size(body) <= FLAGS.max_body_length, tf.size(title) <= FLAGS.max_title_length)
+	#return tf.logical_and(tf.size(body) <= FLAGS.max_body_length, tf.size(title) <= FLAGS.max_title_length)
+	return tf.size(title) <= FLAGS.max_title_length
 
 train_dataset = train_examples.map(tf_encode)
 train_dataset = train_dataset.filter(filter_max_length)
 # cache the dataset to memory to get a speedup while reading from it.
 #train_dataset = train_dataset.cache()
-#train_dataset = train_dataset.shuffle(FLAGS.shuffle_buffer_size)
+train_dataset = train_dataset.shuffle(FLAGS.shuffle_buffer_size)
 train_dataset = train_dataset.padded_batch(FLAGS.batch_size, padded_shapes=([FLAGS.max_title_length], [FLAGS.max_body_length]), drop_remainder=True)
 train_dataset = train_dataset.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -131,8 +133,8 @@ def train_model():
 	# batch sizes (the last batch is smaller), use input_signature to specify
 	# more generic shapes.
 	train_step_signature = [
-		tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-		tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+		tf.TensorSpec(shape=(FLAGS.batch_size, None), dtype=tf.int64),
+		tf.TensorSpec(shape=(FLAGS.batch_size, None), dtype=tf.int64),
 	]
 
 	@tf.function(input_signature=train_step_signature)
@@ -159,14 +161,14 @@ def train_model():
 		train_loss.reset_states()
 		train_accuracy.reset_states()
   
-		# inp -> portuguese, tar -> english
+		# inp -> html body, tar -> html title
 		for (batch, (tar, inp)) in enumerate(train_dataset):
 			train_step(inp, tar)
 			#print('{}: {} / {}'.format(batch, inp[0][:10], tar[0][:10]))
-			if batch % 50 == 0 or batch <= 5:
+			if batch % 100 == 0 or batch <= 5:
 				print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f} at {}'.format(
 				       epoch + 1, batch, train_loss.result(), train_accuracy.result(), time.asctime()))
-			if batch % 1000 == 0:
+			if batch % 10000 == 0 and batch > 0:
 				ckpt_save_path = ckpt_manager.save()
 				print('Saving checkpoint for epoch/batch {}/{} at {}'.format(epoch+1, batch, ckpt_save_path))
 
@@ -263,7 +265,7 @@ def check_data():
 		lc += 1
 		if lc % (msg_step//dot_per_msg) == 0: print('.', end='', flush=True)
 		if lc % msg_step == 0: print(' load {}k training examples'.format(lc//1000))
-		if lc == 500000: break
+		if lc == 400000: break
 	print('histogram of {} training examples:'.format(len(titles)))
 	print('title''s histogram: {}'.format(list(zip(*np.histogram(titles, bins = range(FLAGS.max_title_length+1), density=True)))))
 	print('body''s histogram: {}'.format(list(zip(*np.histogram(bodies, bins = range(0, FLAGS.max_body_length+10, 10), density=True)))))
