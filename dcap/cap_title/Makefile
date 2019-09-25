@@ -20,7 +20,7 @@ clean:
 $(DATA_DIR).data.md5: $(RAW_INPUT)
 	mkdir -p $(DATA_DIR)
 	rm -f $(DATA_DIR)*.raw
-	split -d -nl/64 --additional-suffix=.raw $< $(DATA_DIR)data-
+	split -d -nl/100 --additional-suffix=.raw $< $(DATA_DIR)data-
 	md5sum $(DATA_DIR)*.raw > $(DATA_DIR).data.md5
 
 %.titles: $(DATA_DIR)%.raw convert2captitles.py
@@ -28,8 +28,8 @@ $(DATA_DIR).data.md5: $(RAW_INPUT)
 		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) > $@
 
 test.titles: $(TITLE_FILES)
-	head -q -n 100 $(TITLE_FILES) > $@
+	head -q -n 1000 $(TITLE_FILES) > $@
 
 training.titles: $(TITLE_FILES)
-	tail -q -n +101 $(TITLE_FILES) > $@
+	tail -q -n +1001 $(TITLE_FILES) > $@
 
