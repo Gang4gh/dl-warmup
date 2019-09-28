@@ -186,7 +186,7 @@ def train_model():
 
 def eval_model():
 	transformer = tsfm.Transformer(num_layers, d_model, num_heads, dff,
-	                          input_vocab_size, target_vocab_size, dropout_rate)
+	                          vocab_size, FLAGS.max_body_length, FLAGS.max_title_length, dropout_rate)
 
 	ckpt = tf.train.Checkpoint(model=transformer)
 	ckpt_manager = tf.train.CheckpointManager(ckpt, FLAGS.model_path, max_to_keep=None)
@@ -194,35 +194,75 @@ def eval_model():
 	# if a checkpoint exists, restore the latest checkpoint.
 	if ckpt_manager.latest_checkpoint:
 		ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
-		print('Latest checkpoint restored')
+		print('Latest checkpoint restored from {}'.format(ckpt_manager.latest_checkpoint))
 	else:
 		print('Failed to restore model')
 		sys.exit(-1)
 
-	translate("este é um problema que temos que resolver.",
-              "This is a problem we have to solve .", transformer)
-	translate("Boa vinda à porcelana, todos",
-              "Welcome to China, everybody.", transformer)
+	test_examples = tf.data.TextLineDataset(FLAGS.training_data)
+	test_examples = test_examples.map(lambda ln: tf.strings.split(ln, '\t')[1:])
+	test_dataset = test_examples.map(tf_encode)
+	test_dataset = test_dataset.filter(filter_max_length).padded_batch(FLAGS.batch_size, 
+		padded_shapes=([FLAGS.max_title_length], [FLAGS.max_body_length]), 
+		drop_remainder=True)
+	correct, total = 0, 0
+	for (batch, (tar, inp)) in enumerate(test_dataset):
+		correct += inference(inp, tar, transformer)
+		total += FLAGS.batch_size
 
-def translate(sentence, tar_sentence, transformer):
-	start_token = [tokenizer_pt.vocab_size]
-	end_token = [tokenizer_pt.vocab_size + 1]
+	print('accuray of {} examples is {}'.format(total, correct / total))
 
-	# inp sentence is portuguese, hence adding the start and end token
-	inp_sentence = start_token + tokenizer_pt.encode(sentence) + end_token
-	encoder_input = tf.expand_dims(inp_sentence, 0)
+def inference(inp, tar, transformer):
+	start_token = tokenizer.vocab_size
+	end_token = tokenizer.vocab_size + 1
 
-	# as the target is english, the first word to the transformer should be the
-	# english start token.
-	decoder_input = [tokenizer_en.vocab_size]
-	output = tf.expand_dims(decoder_input, 0)
+	# inp, tar
+	tar_inp = tar[:, :-1]
+	tar_real = tar[:, 1:]
+  
+	enc_padding_mask, look_ahead_mask = create_masks(inp, tar_inp)
+  
+	predictions, _ = transformer(inp, tar_inp, True, enc_padding_mask, look_ahead_mask)
+	predictions = tf.argmax(predictions, axis=-1)
+	#tf.print('predictions: {}'.format(predictions))
+	#tf.print('target:      {}'.format(tar_real))
+	#tf.print('accuracy:    {}'.format(predictions == tar_real))
+	tf.print(predictions, summarize=100)
+	tf.print(tar_real, summarize=100)
+	tf.print(predictions == tar_real, summarize=100)
+	tf.print(tf.reduce_sum(tf.cast(predictions == tar_real, tf.int32)) / tf.reduce_sum(tf.cast(tar_real != 0, tf.int32)))
+
+	sys.exit(0)
+	return 0
+
+	train_accuracy(tar_real, predictions, sample_weight=tf.math.not_equal(tar_real, 0))
+
+	tar_inp = tar_sentence[:, :-1]
+	enc_padding_mask, look_ahead_mask = create_masks(inp, tar_inp)
+	predictions, attention_weights = transformer(inp, tar_inp, False, enc_padding_mask, look_ahead_mask)
+	predicted_ids = tf.argmax(predictions, axis=-1)
+	
+	inp_str = tokenizer.decode([i for i  in inp[0] if i < start_token and i > 0])
+	tar_str = tokenizer.decode([i for i in tar_inp[0] if i < start_token and i > 0])
+	result = predicted_ids[0][:list(predicted_ids[0]).index(end_token)+1]
+	result_str = tokenizer.decode([i for i in result if i < start_token and i > 0])
+	print('\ninp_str : {}'.format(inp_str))
+	print('tar    : {}'.format(tar_inp[0]))
+	print('tar_str    : {}'.format(tar_str))
+	print('result: {}'.format(result))
+	print('result_str: {}'.format(result_str))
+
+	return 1 if tar_str == result_str else 0
+
+	#output = tf.constant([[start_token]]) # for _ in range(FLAGS.batch_size)]
+	output = tf.expand_dims([start_token], 0)
 
 	for i in range(FLAGS.max_title_length):
-		enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output)
+		enc_padding_mask, look_ahead_mask = create_masks(inp, output)
 
 		# predictions.shape == (batch_size, seq_len, vocab_size)
-		predictions, attention_weights = transformer(encoder_input, output, False,
-                                                     enc_padding_mask, combined_mask, dec_padding_mask)
+		predictions, attention_weights = transformer(inp, output, False,
+                                                     enc_padding_mask, look_ahead_mask)
 
 		# select the last word from the seq_len dimension
 		predictions = predictions[: ,-1:, :]  # (batch_size, 1, vocab_size)
@@ -230,20 +270,24 @@ def translate(sentence, tar_sentence, transformer):
 		predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
 
 		# return the result if the predicted_id is equal to the end token
-		if predicted_id == tokenizer_en.vocab_size+1:
+		if predicted_id == end_token:
 			break
 			#return tf.squeeze(output, axis=0), attention_weights
 
-		# concatentate the predicted_id to the output which is given to the decoder
-		# as its input.
+		# concatentate the predicted_id to the output which is given to the decoder as next input.
 		output = tf.concat([output, predicted_id], axis=-1)
 
-	result, attention_weights = tf.squeeze(output, axis=0), attention_weights
-	predicted_sentence = tokenizer_en.decode([i for i in result if i < tokenizer_en.vocab_size])
-	print('\nSentence  : {}'.format(sentence))
-	print('Inp_sent  : {}'.format(inp_sentence))
-	print('Prediction: {}'.format(predicted_sentence))
-	print('Target    : {}'.format(tar_sentence))
+	inp_str = tokenizer.decode([i for i  in inp[0] if i < start_token and i > 0])
+	tar_str = tokenizer.decode([i for i in tar_sentence[0] if i < start_token and i > 0])
+	result = output[0]
+	result_str = tokenizer.decode([i for i in result if i < start_token and i > 0])
+	print('\ninp_str : {}'.format(inp_str))
+	print('tar    : {}'.format(tar_sentence[0]))
+	print('tar_str    : {}'.format(tar_str))
+	print('result: {}'.format(result))
+	print('result_str: {}'.format(result_str))
+
+	return 1 if tar_str == result_str else 0
 
 
 def check_data():
@@ -280,7 +324,8 @@ def check_data():
 if FLAGS.mode == 'train':
 	train_model()
 elif FLAGS.mode == 'eval':
-	pass #eval_model()
+	with tf.device('/cpu:0'):
+		eval_model()
 elif FLAGS.mode == 'check-data':
 	check_data()
 
