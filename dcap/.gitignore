@@ -9,3 +9,5 @@ cap_title/raw
 
 # model dir
 model
+
+*.gz
