@@ -1,8 +1,8 @@
 # temp folder of raw data
-cap_title/raw
+data_dtitle/split_raw
 
 # training/test data for dcap title task
-*.titles
+*.dtitle
 
 # dict files
 *.subwords
