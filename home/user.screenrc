@@ -1,6 +1,7 @@
 startup_message off
 
 termcapinfo xterm* ti@:te@
+defscrollback 10240
 
 # Showing time may trigger additional refresh
 # caption always '%{= kw} %-w%{+u kg}%n %t%{-}%+w %-= | %m/%d/%y %c '

@@ -44,15 +44,15 @@ def preprocess_raw_input(input_file, tag=None):
 	print('ignore {} out of {} examples from {}'.format(invalid, total, input_file), file=sys.stderr)
 
 
-def build_vocab(input_file, vocab_file_prefix, target_vocab_size, max_subword_length=14, max_corpus_chars=2**32):
+def build_vocab(input_file, vocab_file_prefix, target_vocab_size, max_subword_length=14, max_corpus_chars=2):
 	import tensorflow_datasets as tfds
-	target_vocab_file = '{}-{}-{}-{}'.format(vocab_file_prefix, target_vocab_size, max_subword_length, max_corpus_chars)
+	target_vocab_file = '{}-{}-{}-{}g'.format(vocab_file_prefix, target_vocab_size, max_subword_length, max_corpus_chars)
 	print('{}: start to build a subwords tokenizer({}).'.format(time.asctime(), target_vocab_file))
 	corpus = (s.encode() for inputs in dtitle_reader(input_file, 100*1024) for s in inputs[1:])
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
 			target_vocab_size = int(target_vocab_size),
 			max_subword_length = int(max_subword_length),
-			max_corpus_chars = int(max_corpus_chars))
+			max_corpus_chars = int(max_corpus_chars)*(2**30))
 	tokenizer.save_to_file(target_vocab_file)
 	print('{}: the subwords tokenizer({}) is ready.'.format(time.asctime(), target_vocab_file))
 

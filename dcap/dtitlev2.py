@@ -1,21 +1,5 @@
-# Copyright 2018 The TensorFlow Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-"""Train and evaluate the Transformer model.
-
-See README for description of setting the training schedule and evaluating the
-BLEU score.
+"""Train and evaluate deep title generation model.
+Based on: https://github.com/tensorflow/models/tree/master/official/transformer/v2
 """
 
 from __future__ import absolute_import
@@ -23,14 +7,15 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import sys
 import tempfile
 
 from absl import app
 from absl import flags
 from absl import logging
 import tensorflow as tf
+import tensorflow_datasets as tfds
 
-# pylint: disable=g-bad-import-order
 from official.transformer import compute_bleu
 from official.transformer.utils import tokenizer
 from official.transformer.v2 import data_pipeline
@@ -43,11 +28,6 @@ from official.utils.flags import core as flags_core
 from official.utils.logs import logger
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
-
-
-INF = int(1e9)
-BLEU_DIR = "bleu"
-_SINGLE_SAMPLE = 1
 
 
 def translate_and_compute_bleu(model,
@@ -113,7 +93,7 @@ def evaluate_and_log_bleu(model,
     uncased_score: A float, the case insensitive BLEU score.
     cased_score: A float, the case sensitive BLEU score.
   """
-  subtokenizer = tokenizer.Subtokenizer(vocab_file)
+  subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
 
   uncased_score, cased_score = translate_and_compute_bleu(
       model, params, subtokenizer, bleu_source, bleu_ref, distribution_strategy)
@@ -175,12 +155,7 @@ class TransformerTask(object):
         distribution_strategy=flags_obj.distribution_strategy,
         num_gpus=num_gpus,
         tpu_address=flags_obj.tpu or "")
-    if self.use_tpu:
-      params["num_replicas"] = self.distribution_strategy.num_replicas_in_sync
-      if not params["static_batch"]:
-        raise ValueError("TPU requires static batch for input data.")
-    else:
-      logging.info("Running transformer with num_gpus = %d", num_gpus)
+    logging.info("Running transformer with num_gpus = %d", num_gpus)
 
     if self.distribution_strategy:
       logging.info("For training, using distribution strategy: %s",
@@ -224,61 +199,24 @@ class TransformerTask(object):
 
     model.summary()
 
-    if self.use_tpu:
-      # Different from experimental_distribute_dataset,
-      # experimental_distribute_datasets_from_function requires
-      # per-replica/local batch size.
-      params["batch_size"] /= self.distribution_strategy.num_replicas_in_sync
-      train_ds = (
-          self.distribution_strategy
-          .experimental_distribute_datasets_from_function(
-              lambda ctx: data_pipeline.train_input_fn(params, ctx)))
-    else:
-      train_ds = data_pipeline.train_input_fn(params)
-      map_data_fn = data_pipeline.map_data_for_transformer_fn
-      train_ds = train_ds.map(
-          map_data_fn, num_parallel_calls=params["num_parallel_calls"])
-    if params["use_ctl"]:
-      train_ds_iterator = iter(train_ds)
+    #train_ds = data_pipeline.train_input_fn(params)
+    #map_data_fn = data_pipeline.map_data_for_transformer_fn
+    #train_ds = train_ds.map(map_data_fn, num_parallel_calls=params["num_parallel_calls"])
+
+    #subtokenizer = tokenizer.Subtokenizer(flags_obj.vocab_file)
+    #for (batch, data) in enumerate(train_ds):
+    #  data = data[0]
+    #  inp, tar = data
+    #  inp, tar = inp[1], tar[1]
+    #  print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(batch, inp, tar, subtokenizer.decode(inp.numpy()), subtokenizer.decode(tar.numpy())))
+    #  if batch == 0: break
+    #sys.exit(0)
+    dtitle_file = params['data_dir']
+    vocab_file = self.flags_obj.vocab_file
+    tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
+    train_ds = _create_dataset(dtitle_file, tokenizer, batch_size=8, repeat=None)
 
     callbacks = self._create_callbacks(flags_obj.model_dir, 0, params)
-
-    # TODO(b/139418525): Refactor the custom training loop logic.
-    @tf.function
-    def train_steps(iterator, steps):
-      """Training steps function for TPU runs.
-
-      Args:
-        iterator: The input iterator of the training dataset.
-        steps: An integer, the number of training steps.
-
-      Returns:
-        A float, the loss value.
-      """
-
-      def _step_fn(inputs):
-        """Per-replica step function."""
-        inputs, targets = inputs
-        with tf.GradientTape() as tape:
-          logits = model([inputs, targets], training=True)
-          loss = metrics.transformer_loss(logits, targets,
-                                          params["label_smoothing"],
-                                          params["vocab_size"])
-          # Scales the loss, which results in using the average loss across all
-          # of the replicas for backprop.
-          scaled_loss = loss / self.distribution_strategy.num_replicas_in_sync
-
-        # De-dupes variables due to keras tracking issues.
-        tvars = list({id(v): v for v in model.trainable_variables}.values())
-        grads = tape.gradient(scaled_loss, tvars)
-        opt.apply_gradients(zip(grads, tvars))
-        # For reporting, the metric takes the mean of losses.
-        train_loss_metric.update_state(loss)
-
-      for _ in tf.range(steps):
-        train_loss_metric.reset_states()
-        self.distribution_strategy.experimental_run_v2(
-            _step_fn, args=(next(iterator),))
 
     cased_score, uncased_score = None, None
     cased_score_history, uncased_score_history = [], []
@@ -289,41 +227,20 @@ class TransformerTask(object):
           else flags_obj.steps_between_evals)
       current_iteration = current_step // flags_obj.steps_between_evals
 
-      logging.info(
-          "Start train iteration at global step:{}".format(current_step))
+      logging.info("Start train iteration at global step:{}".format(current_step))
       history = None
-      if params["use_ctl"]:
-        if not self.use_tpu:
-          raise NotImplementedError(
-              "Custom training loop on GPUs is not implemented.")
-        # Runs training steps.
-        train_steps(train_ds_iterator,
-                    tf.convert_to_tensor(train_steps_per_eval, dtype=tf.int32))
-        current_step += train_steps_per_eval
-        train_loss = train_loss_metric.result().numpy().astype(float)
-        logging.info("Train Step: %d/%d / loss = %s",
-                     current_step, flags_obj.train_steps, train_loss)
 
-        checkpoint_name = checkpoint.save(
-            os.path.join(
-                flags_obj.model_dir,
-                "ctl_step_{}.ckpt".format(current_step)))
-        logging.info("Saved checkpoint to %s", checkpoint_name)
-      else:
-        if self.use_tpu:
-          raise NotImplementedError(
-              "Keras model.fit on TPUs is not implemented.")
-        history = model.fit(
-            train_ds,
-            initial_epoch=current_iteration,
-            epochs=current_iteration + 1,
-            steps_per_epoch=train_steps_per_eval,
-            callbacks=callbacks,
-            # If TimeHistory is enabled, progress bar would be messy. Increase
-            # the verbose level to get rid of it.
-            verbose=(2 if flags_obj.enable_time_history else 1))
-        current_step += train_steps_per_eval
-        logging.info("Train history: {}".format(history.history))
+      history = model.fit(
+          train_ds,
+          initial_epoch=current_iteration,
+          epochs=current_iteration + 1,
+          steps_per_epoch=train_steps_per_eval,
+          callbacks=callbacks,
+          # If TimeHistory is enabled, progress bar would be messy. Increase
+          # the verbose level to get rid of it.
+          verbose=(2 if flags_obj.enable_time_history else 1))
+      current_step += train_steps_per_eval
+      logging.info("Train history: {}".format(history.history))
 
       logging.info("End train iteration at global step:{}".format(current_step))
 
@@ -369,7 +286,7 @@ class TransformerTask(object):
     subtokenizer = tokenizer.Subtokenizer(flags_obj.vocab_file)
 
     ds = data_pipeline.eval_input_fn(params)
-    ds = ds.map(lambda x, y: x).take(_SINGLE_SAMPLE)
+    ds = ds.map(lambda x, y: x).take(1)
     ret = model.predict(ds)
     val_outputs, _ = ret
     length = len(val_outputs)
@@ -393,14 +310,7 @@ class TransformerTask(object):
     """Loads model weights when it is provided."""
     if init_weight_path:
       logging.info("Load weights: {}".format(init_weight_path))
-      # TODO(b/139414977): Having the same variable restoring method for both
-      # TPU and GPU.
-      if self.use_tpu:
-        checkpoint = tf.train.Checkpoint(
-            model=model, optimizer=self._create_optimizer())
-        checkpoint.restore(init_weight_path)
-      else:
-        model.load_weights(init_weight_path)
+      model.load_weights(init_weight_path)
     else:
       logging.info("Weights not loaded from path:{}".format(init_weight_path))
 
@@ -439,31 +349,57 @@ def _ensure_dir(log_dir):
     tf.io.gfile.makedirs(log_dir)
 
 
+def _create_dataset(dtitle_file, tokenizer, batch_size=None, max_body_length=1024, max_title_length=48, shuffle_size=None, repeat=1):
+  def _data_encode(ln):
+    _, tar, inp = tf.strings.split(ln, '\t')
+    inp = tokenizer.encode(inp.numpy())[:max_body_length]
+    tar = tokenizer.encode(tar.numpy())
+    return inp, tar
+
+  ds = tf.data.TextLineDataset(dtitle_file)
+  ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]))
+  ds = ds.filter(lambda body, title: tf.size(title) <= max_title_length)
+  if shuffle_size:
+    ds = ds.shuffle(shuffle_size)
+  if batch_size:
+    ds = ds.padded_batch(batch_size, padded_shapes=([max_body_length], [max_title_length]), drop_remainder=True)
+  ds = ds.repeat(repeat)
+  ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
+  ds = ds.map(lambda x, y: ((x, y), ))
+
+  return ds
+
+def test_ds_main():
+  dtitle_file = 'data_dtitle/training.dtitle'
+  vocab_file = 'vocab-8192'
+  tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
+  ds = _create_dataset(dtitle_file, tokenizer, batch_size=32)
+  for (batch, data) in enumerate(ds):
+    data = data[0]
+    inp, tar = data
+    inp, tar = inp[0], tar[0]
+    print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(batch, inp, tar, tokenizer.decode(inp), tokenizer.decode(tar)))
+    if batch == 0: break
+
+
 def main(_):
   flags_obj = flags.FLAGS
   with logger.benchmark_context(flags_obj):
     task = TransformerTask(flags_obj)
 
-    def _run_task(task):
-      if flags_obj.mode == "train":
-        task.train()
-      elif flags_obj.mode == "predict":
-        task.predict()
-      elif flags_obj.mode == "eval":
+    if flags_obj.mode == "train":
+      task.train()
+    elif flags_obj.mode == "predict":
+      task.predict()
+    elif flags_obj.mode == "eval":
+      with tf.device('/cpu:0'):
         task.eval()
-      else:
-        raise ValueError("Invalid mode {}".format(flags_obj.mode))
-
-    if flags_obj.distribution_strategy != "tpu":
-      _run_task(task)
     else:
-      primary_cpu_task = "/job:worker" if flags_obj.use_tpu_2vm_config else ""
-      with tf.device(primary_cpu_task):
-        _run_task(task)
+      raise ValueError("Invalid mode {}".format(flags_obj.mode))
 
 
 if __name__ == "__main__":
-  tf.compat.v1.enable_v2_behavior()
   logging.set_verbosity(logging.INFO)
   misc.define_transformer_flags()
   app.run(main)
+  #test_ds_main()
