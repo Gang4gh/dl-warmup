@@ -8,7 +8,7 @@ TAG ?=
 
 all:
 	$(MAKE) $(SPLIT_DIR)data.md5
-	$(MAKE) -j$(CPUS) $(TAG)training.dtitle $(TAG)test.dtitle $(TAG)vocab-8192.subwords #training.tfe test.tfe
+	$(MAKE) -j$(CPUS) $(TAG)training.dtitle $(TAG)test.dtitle $(TAG)vocab-16384.subwords #training.tfe test.tfe
 	$(MAKE) clean
 
 clean:
