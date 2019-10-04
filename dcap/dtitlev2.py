@@ -211,10 +211,9 @@ class TransformerTask(object):
     #  print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(batch, inp, tar, subtokenizer.decode(inp.numpy()), subtokenizer.decode(tar.numpy())))
     #  if batch == 0: break
     #sys.exit(0)
-    dtitle_file = params['data_dir']
-    vocab_file = self.flags_obj.vocab_file
-    tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
-    train_ds = _create_dataset(dtitle_file, tokenizer, batch_size=8, repeat=None)
+
+    subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
+    train_ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params["batch_size"], repeat=None)
 
     callbacks = self._create_callbacks(flags_obj.model_dir, 0, params)
 
@@ -273,6 +272,14 @@ class TransformerTask(object):
         self.flags_obj.bleu_ref, self.flags_obj.vocab_file,
         self.distribution_strategy if self.use_tpu else None)
 
+  def _trim_and_decode(self, ids, subtokenizer):
+    """Trim EOS and PAD tokens from ids, and decode to return a string."""
+    try:
+      index = list(ids).index(subtokenizer.vocab_size)
+      return subtokenizer.decode(ids[:index])
+    except ValueError:  # No EOS found in sequence
+      return subtokenizer.decode(ids)
+
   def predict(self):
     """Predicts result from the model."""
     params = self.params
@@ -283,15 +290,21 @@ class TransformerTask(object):
       self._load_weights_if_possible(
           model, tf.train.latest_checkpoint(self.flags_obj.model_dir))
       model.summary()
-    subtokenizer = tokenizer.Subtokenizer(flags_obj.vocab_file)
+    subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
 
-    ds = data_pipeline.eval_input_fn(params)
-    ds = ds.map(lambda x, y: x).take(1)
+    ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params["batch_size"], repeat=1)
+    ds = ds.map(lambda X: X[0][0]).take(1)
+    for d in ds:
+      print(d)
+    return None
+
     ret = model.predict(ds)
     val_outputs, _ = ret
     length = len(val_outputs)
     for i in range(length):
-      translate.translate_from_input(val_outputs[i], subtokenizer)
+      translation = self._trim_and_decode(val_outputs[i], subtokenizer)
+      print('{} :'.format(i))
+      print("Translation: '%s'" % translation)
 
   def _create_callbacks(self, cur_log_dir, init_steps, params):
     """Creates a list of callbacks."""
@@ -310,7 +323,7 @@ class TransformerTask(object):
     """Loads model weights when it is provided."""
     if init_weight_path:
       logging.info("Load weights: {}".format(init_weight_path))
-      model.load_weights(init_weight_path)
+      model.load_weights(init_weight_path).expect_partial()
     else:
       logging.info("Weights not loaded from path:{}".format(init_weight_path))
 
@@ -352,8 +365,8 @@ def _ensure_dir(log_dir):
 def _create_dataset(dtitle_file, tokenizer, batch_size=None, max_body_length=1024, max_title_length=48, shuffle_size=None, repeat=1):
   def _data_encode(ln):
     _, tar, inp = tf.strings.split(ln, '\t')
-    inp = tokenizer.encode(inp.numpy())[:max_body_length]
-    tar = tokenizer.encode(tar.numpy())
+    inp = tokenizer.encode(inp.numpy())[:max_body_length-1] + [tokenizer.vocab_size]
+    tar = tokenizer.encode(tar.numpy()) + [tokenizer.vocab_size]
     return inp, tar
 
   ds = tf.data.TextLineDataset(dtitle_file)
@@ -370,14 +383,15 @@ def _create_dataset(dtitle_file, tokenizer, batch_size=None, max_body_length=102
   return ds
 
 def test_ds_main():
-  dtitle_file = 'data_dtitle/training.dtitle'
+  dtitle_file = 'training.dtitle'
   vocab_file = 'vocab-8192'
   tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
   ds = _create_dataset(dtitle_file, tokenizer, batch_size=32)
   for (batch, data) in enumerate(ds):
     data = data[0]
     inp, tar = data
-    inp, tar = inp[0], tar[0]
+    inp = [id.numpy() for id in inp[0] if id < tokenizer.vocab_size]
+    tar = [id.numpy() for id in tar[0] if id < tokenizer.vocab_size]
     print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(batch, inp, tar, tokenizer.decode(inp), tokenizer.decode(tar)))
     if batch == 0: break
 
@@ -392,8 +406,7 @@ def main(_):
     elif flags_obj.mode == "predict":
       task.predict()
     elif flags_obj.mode == "eval":
-      with tf.device('/cpu:0'):
-        task.eval()
+      task.eval()
     else:
       raise ValueError("Invalid mode {}".format(flags_obj.mode))
 
