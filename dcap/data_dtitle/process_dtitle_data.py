@@ -30,12 +30,12 @@ def preprocess_raw_input(input_file, tag=None):
 		inputs[2] = re.sub(r'</html>.*', '</html>', inputs[2], flags=re.I)
 		#inputs[2] = re.sub(r'#N#|#R#|#TAB#', ' ', inputs[2])
 		#inputs[2] = re.sub(r' +', ' ', inputs[2])
-		if inputs[2].find(inputs[1]) == -1:
-			invalid += 1
-			continue
 		m = re.match(r'.{,2048}[^\w&</]', inputs[2])
 		if m:
 			inputs[2] = m.group(0).strip()
+			if inputs[2].find(inputs[1]) == -1:
+				invalid += 1
+				continue
 			print('\t'.join(inputs))
 		else:
 			print('invalid input, no-match, {}'.format(inputs[0]), file=sys.stderr)
