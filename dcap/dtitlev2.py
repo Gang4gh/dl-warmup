@@ -293,17 +293,16 @@ class TransformerTask(object):
     subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
 
     ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params["batch_size"], repeat=1)
-    ds = ds.map(lambda X: X[0][0]).take(1)
-    for d in ds:
-      print(d)
-    return None
+    ds = ds.map(lambda X: X[0]).take(1)
 
     ret = model.predict(ds)
     val_outputs, _ = ret
     length = len(val_outputs)
+    print('length =', length)
     for i in range(length):
       translation = self._trim_and_decode(val_outputs[i], subtokenizer)
       print('{} :'.format(i))
+      print('outputs[i] : ', val_outputs[i])
       print("Translation: '%s'" % translation)
 
   def _create_callbacks(self, cur_log_dir, init_steps, params):
@@ -383,16 +382,18 @@ def _create_dataset(dtitle_file, tokenizer, batch_size=None, max_body_length=102
   return ds
 
 def test_ds_main():
-  dtitle_file = 'training.dtitle'
-  vocab_file = 'vocab-8192'
+  dtitle_file = 'data_dtitle/1002-test.dtitle'
+  vocab_file = 'data_dtitle/1002-vocab-16384'
   tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
-  ds = _create_dataset(dtitle_file, tokenizer, batch_size=32)
+  ds = _create_dataset(dtitle_file, tokenizer, batch_size=4)
   for (batch, data) in enumerate(ds):
     data = data[0]
-    inp, tar = data
-    inp = [id.numpy() for id in inp[0] if id < tokenizer.vocab_size]
-    tar = [id.numpy() for id in tar[0] if id < tokenizer.vocab_size]
-    print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(batch, inp, tar, tokenizer.decode(inp), tokenizer.decode(tar)))
+    print(len(data[0]))
+    for i in range(len(data[0])):
+      inp, tar = data[0][i,:], data[1][i,:]
+      inp = [id.numpy() for id in inp if id < tokenizer.vocab_size]
+      tar = [id.numpy() for id in tar if id < tokenizer.vocab_size]
+      print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(i, inp, tar, tokenizer.decode(inp), tokenizer.decode(tar)))
     if batch == 0: break
 
 

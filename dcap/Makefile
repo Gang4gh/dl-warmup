@@ -91,5 +91,8 @@ cptb:
 	fi
 
 trainv2:
-	python3 dtitlev2.py --data_dir=data_dtitle/1002-training.dtitle --model_dir=model-1002 --vocab_file=data_dtitle/1002-vocab-16384 --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false
+	python3 dtitlev2.py --data_dir=data_dtitle/1002-training.dtitle --model_dir=model_v0.2 --vocab_file=data_dtitle/1002-vocab-16384 --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false
+
+testv2:
+	python3 dtitlev2.py --mode=predict --data_dir=data_dtitle/1002-test.dtitle --model_dir=model_v0.2 --vocab_file=data_dtitle/1002-vocab-16384 --param_set=base --batch_size=2 --num_gpus=0
 
