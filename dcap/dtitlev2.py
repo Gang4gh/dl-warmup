@@ -9,6 +9,7 @@ from __future__ import print_function
 import os
 import sys
 import tempfile
+import numpy
 
 from absl import app
 from absl import flags
@@ -292,18 +293,31 @@ class TransformerTask(object):
       model.summary()
     subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
 
+    N = 5
     ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params["batch_size"], repeat=1)
-    ds = ds.map(lambda X: X[0]).take(1)
+    targets = []
+    for (batch, ((inp, tar),)) in enumerate(ds.take(N)):
+      for (index, x) in enumerate(tar):
+        real_title = self._trim_and_decode(x, subtokenizer)
+        print('{}: {}'.format(batch * params["batch_size"] + index, real_title))
+        targets.append(real_title)
+    print('load {} examples from {}'.format(len(targets), params['data_dir']))
 
+    numpy.set_printoptions(threshold=sys.maxsize)
+
+    ds = ds.map(lambda X: X[0]).take(N)
     ret = model.predict(ds)
     val_outputs, _ = ret
     length = len(val_outputs)
     print('length =', length)
+    correct, total = 0, 0
     for i in range(length):
-      translation = self._trim_and_decode(val_outputs[i], subtokenizer)
-      print('{} :'.format(i))
-      print('outputs[i] : ', val_outputs[i])
-      print("Translation: '%s'" % translation)
+      pred  = self._trim_and_decode(val_outputs[i], subtokenizer)
+      print('{}: {}'.format(i, pred))
+      #print('val_outputs[i] : {0}/{1}'.format(len(val_outputs[i]), val_outputs[i]))
+      total += 1
+      correct += 1 if pred == targets[i] else 0
+    print('accuracy: {}/{}={}'.format(correct, total, correct/total))
 
   def _create_callbacks(self, cur_log_dir, init_steps, params):
     """Creates a list of callbacks."""
