@@ -23,7 +23,7 @@ from official.transformer.v2 import data_pipeline
 from official.transformer.v2 import metrics
 from official.transformer.v2 import misc
 from official.transformer.v2 import optimizer
-from official.transformer.v2 import transformer
+import transformer
 from official.transformer.v2 import translate
 from official.utils.flags import core as flags_core
 from official.utils.logs import logger
