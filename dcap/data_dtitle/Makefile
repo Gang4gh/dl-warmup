@@ -35,7 +35,7 @@ $(TAG)test.dtitle: $(DTITLE_FILES)
 vocabs: $(TAG)vocab-4096.subwords $(TAG)vocab-8192.subwords $(TAG)vocab-16384.subwords $(TAG)vocab-32768.subwords $(TAG)vocab-65536.subwords
 
 $(TAG)vocab-%.subwords: $(TAG)training.dtitle
-	python3 process_dtitle_data.py build-vocab $< $(TAG)vocab $*
+	python3 process_dtitle_data.py build-vocab $< $(TAG)vocab $* 16 4
 
 #%.tfe: %.dtitle $(TAG)vocab-8192.subwords
 #	python3 process_dtitle_data.py build-tfexample $< $(TAG)vocab-8192 $@
