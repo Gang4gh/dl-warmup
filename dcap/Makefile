@@ -91,7 +91,7 @@ cptb:
 	fi
 
 DATA_DIR ?= data_dtitle
-DATA_TAG ?= 1003-
+DATA_TAG ?= d1008-
 
 trainv2:
 	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DATA_TAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false $(ARGS)

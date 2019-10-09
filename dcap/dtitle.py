@@ -18,7 +18,6 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 
 from official.transformer import compute_bleu
-from official.transformer.utils import tokenizer
 from official.transformer.v2 import data_pipeline
 from official.transformer.v2 import metrics
 from official.transformer.v2 import misc
@@ -141,7 +140,10 @@ class TransformerTask(object):
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
 
-    print('vocab_size =', params["vocab_size"])
+    self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
+    self.EOS_id = self.tokenizer.encode('<EOS>')[0]
+    params["vocab_size"] = self.tokenizer.vocab_size
+    print('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
 
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
@@ -181,7 +183,7 @@ class TransformerTask(object):
     keras_utils.set_session_config(
         enable_xla=flags_obj.enable_xla)
 
-    _ensure_dir(flags_obj.model_dir)
+    self._ensure_dir(flags_obj.model_dir)
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
       opt = self._create_optimizer()
@@ -190,9 +192,9 @@ class TransformerTask(object):
       checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
       latest_checkpoint = tf.train.latest_checkpoint(flags_obj.model_dir)
       if latest_checkpoint:
-        checkpoint.restore(latest_checkpoint)#.assert_consumed() TODO: restore doesn't work actually
+        checkpoint.restore(latest_checkpoint).expect_partial()#.assert_consumed() TODO: restore doesn't work actually
         current_step = opt.iterations.numpy()
-        model.load_weights(latest_checkpoint)
+        model.load_weights(latest_checkpoint).expect_partial()
         logging.info("Loaded checkpoint %s", latest_checkpoint)
 
       if params["use_ctl"]:
@@ -203,21 +205,7 @@ class TransformerTask(object):
 
     model.summary()
 
-    #train_ds = data_pipeline.train_input_fn(params)
-    #map_data_fn = data_pipeline.map_data_for_transformer_fn
-    #train_ds = train_ds.map(map_data_fn, num_parallel_calls=params["num_parallel_calls"])
-
-    #subtokenizer = tokenizer.Subtokenizer(flags_obj.vocab_file)
-    #for (batch, data) in enumerate(train_ds):
-    #  data = data[0]
-    #  inp, tar = data
-    #  inp, tar = inp[1], tar[1]
-    #  print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(batch, inp, tar, subtokenizer.decode(inp.numpy()), subtokenizer.decode(tar.numpy())))
-    #  if batch == 0: break
-    #sys.exit(0)
-
-    subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
-    train_ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params["batch_size"], repeat=None)
+    train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
 
     callbacks = self._create_callbacks(flags_obj.model_dir, 0, params)
 
@@ -276,13 +264,13 @@ class TransformerTask(object):
         self.flags_obj.bleu_ref, self.flags_obj.vocab_file,
         self.distribution_strategy if self.use_tpu else None)
 
-  def _trim_and_decode(self, ids, subtokenizer):
+  def _trim_and_decode(self, ids):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
     try:
-      index = list(ids).index(subtokenizer.vocab_size)
-      return subtokenizer.decode(ids[:index])
+      index = list(ids).index(self.EOS_id)
+      return self.tokenizer.decode(ids[:index])
     except ValueError:  # No EOS found in sequence
-      return subtokenizer.decode(ids)
+      return self.tokenizer.decode(ids)
 
   def predict(self):
     """Predicts result from the model."""
@@ -294,16 +282,14 @@ class TransformerTask(object):
       self._load_weights_if_possible(
           model, tf.train.latest_checkpoint(self.flags_obj.model_dir))
       model.summary()
-    subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
-    print('subtokenizer.vocab_size = ', subtokenizer.vocab_size)
 
     N = 1024
     N //= params['batch_size']
-    ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params['batch_size'], repeat=1)
+    ds = self._create_dataset(params['data_dir'], batch_size=params['batch_size'], repeat=1)
     targets = []
     for (batch, ((inp, tar),)) in enumerate(ds.take(N)):
       for (index, ids) in enumerate(tar):
-        real_title = self._trim_and_decode(ids, subtokenizer)
+        real_title = self._trim_and_decode(ids)
         #print('{}: {}'.format(batch*params['batch_size'] + index, real_title))
         targets.append(real_title)
     print('load {} examples from {}'.format(len(targets), params['data_dir']))
@@ -316,7 +302,7 @@ class TransformerTask(object):
     val_outputs, _ = ret
     length = len(val_outputs)
     for i in range(length):
-      pred  = self._trim_and_decode(val_outputs[i], subtokenizer)
+      pred  = self._trim_and_decode(val_outputs[i])
       target = targets[i]
       if pred == target:
         correct += 1
@@ -375,54 +361,47 @@ class TransformerTask(object):
 
     return opt
 
+  def _create_dataset(self, dtitle_file, batch_size=None, max_body_length=1024, max_title_length=48, shuffle_size=None, repeat=1):
+    def _data_encode(ln):
+      _, tar, inp = tf.strings.split(ln, '\t')
+      inp = self.tokenizer.encode(inp.numpy())[:max_body_length-1] + [self.EOS_id]
+      tar = self.tokenizer.encode(tar.numpy()) + [self.EOS_id]
+      return inp, tar
 
-def _ensure_dir(log_dir):
-  """Makes log dir if not existed."""
-  if not tf.io.gfile.exists(log_dir):
-    tf.io.gfile.makedirs(log_dir)
+    ds = tf.data.TextLineDataset(dtitle_file)
+    ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]))
+    ds = ds.filter(lambda body, title: tf.size(title) <= max_title_length)
+    if shuffle_size:
+      ds = ds.shuffle(shuffle_size)
+    if batch_size:
+      ds = ds.padded_batch(batch_size, padded_shapes=([max_body_length], [max_title_length]), drop_remainder=True)
+    ds = ds.repeat(repeat)
+    ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
+    ds = ds.map(lambda x, y: ((x, y), ))
+
+    return ds
+
+  def _ensure_dir(log_dir):
+    """Makes log dir if not existed."""
+    if not tf.io.gfile.exists(log_dir):
+      tf.io.gfile.makedirs(log_dir)
 
 
-def _create_dataset(dtitle_file, tokenizer, batch_size=None, max_body_length=1024, max_title_length=48, shuffle_size=None, repeat=1):
-  def _data_encode(ln):
-    _, tar, inp = tf.strings.split(ln, '\t')
-    inp = tokenizer.encode(inp.numpy())[:max_body_length-1] + [tokenizer.vocab_size]
-    tar = tokenizer.encode(tar.numpy()) + [tokenizer.vocab_size]
-    return inp, tar
-
-  ds = tf.data.TextLineDataset(dtitle_file)
-  ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]))
-  ds = ds.filter(lambda body, title: tf.size(title) <= max_title_length)
-  if shuffle_size:
-    ds = ds.shuffle(shuffle_size)
-  if batch_size:
-    ds = ds.padded_batch(batch_size, padded_shapes=([max_body_length], [max_title_length]), drop_remainder=True)
-  ds = ds.repeat(repeat)
-  ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
-  ds = ds.map(lambda x, y: ((x, y), ))
-
-  return ds
-
-def test_ds_main():
-  dtitle_file = 'data_dtitle/1002-test.dtitle'
-  vocab_file = 'data_dtitle/1002-vocab-16384'
-  tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
-  ds = _create_dataset(dtitle_file, tokenizer, batch_size=4)
-  for (batch, data) in enumerate(ds):
-    data = data[0]
-    print(len(data[0]))
-    for i in range(len(data[0])):
-      inp, tar = data[0][i,:], data[1][i,:]
-      inp = [id.numpy() for id in inp if id < tokenizer.vocab_size]
-      tar = [id.numpy() for id in tar if id < tokenizer.vocab_size]
-      print('{}:\ninp={}\ntar={}\ninp_str={}\ntar_str={}'.format(i, inp, tar, tokenizer.decode(inp), tokenizer.decode(tar)))
-    if batch == 0: break
+def main_test(_):
+  flags_obj = flags.FLAGS
+  task = TransformerTask(flags_obj)
+  ds = task._create_dataset(flags_obj.data_dir, batch_size=4)
+  for (batch, ((inp, tar),)) in enumerate(ds.take(2)):
+    for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
+      htmlbody = task._trim_and_decode(inp1)
+      title = task._trim_and_decode(tar1)
+      print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
 
 
 def main(_):
   flags_obj = flags.FLAGS
   with logger.benchmark_context(flags_obj):
     task = TransformerTask(flags_obj)
-
     if flags_obj.mode == "train":
       task.train()
     elif flags_obj.mode == "predict":
@@ -437,4 +416,5 @@ if __name__ == "__main__":
   logging.set_verbosity(logging.INFO)
   misc.define_transformer_flags()
   app.run(main)
-  #test_ds_main()
+  #app.run(main_test)
+
