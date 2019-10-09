@@ -341,7 +341,7 @@ class Transformer(tf.keras.Model):
         beam_size=self.params["beam_size"],
         alpha=self.params["alpha"],
         max_decode_length=max_decode_length,
-        eos_id=EOS_ID,
+        eos_id=16404,#EOS_ID,
         padded_decode=self.params["padded_decode"],
         dtype=self.params["dtype"])
 

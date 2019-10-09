@@ -8,6 +8,6 @@ data_dtitle/split_raw
 *.subwords
 
 # model dir
-model
+model*
 
 *.gz

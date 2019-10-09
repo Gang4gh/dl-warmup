@@ -141,6 +141,8 @@ class TransformerTask(object):
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
 
+    print('vocab_size =', params["vocab_size"])
+
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
       # like this. What if multiple instances of TransformerTask are created?
@@ -188,9 +190,10 @@ class TransformerTask(object):
       checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
       latest_checkpoint = tf.train.latest_checkpoint(flags_obj.model_dir)
       if latest_checkpoint:
-        checkpoint.restore(latest_checkpoint)
-        logging.info("Loaded checkpoint %s", latest_checkpoint)
+        checkpoint.restore(latest_checkpoint)#.assert_consumed() TODO: restore doesn't work actually
         current_step = opt.iterations.numpy()
+        model.load_weights(latest_checkpoint)
+        logging.info("Loaded checkpoint %s", latest_checkpoint)
 
       if params["use_ctl"]:
         train_loss_metric = tf.keras.metrics.Mean(
@@ -292,31 +295,36 @@ class TransformerTask(object):
           model, tf.train.latest_checkpoint(self.flags_obj.model_dir))
       model.summary()
     subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
+    print('subtokenizer.vocab_size = ', subtokenizer.vocab_size)
 
-    N = 5
-    ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params["batch_size"], repeat=1)
+    N = 1024
+    N //= params['batch_size']
+    ds = _create_dataset(params['data_dir'], subtokenizer, batch_size=params['batch_size'], repeat=1)
     targets = []
     for (batch, ((inp, tar),)) in enumerate(ds.take(N)):
-      for (index, x) in enumerate(tar):
-        real_title = self._trim_and_decode(x, subtokenizer)
-        print('{}: {}'.format(batch * params["batch_size"] + index, real_title))
+      for (index, ids) in enumerate(tar):
+        real_title = self._trim_and_decode(ids, subtokenizer)
+        #print('{}: {}'.format(batch*params['batch_size'] + index, real_title))
         targets.append(real_title)
     print('load {} examples from {}'.format(len(targets), params['data_dir']))
 
-    numpy.set_printoptions(threshold=sys.maxsize)
+    #numpy.set_printoptions(threshold=sys.maxsize)
 
+    correct, total = 0, 0
     ds = ds.map(lambda X: X[0]).take(N)
     ret = model.predict(ds)
     val_outputs, _ = ret
     length = len(val_outputs)
-    print('length =', length)
-    correct, total = 0, 0
     for i in range(length):
       pred  = self._trim_and_decode(val_outputs[i], subtokenizer)
-      print('{}: {}'.format(i, pred))
-      #print('val_outputs[i] : {0}/{1}'.format(len(val_outputs[i]), val_outputs[i]))
+      target = targets[i]
+      if pred == target:
+        correct += 1
+        #print('match #{}: \n    "{}"\n    "{}"'.format(i, pred, target))
+      else:
+        print('mismatch #{}: \n\tPred.:  "{}"\n\tTarget: "{}"'.format(i, pred, target))
+        #print('val_outputs[i] : {0}/{1}'.format(len(val_outputs[i]), val_outputs[i]))
       total += 1
-      correct += 1 if pred == targets[i] else 0
     print('accuracy: {}/{}={}'.format(correct, total, correct/total))
 
   def _create_callbacks(self, cur_log_dir, init_steps, params):
@@ -328,8 +336,7 @@ class TransformerTask(object):
     callbacks = misc.get_callbacks()
     callbacks.append(scheduler_callback)
     ckpt_full_path = os.path.join(cur_log_dir, "cp-{epoch:04d}.ckpt")
-    callbacks.append(tf.keras.callbacks.ModelCheckpoint(ckpt_full_path,
-                                                        save_weights_only=True))
+    callbacks.append(tf.keras.callbacks.ModelCheckpoint(ckpt_full_path, save_weights_only=True))
     return callbacks
 
   def _load_weights_if_possible(self, model, init_weight_path=None):

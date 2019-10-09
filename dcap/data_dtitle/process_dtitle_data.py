@@ -53,7 +53,8 @@ def build_vocab(input_file, vocab_file_prefix, target_vocab_size, max_subword_le
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
 			target_vocab_size = int(target_vocab_size),
 			max_subword_length = int(max_subword_length),
-			max_corpus_chars = int(max_corpus_chars)*(2**30))
+			max_corpus_chars = int(max_corpus_chars)*(2**30),
+			reserved_tokens = ['<EOS>'])
 	tokenizer.save_to_file(target_vocab_file)
 	tokenizer.save_to_file(target_vocab_file_short)
 	print('{}: the subwords tokenizer({}) is ready.'.format(time.asctime(), target_vocab_file))
