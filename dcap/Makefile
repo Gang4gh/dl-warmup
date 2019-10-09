@@ -94,8 +94,8 @@ DATA_DIR ?= data_dtitle
 DATA_TAG ?= 1003-
 
 trainv2:
-	python3 dtitlev2.py --mode=train --data_dir=$(DATA_DIR)/$(DATA_TAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false $(ARGS)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DATA_TAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false $(ARGS)
 
 testv2:
-	python3 dtitlev2.py --mode=predict --data_dir=$(DATA_DIR)/$(DATA_TAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --batch_size=64 --num_gpus=1 $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DATA_TAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --batch_size=64 --num_gpus=1 $(ARGS)
 
