@@ -1,13 +1,14 @@
 # temp folder of raw data
 data_dtitle/split_raw
 
-# training/test data for dcap title task
+# training/test data and vocab files for dcap title task
 *.dtitle
-
-# dict files
 *.subwords
 
 # model dir
 model*
 
 *.gz
+
+# running center
+running_center

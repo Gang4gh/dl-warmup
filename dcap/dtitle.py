@@ -381,7 +381,8 @@ class TransformerTask(object):
 
     return ds
 
-  def _ensure_dir(log_dir):
+  @classmethod
+  def _ensure_dir(cls, log_dir):
     """Makes log dir if not existed."""
     if not tf.io.gfile.exists(log_dir):
       tf.io.gfile.makedirs(log_dir)

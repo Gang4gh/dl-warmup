@@ -8,37 +8,19 @@ TAG ?= notag
 PORT ?= 2345
 MDIR ?= model
 
-
 all:
-	python lt.py --mode=train
+	#python lt.py --mode=train
 
 clean:
-	rm -f */data.md5 *.articles *.vocab
+	#rm -f */data.md5 *.articles *.vocab
 
 cleanall: clean
-	for ds in $(DATASOURCES); do $(MAKE) -C $$ds clean; done
+	#for ds in $(DATASOURCES); do $(MAKE) -C $$ds clean; done
 
 .DELETE_ON_ERROR:
 
 
 # data pre-processing
-%/data.md5:
-	$(MAKE) -j$(CPUS) -C $*
-	md5sum $*/*.dcaptitles > $@
-keep-data-md5: $(addsuffix /data.md5, $(DATASOURCES))
-
-labeled-data: training.dcaptitles test.dcaptitles
-	@echo labeled data is prepared from \'$(DATASOURCES)\'
-
-all.dcaptitles: $(addsuffix /data.md5, $(DATASOURCES))
-	cat $(addsuffix /$*.dcaptitles, $(DATASOURCES)) \
-		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) > $@
-
-training.dcaptitles: all.dcaptitles
-	head -n 4000 $< > $@
-
-test.dcaptitles: all.dcaptitles
-	tail -n 10000 $< > $@
 
 # training/test actions
 tb tensorboard:
@@ -48,37 +30,8 @@ tb tensorboard:
 tbr tensorboard_root:
 	$(MAKE) tb MDIR=. PORT=$(PORT)
 
-tm trainmodel: labeled-data
-	python3 summarization.py --mode=train \
-		--model_root=model --data_path=training.articles \
-		--batch_size=32 --log_rouge_interval=3600 --max_train_step=256000 $(ARGS)
-
-cleanmodel:
-	rm -rf model
-
-train: labeled-data cleanmodel tensorboard trainmodel
-
-ctrain: labeled-data tensorboard trainmodel
-
-TRAINING_ROOT=running_center/$(TAG)-$(TIMESTAMP)/
-
-tc trainingcenter: labeled-data
-	mkdir -p $(TRAINING_ROOT)
-	cp -p --parents *.py Makefile *.articles *.vocab */data.md5 $(TRAINING_ROOT)
-	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT)Makefile.config
-	echo PORT ?= $(PORT) >> $(TRAINING_ROOT)Makefile.config
-	$(MAKE) -C $(TRAINING_ROOT) train
-
-decode:
-	python3 summarization.py --mode=decode \
-		--model_root=model --data_path=test-sample.articles \
-		--batch_size=20 --beam_size=4 --enable_log2file=1 $(ARGS)
-
 cdecode:
 	watch -n 3600 $(MAKE) decode
-
-naive: labeled-data
-	python3 summarization.py --mode=naive --model_root=model --data_path=test-sample.articles $(ARGS)
 
 cptb:
 	@if [ '$(ID)' != '' ]; then \
@@ -91,11 +44,32 @@ cptb:
 	fi
 
 DATA_DIR ?= data_dtitle
-DATA_TAG ?= d1008-
+DTAG ?= d1008-
+VOCAB ?= vocab-16384
+DATA_FILES = $(DATA_DIR)/$(DTAG)training.dtitle $(DATA_DIR)/$(DTAG)test.dtitle $(DATA_DIR)/$(DTAG)$(VOCAB).subwords
+MODEL_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard *.py))
 
-trainv2:
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DATA_TAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false $(ARGS)
+check-params:
+	@echo DATA_FILES = $(DATA_FILES)
+	@echo MODEL_FILES = $(MODEL_FILES)
 
-testv2:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DATA_TAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DATA_TAG)vocab-16384 --param_set=base --batch_size=64 --num_gpus=1 $(ARGS)
+cleanmodel:
+	rm -rf model
+
+tm trainmodel: $(DATA_FILES)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false $(ARGS)
+
+train: cleanmodel trainmodel
+
+TRAINING_ROOT=running_center/$(TAG)-$(TIMESTAMP)/
+
+tc trainingcenter: $(DATA_FILES)
+	mkdir -p $(TRAINING_ROOT)
+	cp -p Makefile $(MODEL_FILES) $(TRAINING_ROOT)
+	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
+	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT)Makefile.config
+	$(MAKE) -C $(TRAINING_ROOT) train
+
+predict:
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=64 --num_gpus=1 $(ARGS)
 
