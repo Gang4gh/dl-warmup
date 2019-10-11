@@ -23,13 +23,6 @@ cleanall: clean
 # data pre-processing
 
 # training/test actions
-tb tensorboard:
-	pkill -f tensorboard\ --port\ $(PORT); sleep 1
-	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
-
-tbr tensorboard_root:
-	$(MAKE) tb MDIR=. PORT=$(PORT)
-
 cdecode:
 	watch -n 3600 $(MAKE) decode
 
@@ -56,10 +49,17 @@ check-params:
 cleanmodel:
 	rm -rf model
 
-tm trainmodel: $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false $(ARGS)
+tb tensorboard:
+	pkill -f tensorboard\ --port\ $(PORT); sleep 1
+	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --bind_all --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
 
-train: cleanmodel trainmodel
+tbr tensorboard_root:
+	$(MAKE) tb MDIR=. PORT=$(PORT)
+
+tm trainmodel: $(DATA_FILES)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false --enable_metrics_in_training  --enable_tensorboard $(ARGS)
+
+train: cleanmodel tensorboard trainmodel
 
 TRAINING_ROOT=running_center/$(TAG)-$(TIMESTAMP)/
 

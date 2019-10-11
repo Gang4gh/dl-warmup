@@ -20,7 +20,7 @@ import tensorflow_datasets as tfds
 from official.transformer import compute_bleu
 from official.transformer.v2 import data_pipeline
 from official.transformer.v2 import metrics
-from official.transformer.v2 import misc
+import misc
 from official.transformer.v2 import optimizer
 import transformer
 from official.transformer.v2 import translate
