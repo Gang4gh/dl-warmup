@@ -9,8 +9,8 @@ ARGS ?=
 
 all:
 	$(MAKE) $(SPLIT_DIR)data.md5
-	$(MAKE) -j$(CPUS) $(TAG)meta
-	#$(MAKE) clean
+	$(MAKE) -j$(CPUS) $(TAG)meta.log
+	$(MAKE) clean
 
 clean:
 	rm -rf $(SPLIT_DIR)
@@ -42,7 +42,7 @@ $(TAG)test.dtitle: $(DTITLE_FILES)
 $(TAG)vocab-%.subwords: $(TAG)training.dtitle
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)vocab --target_vocab_size=$* $(ARGS)
 
-$(TAG)meta: $(TAG)training.dtitle $(TAG)test.dtitle $(TAG)vocab-16384.subwords
+$(TAG)meta.log: $(TAG)training.dtitle $(TAG)test.dtitle $(TAG)vocab-16384.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)vocab $(ARGS) > $@
 	md5sum $(TAG)*.* >> $@
 
