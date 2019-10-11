@@ -19,23 +19,9 @@ cleanall: clean
 
 .DELETE_ON_ERROR:
 
-
 # data pre-processing
 
 # training/test actions
-cdecode:
-	watch -n 3600 $(MAKE) decode
-
-cptb:
-	@if [ '$(ID)' != '' ]; then \
-		for i in $(ID); do \
-			mkdir -p running_center/$(TAG)/_$$i; \
-			philly-fs -cp -r //philly/eu2/ipgsrch/sys/jobs/application_$$i/models/output-model-path/tb/* running_center/$(TAG)/_$$i; \
-		done; \
-		echo; \
-	else echo 'make cptb: please specify a valid ID'; \
-	fi
-
 DATA_DIR ?= data_dtitle
 DTAG ?= d1008-
 VOCAB ?= vocab-16384
@@ -72,4 +58,7 @@ tc trainingcenter: $(DATA_FILES)
 
 predict:
 	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=64 --num_gpus=1 $(ARGS)
+
+#cdecode:
+#	watch -n 3600 $(MAKE) decode
 
