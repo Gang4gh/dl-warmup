@@ -3,30 +3,21 @@ CPUS = $(shell nproc)
 TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 
 -include Makefile.config
-DATASOURCES ?= CapTitle #CNN DailyMail
 TAG ?= notag
 PORT ?= 2345
 MDIR ?= model
-
-all:
-	#python lt.py --mode=train
-
-clean:
-	#rm -f */data.md5 *.articles *.vocab
-
-cleanall: clean
-	#for ds in $(DATASOURCES); do $(MAKE) -C $$ds clean; done
-
-.DELETE_ON_ERROR:
-
-# data pre-processing
-
-# training/test actions
 DATA_DIR ?= data_dtitle
 DTAG ?= d1008-
 VOCAB ?= vocab-16384
 DATA_FILES = $(DATA_DIR)/$(DTAG)training.dtitle $(DATA_DIR)/$(DTAG)test.dtitle $(DATA_DIR)/$(DTAG)$(VOCAB).subwords
 MODEL_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard *.py))
+
+all: check-params
+
+clean:
+	#rm -f */data.md5 *.articles *.vocab
+
+.DELETE_ON_ERROR:
 
 check-params:
 	@echo DATA_FILES = $(DATA_FILES)

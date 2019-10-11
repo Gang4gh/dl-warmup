@@ -19,7 +19,6 @@ import tensorflow_datasets as tfds
 
 from official.transformer import compute_bleu
 from official.transformer.v2 import data_pipeline
-from official.transformer.v2 import metrics
 import misc
 from official.transformer.v2 import optimizer
 import transformer
@@ -198,8 +197,7 @@ class TransformerTask(object):
         logging.info("Loaded checkpoint %s", latest_checkpoint)
 
       if params["use_ctl"]:
-        train_loss_metric = tf.keras.metrics.Mean(
-            "training_loss", dtype=tf.float32)
+        train_loss_metric = tf.keras.metrics.Mean("training_loss", dtype=tf.float32)
       else:
         model.compile(opt)
 
@@ -261,8 +259,7 @@ class TransformerTask(object):
       self.predict_model.summary()
     return evaluate_and_log_bleu(
         self.predict_model, self.params, self.flags_obj.bleu_source,
-        self.flags_obj.bleu_ref, self.flags_obj.vocab_file,
-        self.distribution_strategy if self.use_tpu else None)
+        self.flags_obj.bleu_ref, self.flags_obj.vocab_file)
 
   def _trim_and_decode(self, ids):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
@@ -389,9 +386,9 @@ class TransformerTask(object):
 
 
 def main_test(_):
-  flags_obj = flags.FLAGS
-  task = TransformerTask(flags_obj)
-  ds = task._create_dataset(flags_obj.data_dir, batch_size=4)
+  FLAGS = flags.FLAGS
+  task = TransformerTask(FLAGS)
+  ds = task._create_dataset(FLAGS.data_dir, batch_size=4)
   for (batch, ((inp, tar),)) in enumerate(ds.take(2)):
     for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
       htmlbody = task._trim_and_decode(inp1)

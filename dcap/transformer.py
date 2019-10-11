@@ -29,7 +29,7 @@ from official.transformer.v2 import attention_layer
 from official.transformer.v2 import beam_search
 from official.transformer.v2 import embedding_layer
 from official.transformer.v2 import ffn_layer
-from official.transformer.v2 import metrics
+import metrics
 
 
 # Disable the not-callable lint error, since it claims many objects are not
