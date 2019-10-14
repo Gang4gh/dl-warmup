@@ -20,8 +20,15 @@ clean:
 .DELETE_ON_ERROR:
 
 check-params:
+	@echo TAG ?= $(TAG)
+	@echo PORT ?= $(PORT)
+	@echo MDIR ?= $(MDIR)
+	@echo DATA_DIR ?= $(DATA_DIR)
+	@echo DTAG ?= $(DTAG)
+	@echo VOCAB ?= $(VOCAB)
 	@echo DATA_FILES = $(DATA_FILES)
 	@echo MODEL_FILES = $(MODEL_FILES)
+	@echo ARGS ?= $(ARGS)
 
 cleanmodel:
 	rm -rf model
@@ -44,7 +51,7 @@ tc trainingcenter: $(DATA_FILES)
 	mkdir -p $(TRAINING_ROOT)
 	cp -p Makefile $(MODEL_FILES) $(TRAINING_ROOT)
 	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
-	echo ARGS ?= $(ARGS) > $(TRAINING_ROOT)Makefile.config
+	$(MAKE) check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
 
 predict:
@@ -52,4 +59,3 @@ predict:
 
 #cdecode:
 #	watch -n 3600 $(MAKE) decode
-
