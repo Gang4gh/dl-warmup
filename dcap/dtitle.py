@@ -29,79 +29,6 @@ from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
 
 
-def translate_and_compute_bleu(model,
-                               params,
-                               subtokenizer,
-                               bleu_source,
-                               bleu_ref,
-                               distribution_strategy=None):
-  """Translate file and report the cased and uncased bleu scores.
-
-  Args:
-    model: A Keras model, used to generate the translations.
-    params: A dictionary, containing the translation related parameters.
-    subtokenizer: A subtokenizer object, used for encoding and decoding source
-      and translated lines.
-    bleu_source: A file containing source sentences for translation.
-    bleu_ref: A file containing the reference for the translated sentences.
-    distribution_strategy: A platform distribution strategy, used for TPU based
-      translation.
-
-  Returns:
-    uncased_score: A float, the case insensitive BLEU score.
-    cased_score: A float, the case sensitive BLEU score.
-  """
-  # Create temporary file to store translation.
-  tmp = tempfile.NamedTemporaryFile(delete=False)
-  tmp_filename = tmp.name
-
-  translate.translate_file(
-      model,
-      params,
-      subtokenizer,
-      bleu_source,
-      output_file=tmp_filename,
-      print_all_translations=False,
-      distribution_strategy=distribution_strategy)
-
-  # Compute uncased and cased bleu scores.
-  uncased_score = compute_bleu.bleu_wrapper(bleu_ref, tmp_filename, False)
-  cased_score = compute_bleu.bleu_wrapper(bleu_ref, tmp_filename, True)
-  os.remove(tmp_filename)
-  return uncased_score, cased_score
-
-
-def evaluate_and_log_bleu(model,
-                          params,
-                          bleu_source,
-                          bleu_ref,
-                          vocab_file,
-                          distribution_strategy=None):
-  """Calculate and record the BLEU score.
-
-  Args:
-    model: A Keras model, used to generate the translations.
-    params: A dictionary, containing the translation related parameters.
-    bleu_source: A file containing source sentences for translation.
-    bleu_ref: A file containing the reference for the translated sentences.
-    vocab_file: A file containing the vocabulary for translation.
-    distribution_strategy: A platform distribution strategy, used for TPU based
-      translation.
-
-  Returns:
-    uncased_score: A float, the case insensitive BLEU score.
-    cased_score: A float, the case sensitive BLEU score.
-  """
-  subtokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
-
-  uncased_score, cased_score = translate_and_compute_bleu(
-      model, params, subtokenizer, bleu_source, bleu_ref, distribution_strategy)
-
-  logging.info("Bleu score (uncased): %s", uncased_score)
-  logging.info("Bleu score (cased): %s", cased_score)
-  return uncased_score, cased_score
-
-
 class TransformerTask(object):
   """Main entry of Transformer model."""
 
@@ -189,10 +116,7 @@ class TransformerTask(object):
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
       opt = self._create_optimizer()
-      if params["use_ctl"]:
-        train_loss_metric = tf.keras.metrics.Mean("training_loss", dtype=tf.float32)
-      else:
-        model.compile(opt)
+      model.compile(opt)
 
     current_step = 0
     checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
@@ -207,49 +131,22 @@ class TransformerTask(object):
 
     callbacks = self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr)
 
-    cased_score, uncased_score = None, None
-    cased_score_history, uncased_score_history = [], []
-    training_summary = []
-    while current_step < flags_obj.train_steps:
-      remaining_steps = flags_obj.train_steps - current_step
-      train_steps_per_eval = (
-          remaining_steps if remaining_steps < flags_obj.steps_between_evals
-          else flags_obj.steps_between_evals)
-      current_iteration = current_step // flags_obj.steps_between_evals
-
-      logging.info("Start train iteration at global step:{}".format(current_step))
-      history = None
-
-      history = model.fit(
-          train_ds,
-          initial_epoch=current_iteration,
-          epochs=current_iteration + 1,
-          steps_per_epoch=train_steps_per_eval,
-          callbacks=callbacks,
-          # If TimeHistory is enabled, progress bar would be messy. Increase
-          # the verbose level to get rid of it.
-          verbose=(2 if flags_obj.enable_time_history else 1))
-      current_step += train_steps_per_eval
-      logging.info("Train history: {}".format(history.history))
-      training_summary.append(history.history)
-
-      logging.info("End train iteration at global step:{}".format(current_step))
-
-      if (flags_obj.bleu_source and flags_obj.bleu_ref):
-        uncased_score, cased_score = self.eval()
-        cased_score_history.append([current_iteration + 1, cased_score])
-        uncased_score_history.append([current_iteration + 1, uncased_score])
+    logging.info("Start train iteration at global step:{}".format(current_step))
+    history = model.fit(
+        train_ds,
+        initial_epoch=current_step // flags_obj.steps_between_evals,
+        epochs=(flags_obj.train_steps-1) // flags_obj.steps_between_evals + 1,
+        steps_per_epoch=min(flags_obj.steps_between_evals, flags_obj.train_steps - current_step),
+        callbacks=callbacks,
+        verbose=1)
+    logging.info("Train history: {}".format(history.history))
+    current_step = opt.iterations.numpy() - 1
+    logging.info("End train iteration at global step:{}".format(current_step))
 
     stats = ({
         "loss": train_loss
     } if history is None else misc.build_stats(history, callbacks))
-    if uncased_score and cased_score:
-      stats["bleu_uncased"] = uncased_score
-      stats["bleu_cased"] = cased_score
-      stats["bleu_uncased_history"] = uncased_score_history
-      stats["bleu_cased_history"] = cased_score_history
 
-    print('training_summary:', training_summary)
     return stats
 
   def eval(self):
