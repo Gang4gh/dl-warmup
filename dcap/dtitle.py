@@ -122,12 +122,16 @@ class TransformerTask(object):
     checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
     ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=3)
     if ckpt_mgr.latest_checkpoint:
-      model.train_on_batch((np.ones((1, 1024), np.int64), np.ones((1, 48), np.int64)))
+      model.fit((np.ones((1, 1024), np.int64), np.ones((1, 48), np.int64)), verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
       current_step = opt.iterations.numpy() - 1
       logging.info("Loaded checkpoint %s, current_step %d", ckpt_mgr.latest_checkpoint, current_step)
 
     model.summary()
+
+    if current_step >= flags_obj.train_steps:
+      logging.info("Reach the target train_steps({}) and exit.".format(flags_obj.train_steps))
+      return None
 
     callbacks = self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr)
 
