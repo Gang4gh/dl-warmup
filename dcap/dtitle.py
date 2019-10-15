@@ -9,7 +9,7 @@ from __future__ import print_function
 import os
 import sys
 import tempfile
-import numpy
+import numpy as np
 
 from absl import app
 from absl import flags
@@ -183,32 +183,33 @@ class TransformerTask(object):
         enable_xla=flags_obj.enable_xla)
 
     self._ensure_dir(flags_obj.model_dir)
+
+    train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
+
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
       opt = self._create_optimizer()
-
-      current_step = 0
-      checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
-      latest_checkpoint = tf.train.latest_checkpoint(flags_obj.model_dir)
-      if latest_checkpoint:
-        checkpoint.restore(latest_checkpoint).expect_partial()#.assert_consumed() TODO: restore doesn't work actually
-        current_step = opt.iterations.numpy()
-        model.load_weights(latest_checkpoint).expect_partial()
-        logging.info("Loaded checkpoint %s", latest_checkpoint)
-
       if params["use_ctl"]:
         train_loss_metric = tf.keras.metrics.Mean("training_loss", dtype=tf.float32)
       else:
         model.compile(opt)
 
+    current_step = 0
+    checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
+    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=3)
+    if ckpt_mgr.latest_checkpoint:
+      model.train_on_batch((np.ones((1, 1024), np.int64), np.ones((1, 48), np.int64)))
+      checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
+      current_step = opt.iterations.numpy() - 1
+      logging.info("Loaded checkpoint %s, current_step %d", ckpt_mgr.latest_checkpoint, current_step)
+
     model.summary()
 
-    train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
-
-    callbacks = self._create_callbacks(flags_obj.model_dir, 0, params)
+    callbacks = self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr)
 
     cased_score, uncased_score = None, None
     cased_score_history, uncased_score_history = [], []
+    training_summary = []
     while current_step < flags_obj.train_steps:
       remaining_steps = flags_obj.train_steps - current_step
       train_steps_per_eval = (
@@ -230,6 +231,7 @@ class TransformerTask(object):
           verbose=(2 if flags_obj.enable_time_history else 1))
       current_step += train_steps_per_eval
       logging.info("Train history: {}".format(history.history))
+      training_summary.append(history.history)
 
       logging.info("End train iteration at global step:{}".format(current_step))
 
@@ -246,6 +248,8 @@ class TransformerTask(object):
       stats["bleu_cased"] = cased_score
       stats["bleu_uncased_history"] = uncased_score_history
       stats["bleu_cased_history"] = cased_score_history
+
+    print('training_summary:', training_summary)
     return stats
 
   def eval(self):
@@ -310,16 +314,14 @@ class TransformerTask(object):
       total += 1
     print('accuracy: {}/{}={}'.format(correct, total, correct/total))
 
-  def _create_callbacks(self, cur_log_dir, init_steps, params):
+  def _create_callbacks(self, cur_log_dir, init_steps, params, ckpt_mgr):
     """Creates a list of callbacks."""
     sfunc = optimizer.LearningRateFn(params["learning_rate"],
                                      params["hidden_size"],
                                      params["learning_rate_warmup_steps"])
-    scheduler_callback = optimizer.LearningRateScheduler(sfunc, init_steps)
     callbacks = misc.get_callbacks()
-    callbacks.append(scheduler_callback)
-    ckpt_full_path = os.path.join(cur_log_dir, "cp-{epoch:04d}.ckpt")
-    callbacks.append(tf.keras.callbacks.ModelCheckpoint(ckpt_full_path, save_weights_only=True))
+    callbacks.append(optimizer.LearningRateScheduler(sfunc, init_steps))
+    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: ckpt_mgr.save()))
     return callbacks
 
   def _load_weights_if_possible(self, model, init_weight_path=None):
@@ -343,18 +345,6 @@ class TransformerTask(object):
         params["optimizer_adam_beta1"],
         params["optimizer_adam_beta2"],
         epsilon=params["optimizer_adam_epsilon"])
-
-    if params["dtype"] == tf.float16:
-      opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(
-          opt, loss_scale=flags_core.get_loss_scale(self.flags_obj,
-                                                    default_for_fp16="dynamic"))
-    if self.flags_obj.fp16_implementation == "graph_rewrite":
-      # Note: when flags_obj.fp16_implementation == "graph_rewrite", dtype as
-      # determined by flags_core.get_tf_dtype(flags_obj) would be 'float32'
-      # which will ensure tf.compat.v2.keras.mixed_precision and
-      # tf.train.experimental.enable_mixed_precision_graph_rewrite do not double
-      # up.
-      opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt)
 
     return opt
 
