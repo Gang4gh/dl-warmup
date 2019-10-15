@@ -57,8 +57,7 @@ class TransformerTask(object):
     params["decode_batch_size"] = flags_obj.decode_batch_size
     params["decode_max_length"] = flags_obj.decode_max_length
     params["padded_decode"] = flags_obj.padded_decode
-    params["num_parallel_calls"] = (
-        flags_obj.num_parallel_calls or tf.data.experimental.AUTOTUNE)
+    params["num_parallel_calls"] = (flags_obj.num_parallel_calls or tf.data.experimental.AUTOTUNE)
 
     params["use_synthetic_data"] = flags_obj.use_synthetic_data
     params["batch_size"] = flags_obj.batch_size or params["default_batch_size"]
@@ -112,6 +111,7 @@ class TransformerTask(object):
     self._ensure_dir(flags_obj.model_dir)
 
     train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
+    test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'), batch_size=params["batch_size"], repeat=1)
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
@@ -142,6 +142,8 @@ class TransformerTask(object):
         epochs=(flags_obj.train_steps-1) // flags_obj.steps_between_evals + 1,
         steps_per_epoch=min(flags_obj.steps_between_evals, flags_obj.train_steps - current_step),
         callbacks=callbacks,
+        validation_data=test_ds,
+        validation_steps=flags_obj.validation_steps,
         verbose=1)
     logging.info("Train history: {}".format(history.history))
     current_step = opt.iterations.numpy() - 1

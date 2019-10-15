@@ -41,7 +41,7 @@ tbr tensorboard_root:
 	$(MAKE) tb MDIR=. PORT=$(PORT)
 
 tm trainmodel: $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --enable_time_history=false --enable_metrics_in_training  --enable_tensorboard $(ARGS)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --train_steps=1000000 --steps_between_evals=10000 --batch_size=8 --max_length=64 --num_gpus=1 --noenable_time_history --enable_metrics_in_training  --enable_tensorboard --validation_steps=128 $(ARGS)
 
 train: cleanmodel tensorboard trainmodel
 
