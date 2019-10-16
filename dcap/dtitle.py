@@ -205,7 +205,7 @@ class TransformerTask(object):
       tensorboard_callback = tf.keras.callbacks.TensorBoard(
           log_dir = log_dir, profile_batch=0, write_graph=False, update_freq='batch')
       callbacks.append(tensorboard_callback)
-    callbacks.append(tf.keras.callbacks.CSVLogger('{}/history.step-{}.log'.format(cur_log_dir, init_steps)))
+    callbacks.append(tf.keras.callbacks.CSVLogger('{}/history.step-{}.log'.format(log_dir, init_steps)))
     return callbacks
 
   def _load_model_weights(self, model):

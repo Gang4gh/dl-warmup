@@ -1,11 +1,11 @@
 SHELL = /bin/bash
 CPUS = $(shell nproc)
 
-DTITLE_RAW ?= raw-data.gz
+DTITLE_RAW = raw-data.gz
 SPLIT_DIR = split_raw/
 DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.raw.dtitle; done)
-TAG ?=
-ARGS ?=
+TAG =
+ARGS =
 
 all:
 	$(MAKE) $(SPLIT_DIR)data.md5
@@ -13,7 +13,7 @@ all:
 	$(MAKE) clean
 
 clean:
-	rm $(SPLIT_DIR)/*.raw.dtitle
+	rm -rf $(SPLIT_DIR)
 
 cleanall: clean
 	@echo type the command to clean all data files: rm -rf *.dtitle *.subwords
