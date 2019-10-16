@@ -8,7 +8,6 @@ from __future__ import print_function
 
 import os
 import sys
-import tempfile
 import numpy as np
 
 from absl import app
@@ -17,14 +16,11 @@ from absl import logging
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from official.transformer import compute_bleu
-from official.transformer.v2 import data_pipeline
 import misc
 from official.transformer.v2 import optimizer
 import transformer
 from official.transformer.v2 import translate
 from official.utils.flags import core as flags_core
-from official.utils.logs import logger
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
 
@@ -36,9 +32,6 @@ class TransformerTask(object):
 
     Args:
       flags_obj: Object containing parsed flag values, i.e., FLAGS.
-
-    Raises:
-      ValueError: if not using static batch for input data on TPU.
     """
     self.flags_obj = flags_obj
     self.predict_model = None
@@ -92,13 +85,6 @@ class TransformerTask(object):
     else:
       logging.info("Not using any distribution strategy.")
 
-  @property
-  def use_tpu(self):
-    if self.distribution_strategy:
-      return isinstance(self.distribution_strategy,
-                        tf.distribute.experimental.TPUStrategy)
-    return False
-
   def train(self):
     """Trains the model."""
     params = self.params
@@ -131,15 +117,13 @@ class TransformerTask(object):
       logging.info("Reach the target train_steps({}) and exit.".format(flags_obj.train_steps))
       return None
 
-    callbacks = self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr)
-
     logging.info("Start train iteration at global step:{}".format(current_step))
     history = model.fit(
         train_ds,
         initial_epoch=current_step // flags_obj.steps_between_evals,
         epochs=(flags_obj.train_steps-1) // flags_obj.steps_between_evals + 1,
         steps_per_epoch=min(flags_obj.steps_between_evals, flags_obj.train_steps - current_step),
-        callbacks=callbacks,
+        callbacks=self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr),
         validation_data=test_ds,
         validation_steps=flags_obj.validation_steps,
         verbose=1)
@@ -209,14 +193,18 @@ class TransformerTask(object):
       total += 1
     print('accuracy: {}/{}={}'.format(correct, total, correct/total))
 
-  def _create_callbacks(self, cur_log_dir, init_steps, params, ckpt_mgr):
+  def _create_callbacks(self, log_dir, init_steps, params, ckpt_mgr):
     """Creates a list of callbacks."""
     sfunc = optimizer.LearningRateFn(params["learning_rate"],
                                      params["hidden_size"],
                                      params["learning_rate_warmup_steps"])
-    callbacks = misc.get_callbacks()
+    callbacks = []
     callbacks.append(optimizer.LearningRateScheduler(sfunc, init_steps))
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: ckpt_mgr.save()))
+    if self.flags_obj.enable_tensorboard:
+      tensorboard_callback = tf.keras.callbacks.TensorBoard(
+          log_dir = log_dir, profile_batch=0, write_graph=False, update_freq='batch')
+      callbacks.append(tensorboard_callback)
     callbacks.append(tf.keras.callbacks.CSVLogger('{}/history.step-{}.log'.format(cur_log_dir, init_steps)))
     return callbacks
 
@@ -281,16 +269,15 @@ def main_test(_):
 
 def main(_):
   flags_obj = flags.FLAGS
-  with logger.benchmark_context(flags_obj):
-    task = TransformerTask(flags_obj)
-    if flags_obj.mode == "train":
-      task.train()
-    elif flags_obj.mode == "predict":
-      task.predict()
-    elif flags_obj.mode == "eval":
-      task.eval()
-    else:
-      raise ValueError("Invalid mode {}".format(flags_obj.mode))
+  task = TransformerTask(flags_obj)
+  if flags_obj.mode == "train":
+    task.train()
+  elif flags_obj.mode == "predict":
+    task.predict()
+  elif flags_obj.mode == "eval":
+    task.eval()
+  else:
+    raise ValueError("Invalid mode {}".format(flags_obj.mode))
 
 
 if __name__ == "__main__":
