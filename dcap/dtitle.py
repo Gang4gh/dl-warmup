@@ -172,7 +172,7 @@ class TransformerTask(object):
       for ids in tar:
         real_title = self._trim_and_decode(ids)
         targets.append(real_title)
-    print('load {} examples from {}'.format(len(targets), params['data_dir']))
+    logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
     #numpy.set_printoptions(threshold=sys.maxsize)
 
@@ -188,10 +188,10 @@ class TransformerTask(object):
         correct += 1
         #print('match #{}: \n    "{}"\n    "{}"'.format(i, pred, target))
       else:
-        print('mismatch #{}: \n\tPred.:  "{}"\n\tTarget: "{}"'.format(i, pred, target))
+        logging.info('mismatch #{}:  Pred.:  "{}" | Target: "{}"'.format(i, pred, target))
         #print('val_outputs[i] : {0}/{1}'.format(len(val_outputs[i]), val_outputs[i]))
       total += 1
-    print('accuracy: {}/{}={}'.format(correct, total, correct/total))
+    logging.info('the accuracy: {}/{}={}'.format(correct, total, correct/total))
 
   def _create_callbacks(self, log_dir, init_steps, params, ckpt_mgr):
     """Creates a list of callbacks."""

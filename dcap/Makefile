@@ -58,7 +58,10 @@ eval:
 	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=8 --num_gpus=1 $(ARGS)
 
 predict:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=8 --num_gpus=1 $(ARGS)
+	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=8 --num_gpus=1 $(ARGS)
+
+predict-cpu:
+	CUDA_VISIBLE_DEVICES= $(MAKE) predict
 
 #cdecode:
 #	watch -n 3600 $(MAKE) decode

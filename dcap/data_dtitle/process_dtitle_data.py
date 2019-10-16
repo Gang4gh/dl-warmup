@@ -23,7 +23,7 @@ def dtitle_reader(dtitle_file, log_per_n_step=None):
 
 
 def preprocess_raw_input(FLAGS):
-	invalid, total = 0, 0
+	total, valid = 0, 0
 	for inputs in dtitle_reader(FLAGS.input_file):
 		total += 1
 		inputs[1] = re.sub(r'#N#|#R#|#TAB#', ' ', inputs[1])
@@ -35,20 +35,26 @@ def preprocess_raw_input(FLAGS):
 		if FLAGS.filter_head:
 			inputs[2] = re.sub(r'<head.*?</head>', ' ', inputs[2], flags=re.I)
 
-		m = re.match(r'.{,2048}[^\w&</]', inputs[2])
+		m = re.match(r'.{,3072}[^\w&</]', inputs[2])
 		if m:
 			inputs[2] = m.group(0)
 		else:
 			print('invalid input, no-match, {}'.format(inputs[0]), file=sys.stderr)
-			invalid += 1
 			continue
 
-		inputs = [re.sub(r' +', ' ', s).strip() for s in inputs]
-		if FLAGS.ignore_noexactmatch and inputs[2].find(inputs[1]) == -1:
-			invalid += 1
+		inputs = [re.sub(r' +', ' ', s).strip().lower() for s in inputs]
+		if FLAGS.ignore_noexactmatch and inputs[1] not in inputs[2]:
 			continue
+
+		if FLAGS.ignore_nofuzzymatch:
+			htmlbody_lower = inputs[2].lower()
+			title_tokens = [w.lower() for w in re.split(r'\W+', inputs[1]) if w]
+			if any(token not in htmlbody_lower for token in title_tokens):
+				continue
+
+		valid += 1
 		print('\t'.join(inputs))
-	print('ignore {} out of {} examples from {}'.format(invalid, total, FLAGS.input_file), file=sys.stderr)
+	print('ignore {} out of {} ({:.2f}%) examples from {}'.format(total-valid, total, (total-valid)/total*100, FLAGS.input_file), file=sys.stderr)
 
 
 def build_vocab(FLAGS):
@@ -88,7 +94,8 @@ if __name__ == '__main__':
 	# params for pre-process
 	flags.DEFINE_boolean('filter_title', False, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('filter_head', False, 'only keep content in <body> tag')
-	flags.DEFINE_boolean('ignore_noexactmatch', True, 'ignore examples when no exact-match title in body field')
+	flags.DEFINE_boolean('ignore_noexactmatch', False, 'ignore examples when no exact-match title in body field')
+	flags.DEFINE_boolean('ignore_nofuzzymatch', False, 'ignore examples when no fuzzy-match title in body')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 16384, 'target vocab size in build-vocab')
