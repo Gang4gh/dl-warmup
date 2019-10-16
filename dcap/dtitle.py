@@ -28,7 +28,6 @@ from official.utils.logs import logger
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
 
-
 class TransformerTask(object):
   """Main entry of Transformer model."""
 
@@ -117,17 +116,16 @@ class TransformerTask(object):
       model = transformer.create_model(params, is_train=True)
       opt = self._create_optimizer()
       model.compile(opt)
+      model.summary()
 
     current_step = 0
     checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
-    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=3)
+    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=5, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
       model.fit((np.ones((1, 1024), np.int64), np.ones((1, 48), np.int64)), verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
       current_step = opt.iterations.numpy() - 1
       logging.info("Loaded checkpoint %s, current_step %d", ckpt_mgr.latest_checkpoint, current_step)
-
-    model.summary()
 
     if current_step >= flags_obj.train_steps:
       logging.info("Reach the target train_steps({}) and exit.".format(flags_obj.train_steps))
@@ -159,14 +157,15 @@ class TransformerTask(object):
     """Evaluates the model."""
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       if not self.predict_model:
-        self.predict_model = transformer.create_model(self.params, False)
-      self._load_weights_if_possible(
-          self.predict_model,
-          tf.train.latest_checkpoint(self.flags_obj.model_dir))
-      self.predict_model.summary()
-    return evaluate_and_log_bleu(
-        self.predict_model, self.params, self.flags_obj.bleu_source,
-        self.flags_obj.bleu_ref, self.flags_obj.vocab_file)
+        self.predict_model = transformer.create_model(self.params, True)
+        self.predict_model.compile()
+        self.predict_model.summary()
+      self._load_model_weights(self.predict_model)
+
+    N = 128
+    ds = self._create_dataset(self.params['data_dir'], batch_size=self.params["batch_size"], repeat=1)
+    res = self.predict_model.evaluate(ds, steps=N)
+    print('evaluate {} steps: {}'.format(N, res))
 
   def _trim_and_decode(self, ids):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
@@ -181,20 +180,17 @@ class TransformerTask(object):
     params = self.params
     flags_obj = self.flags_obj
 
-    with tf.name_scope("model"):
-      model = transformer.create_model(params, is_train=False)
-      self._load_weights_if_possible(
-          model, tf.train.latest_checkpoint(self.flags_obj.model_dir))
-      model.summary()
+    model = transformer.create_model(params, is_train=False)
+    model.summary()
+    self._load_model_weights(model)
 
     N = 1024
     N //= params['batch_size']
     ds = self._create_dataset(params['data_dir'], batch_size=params['batch_size'], repeat=1)
     targets = []
-    for (batch, ((inp, tar),)) in enumerate(ds.take(N)):
-      for (index, ids) in enumerate(tar):
+    for ((inp, tar),) in ds.take(N):
+      for ids in tar:
         real_title = self._trim_and_decode(ids)
-        #print('{}: {}'.format(batch*params['batch_size'] + index, real_title))
         targets.append(real_title)
     print('load {} examples from {}'.format(len(targets), params['data_dir']))
 
@@ -225,26 +221,24 @@ class TransformerTask(object):
     callbacks = misc.get_callbacks()
     callbacks.append(optimizer.LearningRateScheduler(sfunc, init_steps))
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: ckpt_mgr.save()))
+    callbacks.append(tf.keras.callbacks.CSVLogger('{}/history.step-{}.log'.format(cur_log_dir, init_steps)))
     return callbacks
 
-  def _load_weights_if_possible(self, model, init_weight_path=None):
+  def _load_model_weights(self, model):
+    checkpoint = tf.train.Checkpoint(model=model)
+    checkpoint_path = tf.train.latest_checkpoint(self.flags_obj.model_dir)
     """Loads model weights when it is provided."""
-    if init_weight_path:
-      logging.info("Load weights: {}".format(init_weight_path))
-      model.load_weights(init_weight_path).expect_partial()
+    if checkpoint_path:
+      logging.info("load model weights from: {}".format(checkpoint_path))
+      checkpoint.restore(checkpoint_path).expect_partial()
     else:
-      logging.info("Weights not loaded from path:{}".format(init_weight_path))
+      logging.info('no checkpoint found from: {}'.format(checkpoint_path))
 
   def _create_optimizer(self):
     """Creates optimizer."""
     params = self.params
-    # TODO(b/139414679): Explore the difference between using
-    # LearningRateSchedule and callback for GPU runs, and try to merge them.
-    lr_schedule = optimizer.LearningRateSchedule(
-        params["learning_rate"], params["hidden_size"],
-        params["learning_rate_warmup_steps"])
     opt = tf.keras.optimizers.Adam(
-        lr_schedule if self.use_tpu else params["learning_rate"],
+        params["learning_rate"],
         params["optimizer_adam_beta1"],
         params["optimizer_adam_beta2"],
         epsilon=params["optimizer_adam_epsilon"])

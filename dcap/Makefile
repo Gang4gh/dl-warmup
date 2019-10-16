@@ -7,7 +7,7 @@ TAG ?= notag
 PORT ?= 2345
 MDIR ?= model
 DATA_DIR ?= data_dtitle
-DTAG ?= d1008-
+DTAG ?= 1010notitle-
 VOCAB ?= vocab-16384
 DATA_FILES = $(DATA_DIR)/$(DTAG)training.dtitle $(DATA_DIR)/$(DTAG)test.dtitle $(DATA_DIR)/$(DTAG)$(VOCAB).subwords
 MODEL_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard *.py))
@@ -54,8 +54,11 @@ tc trainingcenter: $(DATA_FILES)
 	$(MAKE) check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
 
+eval:
+	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=8 --num_gpus=1 $(ARGS)
+
 predict:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=64 --num_gpus=1 $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)$(VOCAB) --param_set=base --batch_size=8 --num_gpus=1 $(ARGS)
 
 #cdecode:
 #	watch -n 3600 $(MAKE) decode
