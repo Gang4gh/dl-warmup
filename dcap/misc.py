@@ -32,29 +32,33 @@ from official.utils.misc import keras_utils
 
 FLAGS = flags.FLAGS
 
+TRIAL_PARAMS = BASE_PARAMS.copy()
+TRIAL_PARAMS.update(
+    hidden_size=256,
+    num_heads=4,
+    filter_size=1024,
+)
+TRIAL_MULTI_GPU_PARAMS = TRIAL_PARAMS.copy()
+TRIAL_MULTI_GPU_PARAMS.update(
+    learning_rate_warmup_steps=8000
+)
+
 PARAMS_MAP = {
     'tiny': model_params.TINY_PARAMS,
+    'tiny-multipgu': model_params.TINY_PARAMS,
     'base': model_params.BASE_PARAMS,
+    'base-multigpu': model_params.BASE_MULTI_GPU_PARAMS,
     'big': model_params.BIG_PARAMS,
+    'big-multigpu': model_params.BIG_MULTI_GPU_PARAMS,
+    'trial': TRIAL_PARAMS,
+    'trial-multigpu':TRIAL_MULTI_GPU_PARAMS,
 }
-
-
-def is_v2():
-  """Returns whether it is v2."""
-  return tf2_internal.enabled()
 
 
 def get_model_params(param_set, num_gpus):
   """Gets predefined model params."""
   if num_gpus > 1:
-    if param_set == 'big':
-      return model_params.BIG_MULTI_GPU_PARAMS.copy()
-    elif param_set == 'base':
-      return model_params.BASE_MULTI_GPU_PARAMS.copy()
-    else:
-      raise ValueError('Not valid params: param_set={} num_gpus={}'.format(
-          param_set, num_gpus))
-
+    param_set += '-multigpu'
   return PARAMS_MAP[param_set].copy()
 
 
