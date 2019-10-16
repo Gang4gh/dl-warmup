@@ -242,7 +242,7 @@ def get_callbacks():
 
   if FLAGS.enable_tensorboard:
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=FLAGS.model_dir, profile_batch=0)
+        log_dir=FLAGS.model_dir, profile_batch=0, write_graph=False, update_freq='batch')
     callbacks.append(tensorboard_callback)
 
   if FLAGS.profile_steps:
@@ -254,37 +254,3 @@ def get_callbacks():
 
   return callbacks
 
-
-def build_stats(history, callbacks):
-  """Normalizes and returns dictionary of stats.
-
-  Args:
-    history: Results of the training step.
-    callbacks: a list of callbacks which might include a time history callback
-      used during keras.fit.
-
-  Returns:
-    Dictionary of normalized results.
-  """
-  stats = {}
-
-  if history and history.history:
-    train_hist = history.history
-    # Gets final loss from training.
-    stats['loss'] = train_hist['loss'][-1].item()
-
-  if not callbacks:
-    return stats
-
-  # Look for the time history callback which was used during keras.fit
-  for callback in callbacks:
-    if isinstance(callback, keras_utils.TimeHistory):
-      timestamp_log = callback.timestamp_log
-      stats['step_timestamp_log'] = timestamp_log
-      stats['train_finish_time'] = callback.train_finish_time
-      if len(timestamp_log) > 1:
-        stats['avg_exp_per_second'] = (
-            callback.batch_size * callback.log_steps *
-            (len(callback.timestamp_log)-1) /
-            (timestamp_log[-1].timestamp - timestamp_log[0].timestamp))
-  return stats

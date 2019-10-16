@@ -147,11 +147,7 @@ class TransformerTask(object):
     current_step = opt.iterations.numpy() - 1
     logging.info("End train iteration at global step:{}".format(current_step))
 
-    stats = ({
-        "loss": train_loss
-    } if history is None else misc.build_stats(history, callbacks))
-
-    return stats
+    return history
 
   def eval(self):
     """Evaluates the model."""
