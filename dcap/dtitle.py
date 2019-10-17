@@ -125,7 +125,7 @@ class TransformerTask(object):
         steps_per_epoch=min(flags_obj.steps_between_evals, flags_obj.train_steps - current_step),
         callbacks=self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr),
         validation_data=test_ds,
-        validation_steps=flags_obj.validation_steps,
+        validation_steps=flags_obj.validation_example_count // params["batch_size"],
         verbose=1)
     logging.info("Train history: {}".format(history.history))
     current_step = opt.iterations.numpy() - 1

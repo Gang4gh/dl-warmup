@@ -154,8 +154,8 @@ def define_transformer_flags():
 
   # Flags for training with steps (may be used for debugging)
   flags.DEFINE_integer(
-      name='validation_steps', short_name='vs', default=64,
-      help=flags_core.help_wrap('The number of steps used in validation.'))
+      name='validation_example_count', short_name='vec', default=1024,
+      help=flags_core.help_wrap('The number of examples used in validation.'))
 
   # BLEU score computation
   flags.DEFINE_string(
