@@ -32,7 +32,7 @@ from official.utils.misc import keras_utils
 
 FLAGS = flags.FLAGS
 
-TRIAL_PARAMS = BASE_PARAMS.copy()
+TRIAL_PARAMS = model_params.BASE_PARAMS.copy()
 TRIAL_PARAMS.update(
     hidden_size=256,
     num_heads=4,

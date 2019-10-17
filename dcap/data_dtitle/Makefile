@@ -43,7 +43,7 @@ $(TAG)vocab-%.subwords: $(TAG)training.dtitle
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)vocab --target_vocab_size=$* $(ARGS)
 
 $(TAG)meta.log: $(TAG)training.dtitle $(TAG)test.dtitle $(TAG)vocab-16384.subwords
-	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)vocab $(ARGS) >> $@
+	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)vocab $(ARGS) > $@
 	cat process_dtitle_data.py >> $@
 	md5sum $(TAG)*.* >> $@
 
