@@ -45,7 +45,8 @@ class TransformerTask(object):
     params["data_dir"] = flags_obj.data_dir
     params["model_dir"] = flags_obj.model_dir
     params["static_batch"] = flags_obj.static_batch
-    params["max_length"] = flags_obj.max_length
+    params["max_input_length"] = flags_obj.max_input_length
+    params["max_target_length"] = flags_obj.max_target_length
     params["decode_batch_size"] = flags_obj.decode_batch_size
     params["decode_max_length"] = flags_obj.decode_max_length
     params["padded_decode"] = flags_obj.padded_decode
@@ -60,7 +61,7 @@ class TransformerTask(object):
     self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]
     params["vocab_size"] = self.tokenizer.vocab_size
-    print('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
+    logging.info('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
 
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
@@ -93,8 +94,6 @@ class TransformerTask(object):
     keras_utils.set_session_config(
         enable_xla=flags_obj.enable_xla)
 
-    self._ensure_dir(flags_obj.model_dir)
-
     train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
     test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'), batch_size=params["batch_size"], repeat=1)
 
@@ -104,11 +103,12 @@ class TransformerTask(object):
       model.compile(opt)
       model.summary()
 
+    self._ensure_dir(flags_obj.model_dir)
     current_step = 0
     checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
     ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=5, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
-      model.fit((np.ones((1, 1024), np.int64), np.ones((1, 48), np.int64)), verbose=0)
+      model.fit((np.ones((1, params['max_input_length']), np.int64), np.ones((1, params['max_target_length']), np.int64)), verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
       current_step = opt.iterations.numpy() - 1
       logging.info("Loaded checkpoint %s, current_step %d", ckpt_mgr.latest_checkpoint, current_step)
@@ -229,20 +229,23 @@ class TransformerTask(object):
 
     return opt
 
-  def _create_dataset(self, dtitle_file, batch_size=None, max_body_length=1024, max_title_length=48, shuffle_size=None, repeat=1):
+  def _create_dataset(self, dtitle_file, batch_size=None, shuffle_size=None, repeat=1):
+    max_input_length = self.params['max_input_length']
+    max_target_length = self.params['max_target_length']
+
     def _data_encode(ln):
       _, tar, inp = tf.strings.split(ln, '\t')
-      inp = self.tokenizer.encode(inp.numpy())[:max_body_length-1] + [self.EOS_id]
+      inp = self.tokenizer.encode(inp.numpy())[:max_input_length-1] + [self.EOS_id]
       tar = self.tokenizer.encode(tar.numpy()) + [self.EOS_id]
       return inp, tar
 
     ds = tf.data.TextLineDataset(dtitle_file)
     ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]))
-    ds = ds.filter(lambda body, title: tf.size(title) <= max_title_length)
+    ds = ds.filter(lambda body, title: tf.size(title) <= max_target_length)
     if shuffle_size:
       ds = ds.shuffle(shuffle_size)
     if batch_size:
-      ds = ds.padded_batch(batch_size, padded_shapes=([max_body_length], [max_title_length]), drop_remainder=True)
+      ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
     ds = ds.repeat(repeat)
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
     ds = ds.map(lambda x, y: ((x, y), ))

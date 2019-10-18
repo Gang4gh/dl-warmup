@@ -146,11 +146,11 @@ def define_transformer_flags():
           'must be static (e.g. running on TPU), this setting will be ignored '
           'and static batching will always be used.'))
   flags.DEFINE_integer(
-      name='max_length', short_name='ml', default=256,
-      help=flags_core.help_wrap(
-          'Max sentence length for Transformer. Default is 256. Note: Usually '
-          'it is more effective to use a smaller max length if static_batch is '
-          'enabled, e.g. 64.'))
+      name='max_input_length', short_name='mil', default=1024,
+      help=flags_core.help_wrap('Max input sequence length (token count) for Transformer'))
+  flags.DEFINE_integer(
+      name='max_target_length', short_name='mtl', default=48,
+      help=flags_core.help_wrap('Max target sequence length (token count) for Transformer'))
 
   # Flags for training with steps (may be used for debugging)
   flags.DEFINE_integer(
