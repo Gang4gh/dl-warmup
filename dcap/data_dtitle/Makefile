@@ -32,10 +32,10 @@ $(SPLIT_DIR)data.md5: $(DTITLE_RAW)
 		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) > $@
 
 $(TAG)training.dtitle: $(DTITLE_FILES)
-	tail -q -n +1001 $^ > $@
+	tail -q -n +101 $^ > $@
 
 $(TAG)test.dtitle: $(DTITLE_FILES)
-	head -q -n 1000 $^ > $@
+	head -q -n 100 $^ > $@
 
 #vocabs: $(TAG)vocab-4096.subwords $(TAG)vocab-8192.subwords $(TAG)vocab-16384.subwords $(TAG)vocab-32768.subwords $(TAG)vocab-65536.subwords
 
