@@ -42,8 +42,8 @@ $(TAG)-vocab-%.subwords: $(TAG)-training.dtitle
 
 $(TAG)-meta.log: $(TAG)-training.dtitle $(TAG)-test.dtitle $(TAG)-vocab-16384.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
-	@echo ---------- CODE ---------- >> $@
+	@echo ---------- source code  ---------- >> $@
 	cat process_dtitle_data.py >> $@
-	@echo ---------- Data files md5(s) ---------- >> $@
+	@echo ---------- data files md5sum ---------- >> $@
 	md5sum $(TAG)-*.* >> $@
 
