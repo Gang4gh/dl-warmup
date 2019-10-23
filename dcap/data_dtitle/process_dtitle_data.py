@@ -49,14 +49,16 @@ def preprocess_raw_input(FLAGS):
 			continue
 
 		inputs = [re.sub(r' +', ' ', s).strip().lower() for s in inputs]
+		title_tokens = [w for w in re.split(r'\W+', inputs[1]) if w]
+
+		if FLAGS.check_enoughtokens and len(title_tokens) <= 1:
+			continue
+
 		if FLAGS.check_exactmatch and inputs[1] not in inputs[2]:
 			continue
 
-		if FLAGS.check_fuzzymatch:
-			htmlbody_lower = inputs[2].lower()
-			title_tokens = [w.lower() for w in re.split(r'\W+', inputs[1]) if w]
-			if any(token not in htmlbody_lower for token in title_tokens):
-				continue
+		if FLAGS.check_fuzzymatch and any(token not in inputs[2] for token in title_tokens):
+			continue
 
 		valid += 1
 		print('\t'.join(inputs))
@@ -98,6 +100,7 @@ if __name__ == '__main__':
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', False, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('remove_head', False, 'only keep content in <body> tag')
+	flags.DEFINE_boolean('check_enoughtokens', False, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('check_exactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('check_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
 	# params for build-vocab

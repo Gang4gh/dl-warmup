@@ -95,7 +95,8 @@ class TransformerTask(object):
         enable_xla=flags_obj.enable_xla)
 
     train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
-    test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'), batch_size=params["batch_size"], repeat=1)
+    test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'),
+        batch_size=params["batch_size"], repeat=1)
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
@@ -229,7 +230,7 @@ class TransformerTask(object):
 
     return opt
 
-  def _create_dataset(self, dtitle_file, batch_size=None, shuffle_size=None, repeat=1):
+  def _create_dataset(self, dtitle_file, batch_size, repeat, shuffle_size=None):
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
 
@@ -240,15 +241,14 @@ class TransformerTask(object):
       return inp, tar
 
     ds = tf.data.TextLineDataset(dtitle_file)
-    ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]))
+    ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds = ds.filter(lambda body, title: tf.size(title) <= max_target_length)
     if shuffle_size:
       ds = ds.shuffle(shuffle_size)
-    if batch_size:
-      ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
+    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
+    ds = ds.map(lambda x, y: ((x, y), ))
     ds = ds.repeat(repeat)
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
-    ds = ds.map(lambda x, y: ((x, y), ))
 
     return ds
 
@@ -262,7 +262,7 @@ class TransformerTask(object):
 def main_test(_):
   FLAGS = flags.FLAGS
   task = TransformerTask(FLAGS)
-  ds = task._create_dataset(FLAGS.data_dir, batch_size=4)
+  ds = task._create_dataset(FLAGS.data_dir, batch_size=4, repeat=1)
   for (batch, ((inp, tar),)) in enumerate(ds.take(2)):
     for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
       htmlbody = task._trim_and_decode(inp1)

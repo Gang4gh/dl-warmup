@@ -7,7 +7,7 @@ TAG ?= notag
 PORT ?= 2345
 MDIR ?= model
 DATA_DIR ?= data_dtitle
-DTAG ?= 1016-exactmatch
+DTAG ?= 1022-noTH-exact
 VOCAB ?= vocab-16384
 MODEL_SIZE ?= trial
 DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords
@@ -43,7 +43,7 @@ tbr tensorboard_root:
 	$(MAKE) tb MDIR=. PORT=$(PORT)
 
 tm trainmodel: $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=8 --max_input_length=1024 --max_target_length=48 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training  --enable_tensorboard --validation_example_count=1024 $(ARGS)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training  --enable_tensorboard --validation_example_count=1024 $(ARGS)
 
 train: cleanmodel tensorboard trainmodel
 
@@ -57,10 +57,10 @@ tc trainingcenter: $(DATA_FILES)
 	$(MAKE) -C $(TRAINING_ROOT) train
 
 eval:
-	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=8 --num_gpus=-1 $(ARGS)
+	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --num_gpus=-1 $(ARGS)
 
 predict:
-	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=8 --num_gpus=-1 $(ARGS)
+	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --num_gpus=-1 $(ARGS)
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict
