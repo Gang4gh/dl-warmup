@@ -3,47 +3,47 @@ CPUS = $(shell nproc)
 
 DTITLE_RAW = raw-data.gz
 SPLIT_DIR = split_raw/
-DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.raw.dtitle; done)
 TAG =
 ARGS =
+DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
 
-all:
-	$(MAKE) $(SPLIT_DIR)data.md5
-	$(MAKE) -j$(CPUS) $(TAG)meta.log
-	$(MAKE) clean
+all: $(SPLIT_DIR)data.md5
+	$(MAKE) -j$(CPUS) $(TAG)-meta.log
 
 clean:
 	rm -rf $(SPLIT_DIR)
 
-cleanall: clean
-	@echo type the command to clean all data files: rm -rf *.dtitle *.subwords
-
 .DELETE_ON_ERROR:
+
+.INTERMEDIATE: $(DTITLE_FILES)
 
 $(SPLIT_DIR)data.md5: $(DTITLE_RAW)
 	mkdir -p $(SPLIT_DIR)
-	rm -f $(SPLIT_DIR)*.raw
-	#split -d -nr/100 --additional-suffix=.raw $< $(SPLIT_DIR)data-
+	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
 	gunzip -c $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
-	md5sum $(SPLIT_DIR)*.raw > $@
+	$(MAKE) -j$(CPUS) $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
+	md5sum $(SPLIT_DIR)*.raw.gz > $@
 
-%.raw.dtitle: %.raw
+%.raw.gz: %.raw
+	gzip $<
+
+%.$(TAG).dtitle: %.raw.gz
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) \
 		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) > $@
 
-$(TAG)training.dtitle: $(DTITLE_FILES)
+$(TAG)-training.dtitle: $(DTITLE_FILES)
 	tail -q -n +101 $^ > $@
 
-$(TAG)test.dtitle: $(DTITLE_FILES)
+$(TAG)-test.dtitle: $(DTITLE_FILES)
 	head -q -n 100 $^ > $@
 
-#vocabs: $(TAG)vocab-4096.subwords $(TAG)vocab-8192.subwords $(TAG)vocab-16384.subwords $(TAG)vocab-32768.subwords $(TAG)vocab-65536.subwords
+$(TAG)-vocab-%.subwords: $(TAG)-training.dtitle
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=$* $(ARGS)
 
-$(TAG)vocab-%.subwords: $(TAG)training.dtitle
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)vocab --target_vocab_size=$* $(ARGS)
-
-$(TAG)meta.log: $(TAG)training.dtitle $(TAG)test.dtitle $(TAG)vocab-16384.subwords
-	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)vocab $(ARGS) > $@
+$(TAG)-meta.log: $(TAG)-training.dtitle $(TAG)-test.dtitle $(TAG)-vocab-16384.subwords
+	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
+	@echo ---------- CODE ---------- >> $@
 	cat process_dtitle_data.py >> $@
-	md5sum $(TAG)*.* >> $@
+	@echo ---------- Data files md5(s) ---------- >> $@
+	md5sum $(TAG)-*.* >> $@
 
