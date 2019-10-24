@@ -53,7 +53,7 @@ tc trainingcenter: $(DATA_FILES)
 	mkdir -p $(TRAINING_ROOT)
 	cp -p Makefile $(MODEL_FILES) $(TRAINING_ROOT)
 	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
-	$(MAKE) check-params > $(TRAINING_ROOT)Makefile.config
+	$(MAKE) --no-print-directory check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
 
 eval:

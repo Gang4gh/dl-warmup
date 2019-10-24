@@ -204,7 +204,8 @@ class TransformerTask(object):
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: ckpt_mgr.save()))
     if self.flags_obj.enable_tensorboard:
       tensorboard_callback = tf.keras.callbacks.TensorBoard(
-          log_dir = log_dir, profile_batch=0, write_graph=False, update_freq='batch')
+          log_dir=log_dir, profile_batch=0, write_graph=False,
+          update_freq=self.flags_obj.steps_between_tensorboard_log * params['batch_size'])
       callbacks.append(tensorboard_callback)
     callbacks.append(tf.keras.callbacks.CSVLogger('{}/history.step-{}.log'.format(log_dir, init_steps)))
     return callbacks
