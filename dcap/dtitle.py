@@ -41,7 +41,6 @@ class TransformerTask(object):
     self.params = params = misc.get_model_params(flags_obj.param_set, num_gpus)
 
     params["num_gpus"] = num_gpus
-    params["use_ctl"] = flags_obj.use_ctl
     params["data_dir"] = flags_obj.data_dir
     params["model_dir"] = flags_obj.model_dir
     params["static_batch"] = flags_obj.static_batch
@@ -138,7 +137,7 @@ class TransformerTask(object):
     """Evaluates the model."""
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       if not self.predict_model:
-        self.predict_model = transformer.create_model(self.params, True)
+        self.predict_model = transformer.create_model(self.params, is_train=True)
         self.predict_model.compile()
         self.predict_model.summary()
       self._load_model_weights(self.predict_model)

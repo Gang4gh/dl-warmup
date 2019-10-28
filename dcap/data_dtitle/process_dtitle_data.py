@@ -105,7 +105,7 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('check_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
-	flags.DEFINE_integer('target_vocab_size', 16384, 'target vocab size in build-vocab')
+	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')
 	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
 
