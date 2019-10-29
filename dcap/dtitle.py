@@ -23,6 +23,7 @@ from official.transformer.v2 import translate
 from official.utils.flags import core as flags_core
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
+import metrics
 
 class TransformerTask(object):
   """Main entry of Transformer model."""
@@ -100,7 +101,8 @@ class TransformerTask(object):
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
       opt = self._create_optimizer()
-      model.compile(opt)
+      loss_fn = self._create_loss_fn()
+      model.compile(optimizer=opt, loss=loss_fn)
       model.summary()
 
     self._ensure_dir(flags_obj.model_dir)
@@ -230,6 +232,20 @@ class TransformerTask(object):
 
     return opt
 
+  def _create_loss_fn(self):
+    params = self.params
+    if self.flags_obj.loss_fn == 'smoothed_cross_entropy':
+      label_smoothing = params["label_smoothing"]
+      vocab_size = params["vocab_size"]
+      print('use smoothed_cross_entropy')
+      def loss(y_true, y_pred):
+        y_true = tf.reshape(y_true, [params['batch_size'], -1])
+        y_pred = tf.reshape(y_pred, [params['batch_size'], -1, vocab_size])
+        return metrics.transformer_loss(y_pred, y_true, label_smoothing, vocab_size)
+      return loss
+    else:
+      return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
   def _create_dataset(self, dtitle_file, batch_size, repeat, shuffle_size=None):
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
@@ -246,7 +262,7 @@ class TransformerTask(object):
     if shuffle_size:
       ds = ds.shuffle(shuffle_size)
     ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
-    ds = ds.map(lambda x, y: ((x, y), ))
+    ds = ds.map(lambda x, y: ((x, y), y))
     ds = ds.repeat(repeat)
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
 

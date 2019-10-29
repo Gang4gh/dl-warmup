@@ -217,6 +217,10 @@ def define_transformer_flags():
           'will introduce unnecessary overheads which grow quadratically with '
           'the max sequence length.'))
 
+  flags.DEFINE_string(
+      name='loss_fn', default='corss_entropy',
+      help=flags_core.help_wrap('loss_fn: corss_entropy, smoothed_corss_entropy'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)

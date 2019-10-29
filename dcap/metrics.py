@@ -17,17 +17,9 @@
 Metrics:
  - Padded loss, accuracy, and negative log perplexity. Source:
      https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/utils/metrics.py
- - BLEU approximation. Source:
-     https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/utils/bleu_hook.py
  - ROUGE score. Source:
      https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/utils/rouge.py
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import functools
-
 import tensorflow as tf
 
 
@@ -94,26 +86,6 @@ def padded_accuracy(logits, labels):
     return tf.cast(tf.equal(outputs, padded_labels), tf.float32), weights
 
 
-def padded_accuracy_topk(logits, labels, k):
-  """Percentage of times that top-k predictions matches labels on non-0s."""
-  with tf.name_scope("padded_accuracy_topk"):
-    logits, labels = _pad_tensors_to_same_length(logits, labels)
-    weights = tf.cast(tf.not_equal(labels, 0), tf.float32)
-    effective_k = tf.minimum(k, tf.shape(logits)[-1])
-    _, outputs = tf.nn.top_k(logits, k=effective_k)
-    outputs = tf.cast(outputs, tf.int32)
-    padded_labels = tf.cast(labels, tf.int32)
-    padded_labels = tf.expand_dims(padded_labels, axis=-1)
-    padded_labels += tf.zeros_like(outputs)  # Pad to same shape.
-    same = tf.cast(tf.equal(outputs, padded_labels), tf.float32)
-    same_topk = tf.reduce_sum(same, axis=-1)
-    return same_topk, weights
-
-
-def padded_accuracy_top5(logits, labels):
-  return padded_accuracy_topk(logits, labels, 5)
-
-
 def padded_sequence_accuracy(logits, labels):
   """Percentage of times that predictions matches labels everywhere (non-0)."""
   with tf.name_scope("padded_sequence_accuracy"):
@@ -128,34 +100,29 @@ def padded_sequence_accuracy(logits, labels):
     return correct_seq, tf.constant(1.0)
 
 
-def padded_neg_log_perplexity(logits, labels, vocab_size):
-  """Average log-perplexity excluding padding 0s. No smoothing."""
-  num, den = padded_cross_entropy_loss(logits, labels, 0, vocab_size)
-  return -num, den
-
-
 class MetricLayer(tf.keras.layers.Layer):
   """Custom a layer of metrics for Transformer model."""
 
-  def __init__(self, vocab_size):
+  def __init__(self, vocab_size, smoothing):
     super(MetricLayer, self).__init__()
     self.vocab_size = vocab_size
+    self.smoothing = smoothing
     self.metric_mean_fns = []
 
   def build(self, input_shape):
     """"Builds metric layer."""
-    neg_log_perplexity = functools.partial(
-        padded_neg_log_perplexity, vocab_size=self.vocab_size)
     self.metric_mean_fns = [
         (tf.keras.metrics.Mean("token_accuracy"), padded_accuracy),
-        #(tf.keras.metrics.Mean("accuracy_top5"), padded_accuracy_top5),
         (tf.keras.metrics.Mean("sequence_accuracy"), padded_sequence_accuracy),
-        #(tf.keras.metrics.Mean("neg_log_perplexity"), neg_log_perplexity),
+        (tf.keras.metrics.Mean("xe_loss"),
+            lambda logits, labels: (tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True), 1)),
+        (tf.keras.metrics.Mean("xe_loss_smoothed"),
+            lambda logits, labels: (transformer_loss(logits, labels, self.smoothing, self.vocab_size), 1)),
     ]
     super(MetricLayer, self).build(input_shape)
 
   def get_config(self):
-    return {"vocab_size": self.vocab_size}
+    return {"vocab_size": self.vocab_size, "smoothing": self.smoothing}
 
   def call(self, inputs):
     logits, targets = inputs[0], inputs[1]
@@ -177,6 +144,5 @@ def transformer_loss(logits, labels, smoothing, vocab_size):
   Returns:
     A scalar float tensor for loss.
   """
-  xentropy, weights = padded_cross_entropy_loss(logits, labels, smoothing,
-                                                vocab_size)
+  xentropy, weights = padded_cross_entropy_loss(logits, labels, smoothing, vocab_size)
   return tf.reduce_sum(xentropy) / tf.reduce_sum(weights)
