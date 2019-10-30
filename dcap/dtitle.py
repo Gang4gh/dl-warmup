@@ -2,10 +2,6 @@
 Based on: https://github.com/tensorflow/models/tree/master/official/transformer/v2
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import sys
 import numpy as np
@@ -35,7 +31,6 @@ class TransformerTask(object):
       flags_obj: Object containing parsed flag values, i.e., FLAGS.
     """
     self.flags_obj = flags_obj
-    self.predict_model = None
 
     # Add flag-defined parameters to params object
     num_gpus = flags_core.get_num_gpus(flags_obj)
@@ -100,19 +95,22 @@ class TransformerTask(object):
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
-      opt = self._create_optimizer()
-      loss_fn = self._create_loss_fn()
-      model.compile(optimizer=opt, loss=loss_fn)
+      model.compile(optimizer=self._create_optimizer(params), loss=self._create_loss_fn(params))
       model.summary()
 
-    self._ensure_dir(flags_obj.model_dir)
+    if not os.path.exists(flags_obj.model_dir):
+      os.mkdir(flags_obj.model_dir)
+
     current_step = 0
-    checkpoint = tf.train.Checkpoint(model=model, optimizer=opt)
+    checkpoint = tf.train.Checkpoint(model=model)
     ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=5, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
-      model.fit((np.ones((1, params['max_input_length']), np.int64), np.ones((1, params['max_target_length']), np.int64)), verbose=0)
+      #self._print_variables_and_exit(ckpt_mgr.latest_checkpoint)
+      model.fit((np.ones((1, params['max_input_length']), np.int64), np.ones((1, params['max_target_length']), np.int64)),
+          np.ones((1, params['max_target_length']), np.int64),
+          verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
-      current_step = opt.iterations.numpy() - 1
+      current_step = model.optimizer.iterations.numpy() - 1
       logging.info("Loaded checkpoint %s, current_step %d", ckpt_mgr.latest_checkpoint, current_step)
 
     if current_step >= flags_obj.train_steps:
@@ -130,7 +128,7 @@ class TransformerTask(object):
         validation_steps=flags_obj.validation_example_count // params["batch_size"],
         verbose=1)
     logging.info("Train history: {}".format(history.history))
-    current_step = opt.iterations.numpy() - 1
+    current_step = model.optimizer.iterations.numpy() - 1
     logging.info("End train iteration at global step:{}".format(current_step))
 
     return history
@@ -138,15 +136,14 @@ class TransformerTask(object):
   def eval(self):
     """Evaluates the model."""
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
-      if not self.predict_model:
-        self.predict_model = transformer.create_model(self.params, is_train=True)
-        self.predict_model.compile()
-        self.predict_model.summary()
-      self._load_model_weights(self.predict_model)
+      predict_model = transformer.create_model(self.params, is_train=True)
+      predict_model.compile()
+      predict_model.summary()
+      self._load_model_weights(predict_model)
 
     N = 128
     ds = self._create_dataset(self.params['data_dir'], batch_size=self.params["batch_size"], repeat=1)
-    res = self.predict_model.evaluate(ds, steps=N)
+    res = predict_model.evaluate(ds, steps=N)
     print('evaluate {} steps: {}'.format(N, res))
 
   def _trim_and_decode(self, ids):
@@ -221,23 +218,19 @@ class TransformerTask(object):
     else:
       logging.info('no checkpoint found from: {}'.format(checkpoint_path))
 
-  def _create_optimizer(self):
+  def _create_optimizer(self, params):
     """Creates optimizer."""
-    params = self.params
-    opt = tf.keras.optimizers.Adam(
+    return tf.keras.optimizers.Adam(
         params["learning_rate"],
         params["optimizer_adam_beta1"],
         params["optimizer_adam_beta2"],
         epsilon=params["optimizer_adam_epsilon"])
 
-    return opt
-
-  def _create_loss_fn(self):
-    params = self.params
+  def _create_loss_fn(self, params):
+    logging.info('use loss_fn: %s', self.flags_obj.loss_fn)
     if self.flags_obj.loss_fn == 'smoothed_cross_entropy':
       label_smoothing = params["label_smoothing"]
       vocab_size = params["vocab_size"]
-      print('use smoothed_cross_entropy')
       def loss(y_true, y_pred):
         y_true = tf.reshape(y_true, [params['batch_size'], -1])
         y_pred = tf.reshape(y_pred, [params['batch_size'], -1, vocab_size])
@@ -268,11 +261,10 @@ class TransformerTask(object):
 
     return ds
 
-  @classmethod
-  def _ensure_dir(cls, log_dir):
-    """Makes log dir if not existed."""
-    if not tf.io.gfile.exists(log_dir):
-      tf.io.gfile.makedirs(log_dir)
+  def _print_variables_and_exit(self, checkpoint_path):
+    for var in tf.train.list_variables(checkpoint_path):
+      print(var)
+    sys.exit()
 
 
 def main_test(_):
@@ -300,7 +292,6 @@ def main(_):
 
 
 if __name__ == "__main__":
-  logging.set_verbosity(logging.INFO)
   misc.define_transformer_flags()
   app.run(main)
   #app.run(main_test)

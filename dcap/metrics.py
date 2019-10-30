@@ -114,10 +114,10 @@ class MetricLayer(tf.keras.layers.Layer):
     self.metric_mean_fns = [
         (tf.keras.metrics.Mean("token_accuracy"), padded_accuracy),
         (tf.keras.metrics.Mean("sequence_accuracy"), padded_sequence_accuracy),
-        (tf.keras.metrics.Mean("xe_loss"),
-            lambda logits, labels: (tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True), 1)),
-        (tf.keras.metrics.Mean("xe_loss_smoothed"),
-            lambda logits, labels: (transformer_loss(logits, labels, self.smoothing, self.vocab_size), 1)),
+#        (tf.keras.metrics.Mean("xe_loss"),
+#            lambda logits, labels: (tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True), 1)),
+#        (tf.keras.metrics.Mean("xe_loss_smoothed"),
+#            lambda logits, labels: (transformer_loss(logits, labels, self.smoothing, self.vocab_size), 1)),
     ]
     super(MetricLayer, self).build(input_shape)
 
