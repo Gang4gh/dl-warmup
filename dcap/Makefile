@@ -10,7 +10,7 @@ DATA_DIR ?= data_dtitle
 DTAG ?= 1023-noTH-enoughtokens-exact
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
-DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords
+DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
 MODEL_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard *.py))
 
 all: check-params

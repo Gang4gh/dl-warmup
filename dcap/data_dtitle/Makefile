@@ -7,7 +7,7 @@ TAG =
 ARGS =
 DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
 
-all: $(SPLIT_DIR)data.md5
+all: $(SPLIT_DIR)all-data.md5
 	$(MAKE) -j$(CPUS) $(TAG)-meta.log
 
 clean:
@@ -17,7 +17,7 @@ clean:
 
 .INTERMEDIATE: $(DTITLE_FILES)
 
-$(SPLIT_DIR)data.md5: $(DTITLE_RAW)
+$(SPLIT_DIR)all-data.md5: $(DTITLE_RAW)
 	mkdir -p $(SPLIT_DIR)
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
 	gunzip -c $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
@@ -29,7 +29,7 @@ $(SPLIT_DIR)data.md5: $(DTITLE_RAW)
 
 %.$(TAG).dtitle: %.raw.gz
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) \
-		| shuf --random-source=<(openssl enc -aes-256-ctr -pass pass:17 -nosalt </dev/zero 2>/dev/null) > $@
+		| shuf --random-source=$(DTITLE_RAW) > $@
 
 $(TAG)-training.dtitle: $(DTITLE_FILES)
 	tail -q -n +101 $^ > $@

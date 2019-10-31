@@ -4,10 +4,15 @@ import sys
 import re
 import time
 import gzip
+import collections
+
 from absl import app
 from absl import flags
 
-def dtitle_reader(dtitle_file, log_per_n_step=None):
+def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
+	column_names = input_schema.split(',')
+	Row = collections.namedtuple('Row', ','.join(col if col else '_col'+str(ind) for ind, col in enumerate(column_names)))
+
 	lcount = 0
 
 	is_gz_file = dtitle_file.endswith('.gz')
@@ -16,10 +21,11 @@ def dtitle_reader(dtitle_file, log_per_n_step=None):
 	for l in fin:
 		inputs = l.decode('utf8') if is_gz_file else l
 		inputs = inputs.strip().split('\t')
-		if len(inputs) != 3:
-			print('invalid input, len(inputs)!=3, {}'.format(inputs[0]), file=sys.stderr)
+		if len(inputs) != len(column_names):
+			print('invalid input, len(inputs)!={}, {}'.format(len(column_names), inputs[0][:200]), file=sys.stderr)
 			continue
-		yield inputs
+		row = Row(*inputs)
+		yield row
 		if log_per_n_step:
 			lcount += 1
 			if lcount % log_per_n_step == 0:
@@ -30,38 +36,40 @@ def dtitle_reader(dtitle_file, log_per_n_step=None):
 
 def preprocess_raw_input(FLAGS):
 	total, valid = 0, 0
-	for inputs in dtitle_reader(FLAGS.input_file):
+	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
-		inputs[1] = re.sub(r'#N#|#R#|#TAB#', ' ', inputs[1])
-		inputs[2] = re.sub(r'</html>.*', '</html>', inputs[2], flags=re.I)
+		url, title, html = row.url, row.title, row.html
+
+		title = re.sub(r'#N#|#R#|#TAB#', ' ', title)
+		html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
 
 		if FLAGS.remove_title:
-			inputs[2] = re.sub(r'<title.*?</title>', ' ', inputs[2], flags=re.I)
+			html = re.sub(r'<title.*?</title>', ' ', html, flags=re.I)
 
 		if FLAGS.remove_head:
-			inputs[2] = re.sub(r'<head.*?</head>', ' ', inputs[2], flags=re.I)
+			html = re.sub(r'<head.*?</head>', ' ', html, flags=re.I)
 
-		m = re.match(r'.{,3072}[^\w&</]', inputs[2])
+		m = re.match(r'.{,3072}[^\w&</]', html)
 		if m:
-			inputs[2] = m.group(0)
+			html = m.group(0)
 		else:
-			print('invalid input, no-match, {}'.format(inputs[0]), file=sys.stderr)
+			print('invalid input, no-match, {}'.format(url), file=sys.stderr)
 			continue
 
-		inputs = [re.sub(r' +', ' ', s).strip().lower() for s in inputs]
-		title_tokens = [w for w in re.split(r'\W+', inputs[1]) if w]
+		url, title, html = (re.sub(r' +', ' ', s).strip().lower() for s in [url, title, html])
+		title_tokens = [w for w in re.split(r'\W+', title) if w]
 
 		if FLAGS.check_enoughtokens and len(title_tokens) <= 1:
 			continue
 
-		if FLAGS.check_exactmatch and inputs[1] not in inputs[2]:
+		if FLAGS.check_exactmatch and title not in html:
 			continue
 
-		if FLAGS.check_fuzzymatch and any(token not in inputs[2] for token in title_tokens):
+		if FLAGS.check_fuzzymatch and any(token not in html for token in title_tokens):
 			continue
 
 		valid += 1
-		print('\t'.join(inputs))
+		print('\t'.join((url, title, html)))
 	print('ignore {} out of {} ({:.2f}%) examples from {}'.format(total-valid, total, (total-valid)/total*100, FLAGS.input_file), file=sys.stderr)
 
 
@@ -69,7 +77,7 @@ def build_vocab(FLAGS):
 	import tensorflow_datasets as tfds
 	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}g.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
-	corpus = (s.encode() for inputs in dtitle_reader(FLAGS.input_file, 100*1024) for s in inputs[1:])
+	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema, 100*1024) for s in [row.html, row.title])
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
 			target_vocab_size = FLAGS.target_vocab_size,
 			max_subword_length = FLAGS.max_subword_length,
@@ -97,6 +105,8 @@ if __name__ == '__main__':
 	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'print-flags'], 'the command to execute')
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
+	# params for dtitle_reader
+	flags.DEFINE_string('input_schema', 'url,title,html', 'input file schema, used fields: url, title, html')
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', False, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('remove_head', False, 'only keep content in <body> tag')
