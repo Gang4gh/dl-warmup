@@ -4,6 +4,7 @@ Based on: https://github.com/tensorflow/models/tree/master/official/transformer/
 
 import os
 import sys
+import time
 import numpy as np
 
 from absl import app
@@ -105,7 +106,7 @@ class TransformerTask(object):
     checkpoint = tf.train.Checkpoint(model=model)
     ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=5, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
-      #self._print_variables_and_exit(ckpt_mgr.latest_checkpoint)
+      #self._print_variables_and_exit(flags_obj.model_dir)
       model.fit((np.ones((1, params['max_input_length']), np.int64), np.ones((1, params['max_target_length']), np.int64)),
           np.ones((1, params['max_target_length']), np.int64),
           verbose=0)
@@ -148,11 +149,33 @@ class TransformerTask(object):
 
   def _trim_and_decode(self, ids):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
+    ids = list(ids)
     try:
-      index = list(ids).index(self.EOS_id)
+      index = ids.index(self.EOS_id)
       return self.tokenizer.decode(ids[:index])
     except ValueError:  # No EOS found in sequence
       return self.tokenizer.decode(ids)
+
+  def _calculate_rouge_scores(self, summaries, references, max_length):
+    # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
+    from pythonrouge.pythonrouge import Pythonrouge
+
+    logging.info('calculate ROUGE scores of %d summaries', len(summaries))
+    rouge = Pythonrouge(summary_file_exist=False,
+                          summary=summaries, reference=references,
+                          n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
+                          recall_only=False, stemming=True, stopwords=False,
+                          word_level=True, length_limit=max_length is not None, length=max_length,
+                          use_cf=False, cf=95, scoring_formula='average',
+                          resampling=True, samples=1000, favor=True, p=0.5)
+    score = rouge.calc_score()
+    logging.info('ROUGE(1/2/L) Scores:')
+    logging.info('>   ROUGE-1-R/F1: %f / %f', score['ROUGE-1-R'], score['ROUGE-1-F'])
+    logging.info('>   ROUGE-2-R/F1: %f / %f', score['ROUGE-2-R'], score['ROUGE-2-F'])
+    logging.info('>   ROUGE-L-R/F1: %f / %f', score['ROUGE-L-R'], score['ROUGE-L-F'])
+    avg_token_count = sum(len(' '.join(summary).split()) for summary in summaries) / len(summaries)
+    avg_token_count_ref = sum(len(' '.join(summary[0]).split()) for summary in references) / len(references)
+    logging.info('>   averageToken: %f / %f', avg_token_count, avg_token_count_ref)
 
   def predict(self):
     """Predicts result from the model."""
@@ -163,34 +186,41 @@ class TransformerTask(object):
     model.summary()
     self._load_model_weights(model)
 
+    #numpy.set_printoptions(threshold=sys.maxsize)
+
     N = 1024
     N //= params['batch_size']
     ds = self._create_dataset(params['data_dir'], batch_size=params['batch_size'], repeat=1)
-    targets = []
-    for ((inp, tar),) in ds.take(N):
-      for ids in tar:
-        real_title = self._trim_and_decode(ids)
-        targets.append(real_title)
+    inputs, input_strings, targets, target_strings, preds, pred_strings = [], [], [], [], [], []
+    for ((inps, tars), _) in ds.take(N):
+      for inp, tar in zip(inps, tars):
+        inputs.append(inp.numpy())
+        input_strings.append(self._trim_and_decode(inputs[-1]))
+        targets.append(tar.numpy())
+        target_strings.append(self._trim_and_decode(targets[-1]))
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
-    #numpy.set_printoptions(threshold=sys.maxsize)
-
     correct, total = 0, 0
-    ds = ds.map(lambda X: X[0]).take(N)
-    ret = model.predict(ds)
+    ret = model.predict([inputs], batch_size=params['batch_size'])
     val_outputs, _ = ret
-    length = len(val_outputs)
-    for i in range(length):
-      pred  = self._trim_and_decode(val_outputs[i])
-      target = targets[i]
-      if pred == target:
-        correct += 1
-        #print('match #{}: \n    "{}"\n    "{}"'.format(i, pred, target))
-      else:
-        logging.info('mismatch #{}:  Pred.:  "{}" | Target: "{}"'.format(i, pred, target))
-        #print('val_outputs[i] : {0}/{1}'.format(len(val_outputs[i]), val_outputs[i]))
+    for ind, pred_ids in enumerate(val_outputs):
+      preds.append(pred_ids)
+      pred_strings.append(self._trim_and_decode(preds[-1]))
       total += 1
-    logging.info('the accuracy: {}/{}={}'.format(correct, total, correct/total))
+      correct += 1 if pred_strings[-1] == target_strings[ind] else 0
+    logging.info('Test accuracy: {}/{}={}'.format(correct, total, correct/total))
+
+    self._calculate_rouge_scores(pred_strings, [[ss] for ss in target_strings], None)
+
+    result_file_path = os.path.join(self.flags_obj.model_dir, 'predict-result-{}.txt'.format(int(time.time())))
+    with open(result_file_path, 'w', encoding='utf8') as f:
+      for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
+        f.write('# [{}]\n'.format(ind))
+        f.write('HtmlTitle = {}\n'.format(tar))
+        f.write('Predict   = {}\n'.format(pred))
+        f.write('HtmlBody* = {}\n\n'.format(inp))
+    logging.info('write results to {}'.format(result_file_path))
+
 
   def _create_callbacks(self, log_dir, init_steps, params, ckpt_mgr):
     """Creates a list of callbacks."""
@@ -213,8 +243,8 @@ class TransformerTask(object):
     checkpoint_path = tf.train.latest_checkpoint(self.flags_obj.model_dir)
     """Loads model weights when it is provided."""
     if checkpoint_path:
-      logging.info("load model weights from: {}".format(checkpoint_path))
       checkpoint.restore(checkpoint_path).expect_partial()
+      logging.info("load model weights from: {}".format(checkpoint_path))
     else:
       logging.info('no checkpoint found from: {}'.format(checkpoint_path))
 
@@ -261,8 +291,9 @@ class TransformerTask(object):
 
     return ds
 
-  def _print_variables_and_exit(self, checkpoint_path):
-    for var in tf.train.list_variables(checkpoint_path):
+  def _print_variables_and_exit(self, checkpoint_dir):
+    ckpt_path = tf.train.latest_checkpoint(checkpoint_dir)
+    for var in tf.train.list_variables(ckpt_path):
       print(var)
     sys.exit()
 

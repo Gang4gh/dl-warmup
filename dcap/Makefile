@@ -5,8 +5,9 @@ TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 -include Makefile.config
 TAG ?= notag
 PORT ?= 2345
-MDIR ?= model
-DATA_DIR ?= data_dtitle
+ROOT ?= .
+MDIR ?= $(ROOT)/model
+DATA_DIR ?= $(ROOT)/data_dtitle
 DTAG ?= 1023-noTH-enoughtokens-exact
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
@@ -23,6 +24,7 @@ clean:
 check-params:
 	@echo TAG ?= $(TAG)
 	@echo PORT ?= $(PORT)
+	@echo ROOT ?= $(ROOT)
 	@echo MDIR ?= $(MDIR)
 	@echo DATA_DIR ?= $(DATA_DIR)
 	@echo DTAG ?= $(DTAG)
@@ -60,7 +62,7 @@ eval:
 	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --num_gpus=-1 $(ARGS)
 
 predict:
-	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --num_gpus=-1 $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --num_gpus=-1 $(ARGS)
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict
