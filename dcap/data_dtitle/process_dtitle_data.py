@@ -11,7 +11,7 @@ from absl import flags
 
 def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 	column_names = input_schema.split(',')
-	Row = collections.namedtuple('Row', ','.join(col if col else '_col'+str(ind) for ind, col in enumerate(column_names)))
+	Row = collections.namedtuple('Row', ','.join(col if col else 'col'+str(ind) for ind, col in enumerate(column_names)))
 
 	lcount = 0
 
@@ -20,11 +20,11 @@ def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 
 	for l in fin:
 		inputs = l.decode('utf8') if is_gz_file else l
-		inputs = inputs.strip().split('\t')
+		inputs = inputs.split('\t')
 		if len(inputs) != len(column_names):
-			print('invalid input, len(inputs)!={}, {}'.format(len(column_names), inputs[0][:200]), file=sys.stderr)
+			print('invalid input, len(inputs)@{}!={}, {}'.format(len(inputs), len(column_names), inputs[0][:200]), file=sys.stderr)
 			continue
-		row = Row(*inputs)
+		row = Row(*inputs[:-1], inputs[-1].strip())
 		yield row
 		if log_per_n_step:
 			lcount += 1
@@ -39,6 +39,7 @@ def preprocess_raw_input(FLAGS):
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
 		url, title, html = row.url, row.title, row.html
+		if not url or not title or not html: continue
 
 		title = re.sub(r'#N#|#R#|#TAB#', ' ', title)
 		html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
