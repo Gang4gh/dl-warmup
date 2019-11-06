@@ -137,15 +137,15 @@ class TransformerTask(object):
   def eval(self):
     """Evaluates the model."""
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
-      predict_model = transformer.create_model(self.params, is_train=True)
-      predict_model.compile()
-      predict_model.summary()
-      self._load_model_weights(predict_model)
+      model = transformer.create_model(self.params, is_train=True)
+      model.compile(loss=self._create_loss_fn(self.params))
+      model.summary()
+      self._load_model_weights(model)
 
     N = 128
     ds = self._create_dataset(self.params['data_dir'], batch_size=self.params["batch_size"], repeat=1)
-    res = predict_model.evaluate(ds, steps=N)
-    print('evaluate {} steps: {}'.format(N, res))
+    res = model.evaluate(ds, steps=N)
+    logging.info('Evaluate {} steps:\n{}'.format(N, res))
 
   def _trim_and_decode(self, ids):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
@@ -201,7 +201,7 @@ class TransformerTask(object):
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
     correct, total = 0, 0
-    ret = model.predict([inputs], batch_size=params['batch_size'])
+    ret = model.predict(np.vstack(inputs), batch_size=params['batch_size'])
     val_outputs, _ = ret
     for ind, pred_ids in enumerate(val_outputs):
       preds.append(pred_ids)
