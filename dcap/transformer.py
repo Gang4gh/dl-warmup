@@ -41,8 +41,8 @@ def create_model(params, is_train):
   """Creates transformer model."""
   with tf.name_scope("model"):
     if is_train:
-      inputs = tf.keras.layers.Input((None,), dtype="int64", name="inputs")
-      targets = tf.keras.layers.Input((None,), dtype="int64", name="targets")
+      inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
       internal_model = Transformer(params, name="transformer_v2")
       logits = internal_model([inputs, targets], training=is_train)
       if params["enable_metrics_in_training"]:
@@ -55,7 +55,7 @@ def create_model(params, is_train):
       return model
 
     else:
-      inputs = tf.keras.layers.Input((None,), dtype="int64", name="inputs")
+      inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
       internal_model = Transformer(params, name="transformer_v2")
       ret = internal_model([inputs], training=is_train)
       outputs, scores = ret["outputs"], ret["scores"]

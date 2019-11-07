@@ -107,8 +107,8 @@ class TransformerTask(object):
     ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=5, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
       #self._print_variables_and_exit(flags_obj.model_dir)
-      model.fit((np.ones((1, params['max_input_length']), np.int64), np.ones((1, params['max_target_length']), np.int64)),
-          np.ones((1, params['max_target_length']), np.int64),
+      model.fit((np.ones((1, params['max_input_length']), np.int32), np.ones((1, params['max_target_length']), np.int32)),
+          np.ones((1, params['max_target_length']), np.int32),
           verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
       current_step = model.optimizer.iterations.numpy() - 1
@@ -269,24 +269,26 @@ class TransformerTask(object):
     else:
       return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
-  def _create_dataset(self, dtitle_file, batch_size, repeat, shuffle_size=None):
+  def _create_dataset(self, dtitle_file, batch_size, repeat, batch_size=None, shuffle_size=None):
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
+    max_url_segment_length = 64
 
     def _data_encode(ln):
-      _, tar, inp = tf.strings.split(ln, '\t')
-      inp = self.tokenizer.encode(inp.numpy())[:max_input_length-1] + [self.EOS_id]
-      tar = self.tokenizer.encode(tar.numpy()) + [self.EOS_id]
-      return inp, tar
+      url, tar, inp = tf.strings.split(ln, '\t')
+      url = self.tokenizer.encode(url.numpy())
+      inp = self.tokenizer.encode(inp.numpy())
+      tar = self.tokenizer.encode(tar.numpy())
+      return url[:max_url_segment_length] + [self.EOS_id] + inp[:max_input_length - max_url_segment_length - 2] + [self.EOS_id], tar + [self.EOS_id]
 
     ds = tf.data.TextLineDataset(dtitle_file)
-    ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int64, tf.int64]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds = ds.filter(lambda body, title: tf.size(title) <= max_target_length)
+    ds = ds.repeat(repeat)
     if shuffle_size:
       ds = ds.shuffle(shuffle_size)
     ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
     ds = ds.map(lambda x, y: ((x, y), y))
-    ds = ds.repeat(repeat)
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
 
     return ds
@@ -301,12 +303,17 @@ class TransformerTask(object):
 def main_test(_):
   FLAGS = flags.FLAGS
   task = TransformerTask(FLAGS)
-  ds = task._create_dataset(FLAGS.data_dir, batch_size=4, repeat=1)
-  for (batch, ((inp, tar),)) in enumerate(ds.take(2)):
+  ds = task._create_dataset(task.params['data_dir'], batch_size=task.params["batch_size"], repeat=None)
+  N = 400
+  logging.info('Begin read dataset, batch_count=%d, batch_size=%d', N, task.params["batch_size"])
+  for batch, ((inp, tar), _) in enumerate(ds):
+    if batch == N: break
     for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
-      htmlbody = task._trim_and_decode(inp1)
-      title = task._trim_and_decode(tar1)
-      print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
+      #htmlbody = task._trim_and_decode(inp1)
+      #title = task._trim_and_decode(tar1.numpy())
+      #print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
+      pass
+  logging.info('End of read')
 
 
 def main(_):
