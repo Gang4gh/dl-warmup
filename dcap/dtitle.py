@@ -90,9 +90,8 @@ class TransformerTask(object):
     keras_utils.set_session_config(
         enable_xla=flags_obj.enable_xla)
 
-    train_ds = self._create_dataset(params['data_dir'], batch_size=params["batch_size"], repeat=None)
-    test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'),
-        batch_size=params["batch_size"], repeat=1)
+    train_ds = self._create_dataset(params['data_dir'], repeat=None)
+    test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'), repeat=1)
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
@@ -143,16 +142,18 @@ class TransformerTask(object):
       self._load_model_weights(model)
 
     N = 128
-    ds = self._create_dataset(self.params['data_dir'], batch_size=self.params["batch_size"], repeat=1)
+    ds = self._create_dataset(self.params['data_dir'], repeat=1)
     res = model.evaluate(ds, steps=N)
     logging.info('Evaluate {} steps:\n{}'.format(N, res))
 
-  def _trim_and_decode(self, ids):
+  def _trim_and_decode(self, ids, segment_count = 1):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
     ids = list(ids)
     try:
-      index = ids.index(self.EOS_id)
-      return self.tokenizer.decode(ids[:index])
+      index = 0
+      for _ in range(segment_count):
+        index += ids[index:].index(self.EOS_id) + 1
+      return self.tokenizer.decode(ids[:index-1])
     except ValueError:  # No EOS found in sequence
       return self.tokenizer.decode(ids)
 
@@ -190,12 +191,12 @@ class TransformerTask(object):
 
     N = 1024
     N //= params['batch_size']
-    ds = self._create_dataset(params['data_dir'], batch_size=params['batch_size'], repeat=1)
+    ds = self._create_dataset(params['data_dir'], repeat=1)
     inputs, input_strings, targets, target_strings, preds, pred_strings = [], [], [], [], [], []
     for ((inps, tars), _) in ds.take(N):
       for inp, tar in zip(inps, tars):
         inputs.append(inp.numpy())
-        input_strings.append(self._trim_and_decode(inputs[-1]))
+        input_strings.append(self._trim_and_decode(inputs[-1], 2))
         targets.append(tar.numpy())
         target_strings.append(self._trim_and_decode(targets[-1]))
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
@@ -218,7 +219,7 @@ class TransformerTask(object):
         f.write('# [{}]\n'.format(ind))
         f.write('HtmlTitle = {}\n'.format(tar))
         f.write('Predict   = {}\n'.format(pred))
-        f.write('HtmlBody* = {}\n\n'.format(inp))
+        f.write('Input* = {}\n\n'.format(inp))
     logging.info('write results to {}'.format(result_file_path))
 
 
@@ -269,7 +270,8 @@ class TransformerTask(object):
     else:
       return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
-  def _create_dataset(self, dtitle_file, batch_size, repeat, batch_size=None, shuffle_size=None):
+  def _create_dataset(self, dtitle_file, repeat, batch_size=None, shuffle_size=None):
+    batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
     max_url_segment_length = 64
