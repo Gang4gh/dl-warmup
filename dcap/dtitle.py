@@ -274,21 +274,33 @@ class TransformerTask(object):
     batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
-    max_url_segment_length = 64
-    max_hostname_segment_length = 64
+    user_segment_limit = 64 # max url segment length
+    hostname_segment_limit = 64 # max hostname segment length
+
+    eos = self.EOS_id
 
     def _data_encode(ln):
-      url, tar, hostname, inp = tf.strings.split(ln, '\t')
+      url, _, _, tar, hostname, inp = tf.strings.split(ln, '\t')
+
       url = self.tokenizer.encode(url.numpy())
       hostname = self.tokenizer.encode(hostname.numpy())
       inp = self.tokenizer.encode(inp.numpy())
       tar = self.tokenizer.encode(tar.numpy())
 
-      url = [self.EOS_id+1] + url[:max_url_segment_length-2] + [self.EOS_id]
-      hostname = [self.EOS_id+2] + hostname[:max_hostname_segment_length-2] + [self.EOS_id]
-      inp = [self.EOS_id+3] + inp[:max_input_length-max_url_segment_length-max_hostname_segment_length-2] + [self.EOS_id]
-      return inp, tar + [self.EOS_id] # baseline
-      #return url + hostname + inp, tar + [self.EOS_id]
+      # baseline
+      return inp[:max_input_length - 1] + [eos], tar + [eos]
+
+      # concatenated
+      # url = [eos+1] + url[:user_segment_limit-2] + [eos]
+      # hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
+      # inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+      # return url + hostname + inp, tar + [eos]
+
+      # concatenated + fixed positins (padding)
+      # url = [eos+1] + url[:user_segment_limit-2] + [eos] + [0] * max(0, user_segment_limit-2-len(url))
+      # hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos] + [0] * max(0, hostname_segment_limit-2-len(hostname))
+      # inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+      # return url + hostname + inp, tar + [eos]
 
     ds = tf.data.TextLineDataset(dtitle_file)
     ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)

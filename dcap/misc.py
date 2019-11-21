@@ -218,7 +218,7 @@ def define_transformer_flags():
           'the max sequence length.'))
 
   flags.DEFINE_string(
-      name='loss_fn', default='corss_entropy',
+      name='loss_fn', default='smoothed_corss_entropy',
       help=flags_core.help_wrap('loss_fn: corss_entropy, smoothed_corss_entropy'))
 
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
