@@ -1,7 +1,7 @@
 SHELL = /bin/bash
 CPUS = $(shell nproc)
 
-DTITLE_RAW = raw-data.gz
+DTITLE_RAW = raw-data.7z
 SPLIT_DIR = split_raw/
 TAG =
 ARGS =
@@ -20,7 +20,7 @@ clean:
 $(SPLIT_DIR)all-data.md5: $(DTITLE_RAW)
 	mkdir -p $(SPLIT_DIR)
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
-	gunzip -c $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
+	7z e -so $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
 	$(MAKE) -j$(CPUS) $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
 	md5sum $(SPLIT_DIR)*.raw.gz > $@
 

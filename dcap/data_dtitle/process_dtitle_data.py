@@ -71,7 +71,7 @@ def preprocess_raw_input(FLAGS):
 			continue
 
 		valid += 1
-		print('\t'.join((url, title, hostname, html)))
+		print('\t'.join(row._replace(url=url, title=title, hostname=hostname, html=html)))
 	print('ignore {} out of {} ({:.2f}%) examples from {}'.format(total-valid, total, (total-valid)/total*100, FLAGS.input_file), file=sys.stderr)
 
 
@@ -108,7 +108,7 @@ if __name__ == '__main__':
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
-	flags.DEFINE_string('input_schema', 'url,,,hostname,title,html', 'input file schema, used fields: url, title, hostname, html')
+	flags.DEFINE_string('input_schema', 'url,doc_url,visual_title,hostname,title,html', 'input file schema, used fields: url,title,hostname,html')
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('remove_head', True, 'only keep content in <body> tag')
