@@ -2,7 +2,7 @@ FROM tensorflow/tensorflow:2.0.0-gpu-py3
 
 LABEL Description="This image is used to develop the dsum model atop tensorflow 2.0"
 
-RUN apt update && apt install -y git screen vim
+RUN apt update && apt install -y git screen vim p7zip-full
 RUN pip install tensorflow_datasets git+https://github.com/tagucci/pythonrouge.git
 
 ENV PYTHONPATH=/dsum/tensorflow/models
@@ -15,3 +15,4 @@ RUN cd $PYTHONPATH/official/modeling/activations/ && grep -vwE 'tf.keras.utils.r
 RUN apt update && apt install -y sudo
 RUN useradd -m -G sudo dsumuser && echo dsumuser:gg | chpasswd
 USER dsumuser
+

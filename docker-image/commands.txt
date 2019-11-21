@@ -1,0 +1,5 @@
+# build a docker image with ./Dockerfile
+docker build -t gang4dk/dsum .
+
+# push the local gang4dk/dsum image to docker hub
+docker push gang4dk/dsum

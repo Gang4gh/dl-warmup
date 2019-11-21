@@ -38,10 +38,11 @@ def preprocess_raw_input(FLAGS):
 	total, valid = 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
-		url, title, html = row.url, row.title, row.html
+		url, title, hostname, html = row.url, row.title, row.hostname, row.html
 		if not url or not title or not html: continue
 
 		title = re.sub(r'#N#|#R#|#TAB#', ' ', title)
+		hostname = re.sub(r'#N#|#R#|#TAB#', ' ', hostname)
 		html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
 
 		if FLAGS.remove_title:
@@ -57,7 +58,7 @@ def preprocess_raw_input(FLAGS):
 			print('invalid input, no-match, {}'.format(url), file=sys.stderr)
 			continue
 
-		url, title, html = (re.sub(r' +', ' ', s).strip().lower() for s in [url, title, html])
+		url, title, hostname, html = (re.sub(r' +', ' ', s).strip().lower() for s in [url, title, hostname, html])
 		title_tokens = [w for w in re.split(r'\W+', title) if w]
 
 		if FLAGS.check_enoughtokens and len(title_tokens) <= 1:
@@ -70,7 +71,7 @@ def preprocess_raw_input(FLAGS):
 			continue
 
 		valid += 1
-		print('\t'.join((url, title, html)))
+		print('\t'.join((url, title, hostname, html)))
 	print('ignore {} out of {} ({:.2f}%) examples from {}'.format(total-valid, total, (total-valid)/total*100, FLAGS.input_file), file=sys.stderr)
 
 
@@ -78,12 +79,12 @@ def build_vocab(FLAGS):
 	import tensorflow_datasets as tfds
 	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}g.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
-	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema, 100*1024) for s in [row.url, row.html, row.title])
+	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema, 100*1024) for s in [row.url, row.hostname, row.html, row.title])
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
 			target_vocab_size = FLAGS.target_vocab_size,
 			max_subword_length = FLAGS.max_subword_length,
 			max_corpus_chars = int(FLAGS.max_corpus_chars*(2**30)),
-			reserved_tokens = ['<EOS>'])
+			reserved_tokens = ['<EOS>', '<BOS#0>', '<BOS#1>', '<BOS#2>', '<BOS#3>'])
 	tokenizer.save_to_file(target_vocab_file)
 	print('{}: the subwords tokenizer({}) is ready.'.format(time.asctime(), target_vocab_file))
 
@@ -107,7 +108,7 @@ if __name__ == '__main__':
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
-	flags.DEFINE_string('input_schema', 'url,title,html', 'input file schema, used fields: url, title, html')
+	flags.DEFINE_string('input_schema', 'url,,,hostname,title,html', 'input file schema, used fields: url, title, hostname, html')
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', False, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('remove_head', False, 'only keep content in <body> tag')

@@ -275,13 +275,20 @@ class TransformerTask(object):
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
     max_url_segment_length = 64
+    max_hostname_segment_length = 64
 
     def _data_encode(ln):
-      url, tar, inp = tf.strings.split(ln, '\t')
+      url, tar, hostname, inp = tf.strings.split(ln, '\t')
       url = self.tokenizer.encode(url.numpy())
+      hostname = self.tokenizer.encode(hostname.numpy())
       inp = self.tokenizer.encode(inp.numpy())
       tar = self.tokenizer.encode(tar.numpy())
-      return url[:max_url_segment_length] + [self.EOS_id] + inp[:max_input_length - max_url_segment_length - 2] + [self.EOS_id], tar + [self.EOS_id]
+
+      url = [self.EOS_id+1] + url[:max_url_segment_length-2] + [self.EOS_id]
+      hostname = [self.EOS_id+2] + hostname[:max_hostname_segment_length-2] + [self.EOS_id]
+      inp = [self.EOS_id+3] + inp[:max_input_length-max_url_segment_length-max_hostname_segment_length-2] + [self.EOS_id]
+      return inp, tar + [self.EOS_id] # baseline
+      #return url + hostname + inp, tar + [self.EOS_id]
 
     ds = tf.data.TextLineDataset(dtitle_file)
     ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
