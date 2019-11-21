@@ -10,8 +10,10 @@ import numpy as np
 from absl import app
 from absl import flags
 from absl import logging
+
 import tensorflow as tf
 import tensorflow_datasets as tfds
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 import misc
 from official.transformer.v2 import optimizer
