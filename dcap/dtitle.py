@@ -49,7 +49,8 @@ class TransformerTask(object):
     params["num_parallel_calls"] = (flags_obj.num_parallel_calls or tf.data.experimental.AUTOTUNE)
 
     params["use_synthetic_data"] = flags_obj.use_synthetic_data
-    params["batch_size"] = flags_obj.batch_size or params["default_batch_size"]
+    params["batch_size"] = flags_obj.batch_size * num_gpus
+    logging.info('actual batch_size = {} * {}'.format(flags_obj.batch_size, num_gpus))
     params["repeat_dataset"] = None
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
@@ -58,6 +59,8 @@ class TransformerTask(object):
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]
     params["vocab_size"] = self.tokenizer.vocab_size
     logging.info('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
+
+    logging.info('use input schema: {}'.format(self.flags_obj.input_schema))
 
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
@@ -287,20 +290,23 @@ class TransformerTask(object):
       inp = self.tokenizer.encode(inp.numpy())
       tar = self.tokenizer.encode(tar.numpy())
 
-      # baseline
-      return inp[:max_input_length - 1] + [eos], tar + [eos]
-
-      # concatenated
-      # url = [eos+1] + url[:user_segment_limit-2] + [eos]
-      # hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
-      # inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
-      # return url + hostname + inp, tar + [eos]
-
-      # concatenated + fixed positins (padding)
-      # url = [eos+1] + url[:user_segment_limit-2] + [eos] + [0] * max(0, user_segment_limit-2-len(url))
-      # hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos] + [0] * max(0, hostname_segment_limit-2-len(hostname))
-      # inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
-      # return url + hostname + inp, tar + [eos]
+      if self.flags_obj.input_schema == 'v0':
+        # baseline
+        return inp[:max_input_length - 1] + [eos], tar + [eos]
+      elif self.flags_obj.input_schema == 'v1':
+        # concatenated
+        url = [eos+1] + url[:user_segment_limit-2] + [eos]
+        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
+        inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+        return url + hostname + inp, tar + [eos]
+      elif self.flags_obj.input_schema == 'v2':
+        # concatenated + fixed positins (padding)
+        url = [eos+1] + url[:user_segment_limit-2] + [eos] + [0] * max(0, user_segment_limit-2-len(url))
+        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos] + [0] * max(0, hostname_segment_limit-2-len(hostname))
+        inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+        return url + hostname + inp, tar + [eos]
+      else:
+        raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
 
     ds = tf.data.TextLineDataset(dtitle_file)
     ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)

@@ -221,6 +221,12 @@ def define_transformer_flags():
       name='loss_fn', default='smoothed_corss_entropy',
       help=flags_core.help_wrap('loss_fn: corss_entropy, smoothed_corss_entropy'))
 
+  flags.DEFINE_string(
+      name='input_schema', default='v0',
+      help=flags_core.help_wrap('input_schema: v0, v1, v2. v0: html only, '
+          'v1: concatenated (url, hostname, html), '
+          'v2: padded (url, hostname, html)'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)
