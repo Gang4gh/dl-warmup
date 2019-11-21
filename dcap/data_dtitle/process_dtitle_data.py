@@ -110,10 +110,10 @@ if __name__ == '__main__':
 	# params for dtitle_reader
 	flags.DEFINE_string('input_schema', 'url,,,hostname,title,html', 'input file schema, used fields: url, title, hostname, html')
 	# params for pre-process
-	flags.DEFINE_boolean('remove_title', False, 'filter out content in <title> tag')
-	flags.DEFINE_boolean('remove_head', False, 'only keep content in <body> tag')
-	flags.DEFINE_boolean('check_enoughtokens', False, 'filter out examples whose title doesn''t have enough tokens')
-	flags.DEFINE_boolean('check_exactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
+	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
+	flags.DEFINE_boolean('remove_head', True, 'only keep content in <body> tag')
+	flags.DEFINE_boolean('check_enoughtokens', True, 'filter out examples whose title doesn''t have enough tokens')
+	flags.DEFINE_boolean('check_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('check_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
