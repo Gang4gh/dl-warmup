@@ -153,7 +153,7 @@ class TransformerTask(object):
 
   def _trim_and_decode(self, ids, segment_count = 1):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
-    ids = list(ids)
+    ids = [id for id in list(ids) if id]
     try:
       index = 0
       for _ in range(segment_count):
@@ -285,7 +285,7 @@ class TransformerTask(object):
     eos = self.EOS_id
 
     def _data_encode(ln):
-      url, _, _, tar, hostname, inp = tf.strings.split(ln, '\t')
+      url, _, _, hostname, tar, inp = tf.strings.split(ln, '\t')
 
       url = self.tokenizer.encode(url.numpy())
       hostname = self.tokenizer.encode(hostname.numpy())
@@ -329,18 +329,18 @@ class TransformerTask(object):
     sys.exit()
 
 
-def main_test(_):
-  FLAGS = flags.FLAGS
-  task = TransformerTask(FLAGS)
-  ds = task._create_dataset(task.params['data_dir'], batch_size=task.params["batch_size"], repeat=None)
-  N = 400
+def test(task):
+  ds = task._create_dataset(task.params['data_dir'], repeat=1)
+  N = 1
   logging.info('Begin read dataset, batch_count=%d, batch_size=%d', N, task.params["batch_size"])
+  np.set_printoptions(threshold=2048)
   for batch, ((inp, tar), _) in enumerate(ds):
     if batch == N: break
     for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
-      #htmlbody = task._trim_and_decode(inp1)
-      #title = task._trim_and_decode(tar1.numpy())
-      #print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
+      htmlbody = task._trim_and_decode(inp1.numpy(), 3)
+      title = task._trim_and_decode(tar1.numpy())
+      print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
+      break
       pass
   logging.info('End of read')
 
@@ -354,6 +354,8 @@ def main(_):
     task.predict()
   elif flags_obj.mode == "eval":
     task.eval()
+  elif flags_obj.mode == 'test':
+    test(task)
   else:
     raise ValueError("Invalid mode {}".format(flags_obj.mode))
 
@@ -361,5 +363,4 @@ def main(_):
 if __name__ == "__main__":
   misc.define_transformer_flags()
   app.run(main)
-  #app.run(main_test)
 
