@@ -17,7 +17,12 @@ clean:
 
 .INTERMEDIATE: $(DTITLE_FILES)
 
-$(SPLIT_DIR)all-data.md5: $(DTITLE_RAW)
+check-dependents:
+	ifeq (, $(shell which 7z))
+	$(error "No 7z in $(PATH), consider doing apt install p7zip-full")
+	endif
+
+$(SPLIT_DIR)all-data.md5: $(DTITLE_RAW) check-dependents
 	mkdir -p $(SPLIT_DIR)
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
 	7z e -so $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
