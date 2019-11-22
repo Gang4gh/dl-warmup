@@ -13,7 +13,6 @@ from absl import logging
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 import misc
 from official.transformer.v2 import optimizer
@@ -303,9 +302,15 @@ class TransformerTask(object):
         return url + hostname + inp, tar + [eos]
       elif self.flags_obj.input_schema == 'v2':
         # concatenated + fixed positins (padding)
-        url = [eos+1] + url[:user_segment_limit-2] + [eos] + [0] * max(0, user_segment_limit-2-len(url))
-        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos] + [0] * max(0, hostname_segment_limit-2-len(hostname))
-        inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+        url = [eos+1] + url[:user_segment_limit - 2] + [eos] + [0] * max(0, user_segment_limit - 2 - len(url))
+        hostname = [eos+2] + hostname[:hostname_segment_limit - 2] + [eos] + [0] * max(0, hostname_segment_limit - 2 - len(hostname))
+        inp = [eos+3] + inp[:max_input_length - user_segment_limit - hostname_segment_limit - 2] + [eos]
+        return url + hostname + inp, tar + [eos]
+      elif self.flags_obj.input_schema == 'v3':
+        # fixed positins (padding)
+        url = url[:user_segment_limit - 1] + [eos] + [0] * max(0, user_segment_limit - 1 - len(url))
+        hostname = hostname[:hostname_segment_limit - 1] + [eos] + [0] * max(0, hostname_segment_limit - 1 - len(hostname))
+        inp = inp[:max_input_length - user_segment_limit - hostname_segment_limit - 1] + [eos]
         return url + hostname + inp, tar + [eos]
       else:
         raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
@@ -361,6 +366,7 @@ def main(_):
 
 
 if __name__ == "__main__":
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+  tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.WARN)
   misc.define_transformer_flags()
   app.run(main)
-

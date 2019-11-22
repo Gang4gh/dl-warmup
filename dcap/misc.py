@@ -223,9 +223,10 @@ def define_transformer_flags():
 
   flags.DEFINE_string(
       name='input_schema', default='v0',
-      help=flags_core.help_wrap('input_schema: v0, v1, v2. v0: html only, '
-          'v1: concatenated (url, hostname, html), '
-          'v2: padded (url, hostname, html)'))
+      help=flags_core.help_wrap('input_schema: {v0, v1, v2, v3}. v0: html only; '
+          'v1: concatenated (url, hostname, html); '
+          'v2: concatenated and padded (url, hostname, html); '
+          'v3: padded (url, hostname, html)'))
 
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
