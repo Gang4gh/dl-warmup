@@ -17,17 +17,16 @@ clean:
 
 .INTERMEDIATE: $(DTITLE_FILES)
 
-check-dependents:
-	ifeq (, $(shell which 7z))
+$(SPLIT_DIR)all-data.md5: $(DTITLE_RAW)
+ifeq (, $(shell which 7z))
 	$(error "No 7z in $(PATH), consider doing apt install p7zip-full")
-	endif
-
-$(SPLIT_DIR)all-data.md5: $(DTITLE_RAW) check-dependents
+else
 	mkdir -p $(SPLIT_DIR)
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
 	7z e -so $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
 	$(MAKE) -j$(CPUS) $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
 	md5sum $(SPLIT_DIR)*.raw.gz > $@
+endif
 
 %.raw.gz: %.raw
 	gzip $<

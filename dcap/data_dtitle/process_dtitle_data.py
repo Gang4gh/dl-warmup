@@ -35,7 +35,7 @@ def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 
 
 def preprocess_raw_input(FLAGS):
-	total, valid = 0, 0
+	total, valid, suppress = 0, 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
 		url, title, hostname, html = row.url, row.title, row.hostname, row.html
@@ -70,9 +70,15 @@ def preprocess_raw_input(FLAGS):
 		if FLAGS.check_fuzzymatch and any(token not in html for token in title_tokens):
 			continue
 
+		if (FLAGS.suppress_enoughtokens and len(title_tokens) <= 1
+			or FLAGS.suppress_exactmatch and title not in html
+			or FLAGS.suppress_fuzzymatch and any(token not in html for token in title_tokens)):
+			suppress += 1
+			title = ''
+
 		valid += 1
 		print('\t'.join(row._replace(url=url, title=title, hostname=hostname, html=html)))
-	print('ignore {} out of {} ({:.2f}%) examples from {}'.format(total-valid, total, (total-valid)/total*100, FLAGS.input_file), file=sys.stderr)
+	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppress, from {}'.format(total, valid, (total-valid)/total*100, suppress, (total-suppress)/total*100, FLAGS.input_file), file=sys.stderr)
 
 
 def build_vocab(FLAGS):
@@ -112,9 +118,12 @@ if __name__ == '__main__':
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('remove_head', True, 'only keep content in <body> tag')
-	flags.DEFINE_boolean('check_enoughtokens', True, 'filter out examples whose title doesn''t have enough tokens')
-	flags.DEFINE_boolean('check_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
+	flags.DEFINE_boolean('check_enoughtokens', False, 'filter out examples whose title doesn''t have enough tokens')
+	flags.DEFINE_boolean('check_exactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('check_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
+	flags.DEFINE_boolean('suppress_enoughtokens', True, 'filter out examples whose title doesn''t have enough tokens')
+	flags.DEFINE_boolean('suppress_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
+	flags.DEFINE_boolean('suppress_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
