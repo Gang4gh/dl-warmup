@@ -5,6 +5,7 @@ Based on: https://github.com/tensorflow/models/tree/master/official/transformer/
 import os
 import sys
 import time
+import re
 import numpy as np
 
 from absl import app
@@ -107,7 +108,7 @@ class TransformerTask(object):
 
     current_step = 0
     checkpoint = tf.train.Checkpoint(model=model)
-    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=5, keep_checkpoint_every_n_hours=12)
+    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
       #self._print_variables_and_exit(flags_obj.model_dir)
       model.fit((np.ones((1, params['max_input_length']), np.int32), np.ones((1, params['max_target_length']), np.int32)),
@@ -150,16 +151,20 @@ class TransformerTask(object):
     res = model.evaluate(ds, steps=N)
     logging.info('Evaluate {} steps:\n{}'.format(N, res))
 
-  def _trim_and_decode(self, ids, segment_count = 1):
+  def _trim_and_decode(self, ids, segment_count = 1, concatenate_segments = True):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
     ids = [id for id in list(ids) if id]
+    indexes = [0]
     try:
-      index = 0
       for _ in range(segment_count):
-        index += ids[index:].index(self.EOS_id) + 1
-      return self.tokenizer.decode(ids[:index-1])
-    except ValueError:  # No EOS found in sequence
+        indexes.append(indexes[-1] + ids[indexes[-1]:].index(self.EOS_id) + 1)
+      if concatenate_segments:
+        return self.tokenizer.decode(ids[:indexes[-1]-1])
+      else:
+        return [self.tokenizer.decode(ids[indexes[i]:indexes[i+1]-1]) for i in range(len(indexes)-1)]
+    except ValueError:  # No enough EOS found in input
       return self.tokenizer.decode(ids)
+
 
   def _calculate_rouge_scores(self, summaries, references, max_length):
     # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
@@ -173,14 +178,15 @@ class TransformerTask(object):
                           word_level=True, length_limit=max_length is not None, length=max_length,
                           use_cf=False, cf=95, scoring_formula='average',
                           resampling=True, samples=1000, favor=True, p=0.5)
-    score = rouge.calc_score()
+    scores = rouge.calc_score()
     logging.info('ROUGE(1/2/L) Scores:')
-    logging.info('>   ROUGE-1-R/F1: %f / %f', score['ROUGE-1-R'], score['ROUGE-1-F'])
-    logging.info('>   ROUGE-2-R/F1: %f / %f', score['ROUGE-2-R'], score['ROUGE-2-F'])
-    logging.info('>   ROUGE-L-R/F1: %f / %f', score['ROUGE-L-R'], score['ROUGE-L-F'])
+    logging.info('>   ROUGE-1-R/F1: %f / %f', scores['ROUGE-1-R'], scores['ROUGE-1-F'])
+    logging.info('>   ROUGE-2-R/F1: %f / %f', scores['ROUGE-2-R'], scores['ROUGE-2-F'])
+    logging.info('>   ROUGE-L-R/F1: %f / %f', scores['ROUGE-L-R'], scores['ROUGE-L-F'])
     avg_token_count = sum(len(' '.join(summary).split()) for summary in summaries) / len(summaries)
     avg_token_count_ref = sum(len(' '.join(summary[0]).split()) for summary in references) / len(references)
     logging.info('>   averageToken: %f / %f', avg_token_count, avg_token_count_ref)
+    return scores
 
   def predict(self):
     """Predicts result from the model."""
@@ -200,7 +206,7 @@ class TransformerTask(object):
     for ((inps, tars), _) in ds.take(N):
       for inp, tar in zip(inps, tars):
         inputs.append(inp.numpy())
-        input_strings.append(self._trim_and_decode(inputs[-1], 2))
+        input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
         targets.append(tar.numpy())
         target_strings.append(self._trim_and_decode(targets[-1]))
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
@@ -215,15 +221,25 @@ class TransformerTask(object):
       correct += 1 if pred_strings[-1] == target_strings[ind] else 0
     logging.info('Test accuracy: {}/{}={}'.format(correct, total, correct/total))
 
-    self._calculate_rouge_scores(pred_strings, [[ss] for ss in target_strings], None)
+    scores = self._calculate_rouge_scores(pred_strings, [[ss] for ss in target_strings], None)
 
     result_file_path = os.path.join(self.flags_obj.model_dir, 'predict-result-{}.txt'.format(int(time.time())))
     with open(result_file_path, 'w', encoding='utf8') as f:
-      for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
-        f.write('# [{}]\n'.format(ind))
-        f.write('HtmlTitle = {}\n'.format(tar))
-        f.write('Predict   = {}\n'.format(pred))
-        f.write('Input* = {}\n\n'.format(inp))
+      if flags_obj.compact_predict_result:
+        f.write('NormalizedUrl\tPredict\n')
+        for inp, pred in zip(input_strings, pred_strings):
+          f.write('{}\t{}\n'.format(inp[0], pred))
+      else:
+        f.write('# Example Count = {}\n'.format(len(pred_strings)))
+        f.write('# Accuracy = {}\n'.format(correct/total))
+        f.write('# ROUGE scores = {}\n'.format(scores))
+        for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
+          f.write('\n# [{}]\n'.format(ind))
+          f.write('HtmlTitle = {}\n'.format(tar))
+          f.write('Predict   = {}\n'.format(pred))
+          for name, value in zip(['Url', 'HostName', 'HtmlBody'], inp):
+            f.write('{:10}= {}\n'.format(name, value))
+
     logging.info('write results to {}'.format(result_file_path))
 
 

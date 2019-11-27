@@ -228,6 +228,10 @@ def define_transformer_flags():
           'v2: concatenated and padded (url, hostname, html); '
           'v3: padded (url, hostname, html)'))
 
+  flags.DEFINE_bool(
+      name='compact_predict_result', default=False,
+      help=flags_core.help_wrap('Whether dump predict result as a TSV'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)

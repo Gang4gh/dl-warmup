@@ -78,7 +78,7 @@ def preprocess_raw_input(FLAGS):
 
 		valid += 1
 		print('\t'.join(row._replace(url=url, title=title, hostname=hostname, html=html)))
-	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppress, from {}'.format(total, valid, (total-valid)/total*100, suppress, (total-suppress)/total*100, FLAGS.input_file), file=sys.stderr)
+	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppress, from {}'.format(total, valid, valid/total*100, suppress, suppress/total*100, FLAGS.input_file), file=sys.stderr)
 
 
 def build_vocab(FLAGS):

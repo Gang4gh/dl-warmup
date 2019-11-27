@@ -51,6 +51,8 @@ $(TAG)-meta.log: $(TAG)-training.dtitle $(TAG)-test.dtitle $(TAG)-vocab-8192.sub
 	@echo ---------- data files md5sum ---------- >> $@
 	md5sum $(TAG)-*.* >> $@
 
-TEST_DATA = ~/CaptionData/October_Scraping_UrlSet_joinedData-1104-preprocessed.raw
-preprocess: $(TEST_DATA)
-	@python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --input_schema=,url,,title,html,,,, $(ARGS)
+TEST_DATA = ~/CaptionData/October_Scraping_UrlSet_joinedData-1125-preprocessed.raw
+preprocess-testdata: $(TEST_DATA)
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch $(ARGS) > test-$(TAG).dtitle
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) > test-$(TAG)2s.dtitle
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --check_enoughtokens --check_exactmatch $(ARGS) > test-$(TAG)2c.dtitle
