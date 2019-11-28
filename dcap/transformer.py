@@ -32,11 +32,6 @@ from official.transformer.v2 import ffn_layer
 import metrics
 
 
-# Disable the not-callable lint error, since it claims many objects are not
-# callable when they actually are.
-# pylint: disable=not-callable
-
-
 def create_model(params, is_train):
   """Creates transformer model."""
   with tf.name_scope("model"):

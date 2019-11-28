@@ -222,7 +222,7 @@ def define_transformer_flags():
       help=flags_core.help_wrap('loss_fn: corss_entropy, smoothed_corss_entropy'))
 
   flags.DEFINE_string(
-      name='input_schema', default='v0',
+      name='input_schema', default='v2',
       help=flags_core.help_wrap('input_schema: {v0, v1, v2, v3}. v0: html only; '
           'v1: concatenated (url, hostname, html); '
           'v2: concatenated and padded (url, hostname, html); '

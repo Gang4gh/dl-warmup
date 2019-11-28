@@ -290,6 +290,25 @@ class TransformerTask(object):
     else:
       return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
+  def _create_random_dataset(self, dtitle_file=None, repeat=None, batch_size=None):
+    vocab_size = self.params["vocab_size"]
+    batch_size = batch_size or self.params['batch_size']
+    max_input_length = self.params['max_input_length']
+    max_target_length = self.params['max_target_length']
+
+    def _random_example_generator():
+      while True:
+        X = np.random.randint(1, vocab_size, (batch_size, max_input_length))
+        Y = np.random.randint(1, vocab_size, (batch_size, max_target_length))
+        yield X, Y
+
+    ds = tf.data.Dataset.from_generator(_random_example_generator,
+                                        output_types=(tf.int32, tf.int32),
+                                        output_shapes=((batch_size, max_input_length), (batch_size, max_target_length)))
+    ds = ds.map(lambda x, y: ((x, y), y))
+    ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
+    return ds
+
   def _create_dataset(self, dtitle_file, repeat, batch_size=None, shuffle_size=None):
     batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
