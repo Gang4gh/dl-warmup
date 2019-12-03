@@ -6,13 +6,13 @@ TIMESTAMP = $(shell date +'%Y%m%d-%H%M%S')
 TAG ?= notag
 PORT ?= 2345
 ROOT ?= .
-MDIR ?= $(ROOT)/model
-DATA_DIR ?= $(ROOT)/data_dtitle
+MDIR ?= $(subst //,/,$(ROOT)/model)
+DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
 DTAG ?= 1122-noTH2e
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
 DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
-MODEL_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard *.py))
+CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py $(DATA_DIR)/Makefile $(DATA_DIR)/*.py))
 
 all: check-params
 
@@ -31,7 +31,7 @@ check-params:
 	@echo VOCAB ?= $(VOCAB)
 	@echo MODEL_SIZE ?= $(MODEL_SIZE)
 	@echo DATA_FILES = $(DATA_FILES)
-	@echo MODEL_FILES = $(MODEL_FILES)
+	@echo CODE_FILES = $(CODE_FILES)
 	@echo ARGS ?= $(ARGS)
 
 cleanmodel:
@@ -53,7 +53,7 @@ TRAINING_ROOT=running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
 
 tc trainingcenter: $(DATA_FILES)
 	mkdir -p $(TRAINING_ROOT)
-	cp -p Makefile $(MODEL_FILES) $(TRAINING_ROOT)
+	cp -p $(CODE_FILES) $(TRAINING_ROOT)
 	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
 	$(MAKE) --no-print-directory check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
