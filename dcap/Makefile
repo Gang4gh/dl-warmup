@@ -69,3 +69,20 @@ predict-cpu:
 
 #cdecode:
 #	watch -n 3600 $(MAKE) decode
+
+#TEST_IN = $(HOME)/CaptionData/October_Scraping_joinedData-1204.tsv
+#TEST_OUT = $(DATA_DIR)/unittest-1204.predict
+predict-test: $(TEST_IN)
+	# usage: make predict-test TEST_IN=<input_file> TEST_OUT=<output_file>
+ifdef TEST_IN
+	$(info TEST_IN: $(TEST_IN))
+else
+	$(error TEST_IN is not specified)
+endif
+ifdef TEST_OUT
+	$(info TEST_OUT: $(TEST_OUT))
+else
+	$(error TEST_OUT is not specified)
+endif
+	$(MAKE) -C $(DATA_DIR) $(notdir $(TEST_OUT)).tmp.test.dtitle TEST_DATA=$(realpath $(TEST_IN))
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(notdir $(TEST_OUT)).tmp.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --predict_output_file=$(TEST_OUT) --compact_predict_result $(ARGS)
