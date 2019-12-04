@@ -84,5 +84,6 @@ ifdef TEST_OUT
 else
 	$(error TEST_OUT is not specified)
 endif
-	$(MAKE) -C $(DATA_DIR) $(notdir $(TEST_OUT)).tmp.test.dtitle TEST_DATA=$(realpath $(TEST_IN))
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(notdir $(TEST_OUT)).tmp.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --predict_output_file=$(TEST_OUT) --compact_predict_result $(ARGS)
+	mkdir -p $(TEST_OUT)
+	$(MAKE) -C $(DATA_DIR) $(TEST_OUT)/preprocessed-input.test.dtitle TEST_DATA=$(realpath $(TEST_IN))
+	python3 dtitle.py --mode=predict --data_dir=$(TEST_OUT)/preprocessed-input.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --predict_output_file=$(TEST_OUT)/prediction-details.txt --prediction_compact_file=$(TEST_OUT)/prediction-compact.tsv $(ARGS)

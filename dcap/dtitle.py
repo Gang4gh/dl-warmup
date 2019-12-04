@@ -225,22 +225,23 @@ class TransformerTask(object):
 
     scores = self._calculate_rouge_scores(pred_strings, target_strings) if flags_obj.calc_rouge_scores else None
 
-    result_file_path = flags_obj.predict_output_file or os.path.join(self.flags_obj.model_dir, 'predict-result-{}.txt'.format(int(time.time())))
-    with open(result_file_path, 'w', encoding='utf8') as f:
-      if flags_obj.compact_predict_result:
+    details_file_path = flags_obj.prediction_details_file or os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(int(time.time())))
+    with open(details_file_path, 'w', encoding='utf8') as f:
+      f.write('# Example Count = {}\n'.format(len(pred_strings)))
+      f.write('# Accuracy = {}\n'.format(correct/total))
+      f.write('# ROUGE scores = {}\n'.format(scores))
+      for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
+        f.write('\n# [{}]\n'.format(ind))
+        f.write('HtmlTitle = {}\n'.format(tar))
+        f.write('Predict   = {}\n'.format(pred))
+        for name, value in zip(['Url', 'HostName', 'HtmlBody'], inp):
+          f.write('{:10}= {}\n'.format(name, value))
+
+    if flags_obj.prediction_compact_file:
+      with open(flags_obj.prediction_compact_file, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\n')
         for inp, pred in zip(input_strings, pred_strings):
           f.write('{}\t{}\n'.format(inp[0], pred))
-      else:
-        f.write('# Example Count = {}\n'.format(len(pred_strings)))
-        f.write('# Accuracy = {}\n'.format(correct/total))
-        f.write('# ROUGE scores = {}\n'.format(scores))
-        for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
-          f.write('\n# [{}]\n'.format(ind))
-          f.write('HtmlTitle = {}\n'.format(tar))
-          f.write('Predict   = {}\n'.format(pred))
-          for name, value in zip(['Url', 'HostName', 'HtmlBody'], inp):
-            f.write('{:10}= {}\n'.format(name, value))
 
     logging.info('write results to {}'.format(result_file_path))
 

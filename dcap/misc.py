@@ -238,8 +238,12 @@ def define_transformer_flags():
       help=flags_core.help_wrap('max example count to predict'))
 
   flags.DEFINE_string(
-      name='predict_output_file', default=None,
-      help=flags_core.help_wrap('output predict result to the specified file. if not specified, default, output to the model folder'))
+      name='prediction_details_file', default=None,
+      help=flags_core.help_wrap('output prediction details to the specified file, default to the model folder'))
+
+  flags.DEFINE_string(
+      name='prediction_compact_file', default=None,
+      help=flags_core.help_wrap('output prediction compact result to the specified file, default to the model folder'))
 
   flags.DEFINE_bool(
       name='calc_rouge_scores', default=True,
