@@ -11,7 +11,7 @@ from absl import flags
 
 def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 	column_names = input_schema.split(',')
-	Row = collections.namedtuple('Row', ','.join(col if col else 'col'+str(ind) for ind, col in enumerate(column_names)))
+	Row = collections.namedtuple('Row', column_names, rename=True)
 
 	lcount = 0
 
@@ -35,6 +35,8 @@ def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 
 
 def preprocess_raw_input(FLAGS):
+	DTitle_Row = collections.namedtuple('DTitle_Row', FLAGS.dtitle_schema)
+
 	total, valid, suppress = 0, 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
@@ -77,7 +79,7 @@ def preprocess_raw_input(FLAGS):
 			title = ''
 
 		valid += 1
-		print('\t'.join(row._replace(url=url, title=title, hostname=hostname, html=html)))
+		print('\t'.join(DTitle_Row(url=url, title=title, hostname=hostname, html=html)))
 	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppress, from {}'.format(total, valid, valid/total*100, suppress, suppress/total*100, FLAGS.input_file), file=sys.stderr)
 
 
@@ -85,7 +87,7 @@ def build_vocab(FLAGS):
 	import tensorflow_datasets as tfds
 	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}g.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
-	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema, 100*1024) for s in [row.url, row.hostname, row.html, row.title])
+	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema, 100*1024) for s in [row.url, row.hostname, row.html, row.title])
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
 			target_vocab_size = FLAGS.target_vocab_size,
 			max_subword_length = FLAGS.max_subword_length,
@@ -115,6 +117,7 @@ if __name__ == '__main__':
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
 	flags.DEFINE_string('input_schema', 'url,doc_url,visual_title,hostname,title,html', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('dtitle_schema', 'url,title,hostname,html', 'dtitle file schema, used by build_vocab() and model training')
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
 	flags.DEFINE_boolean('remove_head', True, 'only keep content in <body> tag')

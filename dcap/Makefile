@@ -53,7 +53,7 @@ TRAINING_ROOT=running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
 
 tc trainingcenter: $(DATA_FILES)
 	mkdir -p $(TRAINING_ROOT)
-	cp -p $(CODE_FILES) $(TRAINING_ROOT)
+	cp -p --parents $(CODE_FILES) $(TRAINING_ROOT)
 	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
 	$(MAKE) --no-print-directory check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train

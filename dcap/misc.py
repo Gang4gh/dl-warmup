@@ -232,6 +232,15 @@ def define_transformer_flags():
       name='compact_predict_result', default=False,
       help=flags_core.help_wrap('Whether dump predict result as a TSV'))
 
+  flags.DEFINE_integer(
+      name='max_predict_count',
+      default=None,
+      help=flags_core.help_wrap('max example count to predict'))
+
+  flags.DEFINE_string(
+      name='predict_output_file', default=None,
+      help=flags_core.help_wrap('output predict result to the specified file. if not specified, default, output to the model folder'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)

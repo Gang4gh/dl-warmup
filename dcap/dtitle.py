@@ -1,4 +1,4 @@
-"""Train and evaluate deep title generation model.
+"e""Train and evaluate deep title generation model.
 Based on: https://github.com/tensorflow/models/tree/master/official/transformer/v2
 """
 
@@ -199,16 +199,18 @@ class TransformerTask(object):
 
     #numpy.set_printoptions(threshold=sys.maxsize)
 
-    N = 1024
-    N //= params['batch_size']
-    ds = self._create_dataset(params['data_dir'], repeat=1)
+    N = flags_obj.max_predict_count
+    ds = self._create_dataset(params['data_dir'], repeat=1, batch_size=1)
+    logging.info('max prediction limit = {}'.format(N))
+    if N:
+      ds = ds.take(N)
+
     inputs, input_strings, targets, target_strings, preds, pred_strings = [], [], [], [], [], []
-    for ((inps, tars), _) in ds.take(N):
-      for inp, tar in zip(inps, tars):
-        inputs.append(inp.numpy())
-        input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
-        targets.append(tar.numpy())
-        target_strings.append(self._trim_and_decode(targets[-1]))
+    for ((inp, tar), _) in ds:
+      inputs.append(inp.numpy())
+      input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
+      targets.append(tar.numpy())
+      target_strings.append(self._trim_and_decode(targets[-1]))
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
     correct, total = 0, 0
@@ -223,7 +225,7 @@ class TransformerTask(object):
 
     scores = self._calculate_rouge_scores(pred_strings, [[ss] for ss in target_strings], None)
 
-    result_file_path = os.path.join(self.flags_obj.model_dir, 'predict-result-{}.txt'.format(int(time.time())))
+    result_file_path = flags_obj.predict_output_file or os.path.join(self.flags_obj.model_dir, 'predict-result-{}.txt'.format(int(time.time())))
     with open(result_file_path, 'w', encoding='utf8') as f:
       if flags_obj.compact_predict_result:
         f.write('NormalizedUrl\tPredict\n')
@@ -319,34 +321,34 @@ class TransformerTask(object):
     eos = self.EOS_id
 
     def _data_encode(ln):
-      url, _, _, hostname, tar, inp = tf.strings.split(ln, '\t')
+      url, tar, hostname, html = tf.strings.split(ln, '\t')
 
       url = self.tokenizer.encode(url.numpy())
       hostname = self.tokenizer.encode(hostname.numpy())
-      inp = self.tokenizer.encode(inp.numpy())
+      html = self.tokenizer.encode(html.numpy())
       tar = self.tokenizer.encode(tar.numpy())
 
       if self.flags_obj.input_schema == 'v0':
         # baseline
-        return inp[:max_input_length - 1] + [eos], tar + [eos]
+        return html[:max_input_length - 1] + [eos], tar + [eos]
       elif self.flags_obj.input_schema == 'v1':
         # concatenated
         url = [eos+1] + url[:user_segment_limit-2] + [eos]
         hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
-        inp = [eos+3] + inp[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
-        return url + hostname + inp, tar + [eos]
+        html = [eos+3] + html[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+        return url + hostname + html, tar + [eos]
       elif self.flags_obj.input_schema == 'v2':
         # concatenated + fixed positins (padding)
         url = [eos+1] + url[:user_segment_limit - 2] + [eos] + [0] * max(0, user_segment_limit - 2 - len(url))
         hostname = [eos+2] + hostname[:hostname_segment_limit - 2] + [eos] + [0] * max(0, hostname_segment_limit - 2 - len(hostname))
-        inp = [eos+3] + inp[:max_input_length - user_segment_limit - hostname_segment_limit - 2] + [eos]
-        return url + hostname + inp, tar + [eos]
+        html = [eos+3] + html[:max_input_length - user_segment_limit - hostname_segment_limit - 2] + [eos]
+        return url + hostname + html, tar + [eos]
       elif self.flags_obj.input_schema == 'v3':
         # fixed positins (padding)
         url = url[:user_segment_limit - 1] + [eos] + [0] * max(0, user_segment_limit - 1 - len(url))
         hostname = hostname[:hostname_segment_limit - 1] + [eos] + [0] * max(0, hostname_segment_limit - 1 - len(hostname))
-        inp = inp[:max_input_length - user_segment_limit - hostname_segment_limit - 1] + [eos]
-        return url + hostname + inp, tar + [eos]
+        html = html[:max_input_length - user_segment_limit - hostname_segment_limit - 1] + [eos]
+        return url + hostname + html, tar + [eos]
       else:
         raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
 
@@ -356,7 +358,9 @@ class TransformerTask(object):
     ds = ds.repeat(repeat)
     if shuffle_size:
       ds = ds.shuffle(shuffle_size)
-    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
+    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=False)
+    if batch_size and batch_size == 1:
+      ds = ds.unbatch()
     ds = ds.map(lambda x, y: ((x, y), y))
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
 

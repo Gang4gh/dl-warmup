@@ -57,5 +57,5 @@ preprocess-testdata: $(TEST_DATA)
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) > test-$(TAG)2s.dtitle
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --check_enoughtokens --check_exactmatch $(ARGS) > test-$(TAG)2c.dtitle
 
-%.test-dtitle: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch $(ARGS) > $@
+%.test.dtitle: $(TEST_DATA)
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch $(ARGS) | uniq > $@
