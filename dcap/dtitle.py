@@ -1,4 +1,4 @@
-"e""Train and evaluate deep title generation model.
+"""Train and evaluate deep title generation model.
 Based on: https://github.com/tensorflow/models/tree/master/official/transformer/v2
 """
 
