@@ -116,7 +116,7 @@ if __name__ == '__main__':
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
-	flags.DEFINE_string('input_schema', 'url,doc_url,visual_title,hostname,title,html', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('input_schema', 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html', 'input file schema, used fields: url,title,hostname,html')
 	flags.DEFINE_string('dtitle_schema', 'url,title,hostname,html', 'dtitle file schema, used by build_vocab() and model training')
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
