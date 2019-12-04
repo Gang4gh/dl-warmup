@@ -51,11 +51,12 @@ $(TAG)-meta.log: $(TAG)-training.dtitle $(TAG)-test.dtitle $(TAG)-vocab-8192.sub
 	@echo ---------- data files md5sum ---------- >> $@
 	md5sum $(TAG)-*.* >> $@
 
-TEST_DATA = ~/CaptionData/October_Scraping_UrlSet_joinedData-1125-preprocessed.raw
+TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
+TEST_DATA_SCHEMA = cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html
 preprocess-testdata: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch $(ARGS) > test-$(TAG).dtitle
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) > test-$(TAG)2s.dtitle
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --check_enoughtokens --check_exactmatch $(ARGS) > test-$(TAG)2c.dtitle
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $(notdir $(TEST_DATA)).test.dtitle
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $(notdir $(TEST_DATA))-2s.test.dtitle
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --check_enoughtokens --check_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $(notdir $(TEST_DATA))-2c.test.dtitle
 
 %.test.dtitle: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch $(ARGS) | uniq > $@
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $@

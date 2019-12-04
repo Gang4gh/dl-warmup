@@ -241,6 +241,10 @@ def define_transformer_flags():
       name='predict_output_file', default=None,
       help=flags_core.help_wrap('output predict result to the specified file. if not specified, default, output to the model folder'))
 
+  flags.DEFINE_bool(
+      name='calc_rouge_scores', default=True,
+      help=flags_core.help_wrap('Whether to calculate ROUGE scores or not'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)

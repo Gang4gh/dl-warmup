@@ -166,7 +166,7 @@ class TransformerTask(object):
       return self.tokenizer.decode(ids)
 
 
-  def _calculate_rouge_scores(self, summaries, references, max_length):
+  def _calculate_rouge_scores(self, summaries, references, max_length=None):
     # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
     from pythonrouge.pythonrouge import Pythonrouge
 
@@ -210,7 +210,7 @@ class TransformerTask(object):
       inputs.append(inp.numpy())
       input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
       targets.append(tar.numpy())
-      target_strings.append(self._trim_and_decode(targets[-1]))
+      target_strings.append([self._trim_and_decode(targets[-1])])
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
     correct, total = 0, 0
@@ -220,10 +220,10 @@ class TransformerTask(object):
       preds.append(pred_ids)
       pred_strings.append(self._trim_and_decode(preds[-1]))
       total += 1
-      correct += 1 if pred_strings[-1] == target_strings[ind] else 0
+      correct += 1 if pred_strings[-1] == target_strings[ind][0] else 0
     logging.info('Test accuracy: {}/{}={}'.format(correct, total, correct/total))
 
-    scores = self._calculate_rouge_scores(pred_strings, [[ss] for ss in target_strings], None)
+    scores = self._calculate_rouge_scores(pred_strings, target_strings) if flags_obj.calc_rouge_scores else None
 
     result_file_path = flags_obj.predict_output_file or os.path.join(self.flags_obj.model_dir, 'predict-result-{}.txt'.format(int(time.time())))
     with open(result_file_path, 'w', encoding='utf8') as f:
