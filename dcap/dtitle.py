@@ -236,14 +236,14 @@ class TransformerTask(object):
         f.write('Predict   = {}\n'.format(pred))
         for name, value in zip(['Url', 'HostName', 'HtmlBody'], inp):
           f.write('{:10}= {}\n'.format(name, value))
+    logging.info('write prediction details to {}'.format(details_file_path))
 
     if flags_obj.prediction_compact_file:
       with open(flags_obj.prediction_compact_file, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\n')
         for inp, pred in zip(input_strings, pred_strings):
           f.write('{}\t{}\n'.format(inp[0], pred))
-
-    logging.info('write results to {}'.format(result_file_path))
+      logging.info('write compact result to {}'.format(flags_obj.prediction_compact_file))
 
 
   def _create_callbacks(self, log_dir, init_steps, params, ckpt_mgr):
