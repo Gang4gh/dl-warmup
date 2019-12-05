@@ -24,6 +24,8 @@ from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
 import metrics
 
+from data_dtitle.process_dtitle_data import dtitle_reader
+
 class TransformerTask(object):
   """Main entry of Transformer model."""
 
@@ -225,25 +227,42 @@ class TransformerTask(object):
 
     scores = self._calculate_rouge_scores(pred_strings, target_strings) if flags_obj.calc_rouge_scores else None
 
-    details_file_path = flags_obj.prediction_details_file or os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(int(time.time())))
-    with open(details_file_path, 'w', encoding='utf8') as f:
-      f.write('# Example Count = {}\n'.format(len(pred_strings)))
-      f.write('# Accuracy = {}\n'.format(correct/total))
-      f.write('# ROUGE scores = {}\n'.format(scores))
-      for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
-        f.write('\n# [{}]\n'.format(ind))
-        f.write('HtmlTitle = {}\n'.format(tar))
-        f.write('Predict   = {}\n'.format(pred))
-        for name, value in zip(['Url', 'HostName', 'HtmlBody'], inp):
-          f.write('{:10}= {}\n'.format(name, value))
-    logging.info('write prediction details to {}'.format(details_file_path))
+    timestamp = int(time.time())
+    if flags_obj.prediction_details_file:
+      out_path = flags_obj.prediction_details_file
+      if flags_obj.prediction_details_file == '#model_dir':
+        out_path = os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(timestamp))
+      with open(out_path, 'w', encoding='utf8') as f:
+        f.write('# Example Count = {}\n'.format(len(pred_strings)))
+        f.write('# Accuracy = {}\n'.format(correct/total))
+        f.write('# ROUGE scores = {}\n'.format(scores))
+        ref_rows = {}
+        if flags_obj.prediction_reference_file:
+          ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
+        for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
+          row = ref_rows[inp[0]] if inp[0] in ref_rows else None
+          f.write('\n# [{}]\n'.format(ind))
+          f.write('Url       = {}\n'.format(inp[0]))
+          f.write('Predict   = {}\n'.format(pred))
+          f.write('HtmlTitle = {}\n'.format(tar[0]))
+          f.write('HostName  = {}\n'.format(inp[1]))
+          f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
+          f.write('Cap_Query = {}\n'.format(row.cap_query if row else None))
+          f.write('Cap_Url   = {}\n'.format(row.cap_url if row else None))
+          f.write('Cap_Title = {}\n'.format(row.cap_title if row else None))
+          f.write('Cap_Snipt = {}\n'.format(row.cap_snippet if row else None))
+          f.write('HtmlBody  = {}\n'.format(inp[2]))
+      logging.info('write prediction details to {}'.format(out_path))
 
     if flags_obj.prediction_compact_file:
-      with open(flags_obj.prediction_compact_file, 'w', encoding='utf8') as f:
+      out_path = flags_obj.prediction_compact_file
+      if flags_obj.prediction_compact_file == '#model_dir':
+        out_path = os.path.join(self.flags_obj.model_dir, 'prediction-compact-{}.txt'.format(timestamp))
+      with open(out_path, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\n')
         for inp, pred in zip(input_strings, pred_strings):
           f.write('{}\t{}\n'.format(inp[0], pred))
-      logging.info('write compact result to {}'.format(flags_obj.prediction_compact_file))
+      logging.info('write compact prediction to {}'.format(out_path))
 
 
   def _create_callbacks(self, log_dir, init_steps, params, ckpt_mgr):

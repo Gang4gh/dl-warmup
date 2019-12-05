@@ -8,7 +8,7 @@ PORT ?= 2345
 ROOT ?= .
 MDIR ?= $(subst //,/,$(ROOT)/model)
 DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
-DTAG ?= 1122-noTH2e
+DTAG ?= 1204-noTH2c
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
 DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
@@ -49,7 +49,7 @@ tm trainmodel: $(DATA_FILES)
 
 train: cleanmodel tensorboard trainmodel
 
-TRAINING_ROOT=running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
+TRAINING_ROOT := running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
 
 tc trainingcenter: $(DATA_FILES)
 	mkdir -p $(TRAINING_ROOT)
@@ -72,6 +72,7 @@ predict-cpu:
 
 #INPUT_DATA = $(HOME)/CaptionData/October_Scraping_joinedData-1204.tsv
 #PREDICTION = $(DATA_DIR)/unittest-1204.predict
+PRED_ABSPATH = $(abspath $(PREDICTION))
 prediction: $(INPUT_DATA)
 	# usage: make predict-test INPUT_DATA=<input_file> PREDICTION=<output_file>
 ifdef INPUT_DATA
@@ -84,6 +85,6 @@ ifdef PREDICTION
 else
 	$(error PREDICTION is not specified)
 endif
-	mkdir -p $(PREDICTION)
-	$(MAKE) -C $(DATA_DIR) $(abspath $(PREDICTION))/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS=
-	python3 dtitle.py --mode=predict --data_dir=$(PREDICTION)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --prediction_details_file=$(PREDICTION)/prediction-details.txt --prediction_compact_file=$(PREDICTION)/prediction-compact.tsv $(ARGS)
+	mkdir -p $(PRED_ABSPATH)
+	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS=
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)

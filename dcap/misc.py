@@ -239,11 +239,17 @@ def define_transformer_flags():
 
   flags.DEFINE_string(
       name='prediction_details_file', default=None,
-      help=flags_core.help_wrap('output prediction details to the specified file, default to the model folder'))
+      help=flags_core.help_wrap('output prediction details to the specified file. '
+           'disabled when None; output to the model folder when #model_dir.'))
 
   flags.DEFINE_string(
-      name='prediction_compact_file', default=None,
-      help=flags_core.help_wrap('output prediction compact result to the specified file, default to the model folder'))
+      name='prediction_reference_file', default=None,
+      help=flags_core.help_wrap('reference file for prediction details'))
+
+  flags.DEFINE_string(
+      name='prediction_compact_file', default='#model_dir',
+      help=flags_core.help_wrap('output prediction compact result to the specified file, '
+           'disabled when None; output to the model folder when #model_dir.'))
 
   flags.DEFINE_bool(
       name='calc_rouge_scores', default=True,
