@@ -72,7 +72,7 @@ predict-cpu:
 
 #INPUT_DATA = $(HOME)/CaptionData/October_Scraping_joinedData-1204.tsv
 #PREDICTION = $(DATA_DIR)/unittest-1204.predict
-predict-test: $(INPUT_DATA)
+prediction: $(INPUT_DATA)
 	# usage: make predict-test INPUT_DATA=<input_file> PREDICTION=<output_file>
 ifdef INPUT_DATA
 	$(info INPUT_DATA: $(INPUT_DATA))
