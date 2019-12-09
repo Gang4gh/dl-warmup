@@ -241,9 +241,11 @@ class TransformerTask(object):
           ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
         for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
           row = ref_rows[inp[0]] if inp[0] in ref_rows else None
+          cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
           f.write('\n# [{}]\n'.format(ind))
           f.write('Url       = {}\n'.format(inp[0]))
           f.write('Predict   = {}\n'.format(pred))
+          f.write('ProdTitle = {}\n'.format(cap_title_normalized))
           f.write('HtmlTitle = {}\n'.format(tar[0]))
           f.write('HostName  = {}\n'.format(inp[1]))
           f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
