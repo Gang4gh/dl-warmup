@@ -153,6 +153,10 @@ class TransformerTask(object):
     res = model.evaluate(ds, steps=N)
     logging.info('Evaluate {} steps:\n{}'.format(N, res))
 
+  _UNDERSCORE_REPLACEMENT = "\\&undsc"
+  def _decode_and_fix(self, ids):
+    return self.tokenizer.decode(ids).replace(self._UNDERSCORE_REPLACEMENT, '_')
+
   def _trim_and_decode(self, ids, segment_count = 1, concatenate_segments = True):
     """Trim EOS and PAD tokens from ids, and decode to return a string."""
     ids = [id for id in list(ids) if id]
@@ -161,11 +165,11 @@ class TransformerTask(object):
       for _ in range(segment_count):
         indexes.append(indexes[-1] + ids[indexes[-1]:].index(self.EOS_id) + 1)
       if concatenate_segments:
-        return self.tokenizer.decode(ids[:indexes[-1]-1])
+        return self._decode_and_fix(ids[:indexes[-1]-1])
       else:
-        return [self.tokenizer.decode(ids[indexes[i]:indexes[i+1]-1]) for i in range(len(indexes)-1)]
+        return [self._decode_and_fix(ids[indexes[i]:indexes[i+1]-1]) for i in range(len(indexes)-1)]
     except ValueError:  # No enough EOS found in input
-      return self.tokenizer.decode(ids)
+      return self._decode_and_fix(ids)
 
 
   def _calculate_rouge_scores(self, summaries, references, max_length=None):
@@ -407,7 +411,6 @@ def test(task):
       title = task._trim_and_decode(tar1.numpy())
       print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
       break
-      pass
   logging.info('End of read')
 
 
