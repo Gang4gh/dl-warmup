@@ -37,7 +37,7 @@ def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 def preprocess_raw_input(FLAGS):
 	DTitle_Row = collections.namedtuple('DTitle_Row', FLAGS.dtitle_schema)
 
-	total, valid, suppress = 0, 0, 0
+	total, valid, suppressed = 0, 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
 		url, title, hostname, html = row.url, row.title, row.hostname, row.html
@@ -75,12 +75,15 @@ def preprocess_raw_input(FLAGS):
 		if (FLAGS.suppress_enoughtokens and len(title_tokens) <= 1
 			or FLAGS.suppress_exactmatch and title not in html
 			or FLAGS.suppress_fuzzymatch and any(token not in html for token in title_tokens)):
-			suppress += 1
-			title = ''
+			if  FLAGS.max_suppress_ratio * (valid + suppressed) >= suppressed:
+				suppressed += 1
+				title = ''
+			else:
+				continue
 
-		valid += 1
+		valid += 1 if title else 0
 		print('\t'.join(DTitle_Row(url=url, title=title, hostname=hostname, html=html)))
-	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppress, from {}'.format(total, valid, valid/total*100, suppress, suppress/total*100, FLAGS.input_file), file=sys.stderr)
+	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppressed, from {}'.format(total, valid, valid/total*100, suppressed, suppressed/total*100, FLAGS.input_file), file=sys.stderr)
 
 
 def build_vocab(FLAGS):
@@ -124,6 +127,7 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('check_enoughtokens', False, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('check_exactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('check_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
+	flags.DEFINE_float('max_suppress_ratio', 0.1, 'the max percentage of suppressed examples (title is empty) to generate')
 	flags.DEFINE_boolean('suppress_enoughtokens', True, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('suppress_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')

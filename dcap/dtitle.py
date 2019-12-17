@@ -151,7 +151,7 @@ class TransformerTask(object):
     N = 128
     ds = self._create_dataset(self.params['data_dir'], repeat=1)
     res = model.evaluate(ds, steps=N)
-    logging.info('Evaluate {} steps:\n{}'.format(N, res))
+    logging.info('Evaluate {} steps, res={}'.format(N, res))
 
   _UNDERSCORE_REPLACEMENT = "\\&undsc"
   def _decode_and_fix(self, ids):
@@ -205,13 +205,12 @@ class TransformerTask(object):
 
     #numpy.set_printoptions(threshold=sys.maxsize)
 
-    N = flags_obj.max_predict_count
     ds = self._create_dataset(params['data_dir'], repeat=1, batch_size=1)
-    logging.info('max prediction limit = {}'.format(N))
-    if N:
-      ds = ds.take(N)
+    logging.info('max prediction limit = {}'.format(flags_obj.max_predict_count))
+    if flags_obj.max_predict_count:
+      ds = ds.take(flags_obj.max_predict_count)
 
-    inputs, input_strings, targets, target_strings, preds, pred_strings = [], [], [], [], [], []
+    inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores = [], [], [], [], [], [], []
     for ((inp, tar), _) in ds:
       inputs.append(inp.numpy())
       input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
@@ -220,10 +219,10 @@ class TransformerTask(object):
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
     correct, total = 0, 0
-    ret = model.predict(np.vstack(inputs), batch_size=params['batch_size'])
-    val_outputs, _ = ret
-    for ind, pred_ids in enumerate(val_outputs):
+    mpred = model.predict(np.vstack(inputs), batch_size=params['batch_size'])
+    for ind, (pred_ids, pred_score) in enumerate(zip(mpred[0], mpred[1])):
       preds.append(pred_ids)
+      pred_scores.append(pred_score)
       pred_strings.append(self._trim_and_decode(preds[-1]))
       total += 1
       correct += 1 if pred_strings[-1] == target_strings[ind][0] else 0
@@ -243,12 +242,13 @@ class TransformerTask(object):
         ref_rows = {}
         if flags_obj.prediction_reference_file:
           ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
-        for ind, (inp, tar, pred) in enumerate(zip(input_strings, target_strings, pred_strings)):
+        for ind, (inp, tar, pred, score) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores)):
           row = ref_rows[inp[0]] if inp[0] in ref_rows else None
           cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
           f.write('\n# [{}]\n'.format(ind))
           f.write('Url       = {}\n'.format(inp[0]))
           f.write('Predict   = {}\n'.format(pred))
+          f.write('PredScore = {}\n'.format(score))
           f.write('ProdTitle = {}\n'.format(cap_title_normalized))
           f.write('HtmlTitle = {}\n'.format(tar[0]))
           f.write('HostName  = {}\n'.format(inp[1]))
