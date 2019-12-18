@@ -91,12 +91,11 @@ endif
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--check_enoughtokens --check_exactmatch'
 	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
-running_center/predictions/%: running_center/%
+running_center/pred-$(TIMESTAMP)/%: running_center/%
 	@echo ===== start of '$<' =====
 	cp -p --parents $(CODE_FILES) $<
 	$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)-1k ARGS='--max_predict_count=1024'
 	#$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)
 
 DLTS_DIRS=$(wildcard running_center/dlts*)
-all-predictions: $(patsubst running_center%,running_center/predictions%, $(DLTS_DIRS))
-	@echo TARGETS = $(patsubst running_center%,running_center/predictions%, $(DLTS_DIRS))
+all-pred: $(patsubst running_center%,running_center/pred-$(TIMESTAMP)%, $(DLTS_DIRS))

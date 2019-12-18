@@ -48,13 +48,14 @@ def create_model(params, is_train):
                                       dtype=tf.float32)(logits)
       model = tf.keras.Model([inputs, targets], logits)
       return model
-
     else:
       inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
       internal_model = Transformer(params, name="transformer_v2")
       ret = internal_model([inputs], training=is_train)
+      logits = internal_model([inputs, targets], training=is_train)
       outputs, scores = ret["outputs"], ret["scores"]
-      return tf.keras.Model(inputs, [outputs, scores])
+      return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 
 
 class Transformer(tf.keras.Model):
