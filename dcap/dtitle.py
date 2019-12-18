@@ -7,6 +7,7 @@ import sys
 import time
 import re
 import numpy as np
+import html
 
 from absl import app
 from absl import flags
@@ -210,7 +211,7 @@ class TransformerTask(object):
     if flags_obj.max_predict_count:
       ds = ds.take(flags_obj.max_predict_count)
 
-    inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores, pred_probs = [], [], [], [], [], [], [], []
+    inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores, null_probs = [], [], [], [], [], [], [], []
     for ((inp, tar), _) in ds:
       inputs.append(inp.numpy())
       input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
@@ -225,7 +226,7 @@ class TransformerTask(object):
     for ind, (pred_ids, score, logits) in enumerate(zip(*mpred)):
       preds.append(pred_ids)
       pred_scores.append(score)
-      pred_probs.append(tf.nn.softmax(logits[0])[1])
+      null_probs.append(tf.nn.softmax(logits[0])[1])
       pred_strings.append(self._trim_and_decode(preds[-1]))
       total += 1
       correct += 1 if pred_strings[-1] == target_strings[ind][0] else 0
@@ -245,16 +246,16 @@ class TransformerTask(object):
         ref_rows = {}
         if flags_obj.prediction_reference_file:
           ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
-        for ind, (inp, tar, pred, score, prob) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores, pred_probs)):
+        for ind, (inp, tar, pred, score, null_prob) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores, null_probs)):
           row = ref_rows[inp[0]] if inp[0] in ref_rows else None
           cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
           f.write('\n# [{}]\n'.format(ind))
           f.write('Url       = {}\n'.format(inp[0]))
-          f.write('Predict   = {}\n'.format(pred))
+          f.write('NullProb  = {}\n'.format(null_prob))
+          f.write('Predict   = {}\n'.format(html.unescape(pred)))
           #f.write('PredScore = {}\n'.format(score))
-          f.write('EOS_Prob  = {}\n'.format(prob))
           f.write('ProdTitle = {}\n'.format(cap_title_normalized))
-          f.write('HtmlTitle = {}\n'.format(tar[0]))
+          f.write('HtmlTitle = {}\n'.format(html.unescapte(tar[0])))
           f.write('HostName  = {}\n'.format(inp[1]))
           f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
           f.write('Cap_Query = {}\n'.format(row.cap_query if row else None))
