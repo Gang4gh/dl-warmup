@@ -71,7 +71,7 @@ predict-cpu:
 #	watch -n 3600 $(MAKE) decode
 
 #INPUT_DATA = $(HOME)/CaptionData/October_Scraping_joinedData-1204.tsv
-INPUT_DATA = /data/aether/gluo/63674815-e793-4f80-bcf1-ba768d0b4e36
+INPUT_DATA = /data/aether/gluo/63a274d4-33be-4b54-b52d-28487a80465a
 PREDICTION = ../test-predictions/
 PRED_ABSPATH = $(abspath $(PREDICTION))
 #usage: make predict-test INPUT_DATA=<input_file> PREDICTION=<output_dir>
@@ -91,11 +91,13 @@ endif
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--check_enoughtokens --check_exactmatch'
 	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
+DLTS_DIRS=$(wildcard running_center/dlts*)
+sync-all:
+	for fd in $(DLTS_DIRS); do cp -p --parents $(CODE_FILES) $$fd; done
+
+pred-all: $(patsubst running_center%,running_center/pred-$(TIMESTAMP)%, $(DLTS_DIRS))
+
 running_center/pred-$(TIMESTAMP)/%: running_center/%
 	@echo ===== start of '$<' =====
-	cp -p --parents $(CODE_FILES) $<
 	$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)-1k ARGS='--max_predict_count=1024'
-	#$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)
-
-DLTS_DIRS=$(wildcard running_center/dlts*)
-all-pred: $(patsubst running_center%,running_center/pred-$(TIMESTAMP)%, $(DLTS_DIRS))
+	$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)

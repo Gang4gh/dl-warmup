@@ -255,7 +255,7 @@ class TransformerTask(object):
           f.write('Predict   = {}\n'.format(html.unescape(pred)))
           #f.write('PredScore = {}\n'.format(score))
           f.write('ProdTitle = {}\n'.format(cap_title_normalized))
-          f.write('HtmlTitle = {}\n'.format(html.unescapte(tar[0])))
+          f.write('HtmlTitle = {}\n'.format(html.unescape(tar[0])))
           f.write('HostName  = {}\n'.format(inp[1]))
           f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
           f.write('Cap_Query = {}\n'.format(row.cap_query if row else None))
@@ -270,9 +270,9 @@ class TransformerTask(object):
       if flags_obj.prediction_compact_file == '#model_dir':
         out_path = os.path.join(self.flags_obj.model_dir, 'prediction-compact-{}.txt'.format(timestamp))
       with open(out_path, 'w', encoding='utf8') as f:
-        f.write('NormalizedUrl\tPredict\n')
-        for inp, pred in zip(input_strings, pred_strings):
-          f.write('{}\t{}\n'.format(inp[0], pred))
+        f.write('NormalizedUrl\tPredict\tNullProb\n')
+        for inp, pred, null_prob in zip(input_strings, pred_strings, null_probs):
+          f.write('{}\t{}\t{}\n'.format(inp[0], html.unescape(pred), null_prob)) # TODO: bug - pred may contains '\n'
       logging.info('write compact prediction to {}'.format(out_path))
 
 
