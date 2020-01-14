@@ -272,7 +272,7 @@ class TransformerTask(object):
       with open(out_path, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\tNullProb\n')
         for inp, pred, null_prob in zip(input_strings, pred_strings, null_probs):
-          f.write('{}\t{}\t{}\n'.format(inp[0], html.unescape(pred), null_prob)) # TODO: bug - pred may contains '\n'
+          f.write('{}\t{}\t{}\n'.format(inp[0], re.sub(r'[\t\n]+', ' ', html.unescape(pred)), null_prob)) # pred may contains '\n' after unescape
       logging.info('write compact prediction to {}'.format(out_path))
 
 
