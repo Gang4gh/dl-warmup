@@ -54,7 +54,7 @@ class TransformerTask(object):
     params["num_parallel_calls"] = (flags_obj.num_parallel_calls or tf.data.experimental.AUTOTUNE)
 
     params["use_synthetic_data"] = flags_obj.use_synthetic_data
-    params["batch_size"] = flags_obj.batch_size * num_gpus
+    params["batch_size"] = flags_obj.batch_size * max(num_gpus, 1)
     logging.info('actual batch_size = {} * {}'.format(flags_obj.batch_size, num_gpus))
     params["repeat_dataset"] = None
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)

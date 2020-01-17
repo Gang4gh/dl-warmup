@@ -23,12 +23,13 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from official.transformer.model import model_utils
+from official.nlp.transformer import model_utils
 from official.transformer.utils.tokenizer import EOS_ID
 from official.transformer.v2 import attention_layer
 from official.transformer.v2 import beam_search
 from official.transformer.v2 import embedding_layer
 from official.transformer.v2 import ffn_layer
+# TODO: ffn_layer adds another duplicated dropout layer?
 import metrics
 
 
@@ -115,13 +116,7 @@ class Transformer(tf.keras.Model):
     else:
       inputs, targets = inputs[0], None
       if self.params["padded_decode"]:
-        if not self.params["num_replicas"]:
-          raise NotImplementedError(
-              "Padded decoding on CPU/GPUs is not supported.")
-        decode_batch_size = int(self.params["decode_batch_size"] /
-                                self.params["num_replicas"])
-        inputs = tf.reshape(
-            inputs, [decode_batch_size, self.params["decode_max_length"]])
+        raise NotImplementedError("Padded decoding is not supported.")
 
     # Variance scaling is used here because it seems to work in many problems.
     # Other reasonable initializers may also work just as well.
@@ -369,6 +364,7 @@ class LayerNormalization(tf.keras.layers.Layer):
         dtype="float32",
         initializer=tf.zeros_initializer(),
         experimental_autocast=False)
+    # TODO: why do we need constant weights here?
     super(LayerNormalization, self).build(input_shape)
 
   def get_config(self):
@@ -418,6 +414,8 @@ class PrePostProcessingWrapper(tf.keras.layers.Layer):
     # Postprocessing: apply dropout and residual connection
     if training:
       y = tf.nn.dropout(y, rate=self.postprocess_dropout)
+
+    # TODO: should the layer_norm be applied after layer according to the paper?
     return x + y
 
 
