@@ -47,6 +47,9 @@ tbr tensorboard_root:
 tm trainmodel: $(DATA_FILES)
 	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training  --enable_tensorboard --validation_example_count=1024 $(ARGS)
 
+train-debug: $(DATA_FILES)
+	TF_FORCE_GPU_ALLOW_GROWTH=true $(MAKE) train
+
 train: cleanmodel tensorboard trainmodel
 
 TRAINING_ROOT = running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/

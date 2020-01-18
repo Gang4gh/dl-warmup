@@ -104,7 +104,6 @@ class TransformerTask(object):
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = transformer.create_model(params, is_train=True)
       model.compile(optimizer=self._create_optimizer(params), loss=self._create_loss_fn(params))
-      model.summary()
 
     if not os.path.exists(flags_obj.model_dir):
       os.mkdir(flags_obj.model_dir)
@@ -126,6 +125,8 @@ class TransformerTask(object):
       return None
 
     logging.info("Start train iteration at global step:{}".format(current_step))
+    model.summary()
+    #print(model.variables)
     history = model.fit(
         train_ds,
         initial_epoch=current_step // flags_obj.steps_between_evals,

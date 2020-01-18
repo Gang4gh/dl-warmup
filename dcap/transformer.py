@@ -364,7 +364,6 @@ class LayerNormalization(tf.keras.layers.Layer):
         dtype="float32",
         initializer=tf.zeros_initializer(),
         experimental_autocast=False)
-    # TODO: why do we need constant weights here?
     super(LayerNormalization, self).build(input_shape)
 
   def get_config(self):
