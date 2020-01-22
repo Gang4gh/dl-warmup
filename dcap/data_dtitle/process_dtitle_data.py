@@ -82,6 +82,7 @@ def preprocess_raw_input(FLAGS):
 				continue
 
 		valid += 1 if title else 0
+		if FLAGS.output_raw_html: html = row.html
 		print('\t'.join(DTitle_Row(url=url, title=title, hostname=hostname, html=html)))
 	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppressed, from {}'.format(total, valid, valid/total*100, suppressed, suppressed/total*100, FLAGS.input_file), file=sys.stderr)
 
@@ -131,6 +132,7 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('suppress_enoughtokens', True, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('suppress_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
+	flags.DEFINE_boolean('output_raw_html', False, 'output unmodified html body')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
