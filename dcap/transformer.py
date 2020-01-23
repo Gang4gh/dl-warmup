@@ -23,7 +23,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from official.nlp.transformer import model_utils
+import utils
 from official.transformer.utils.tokenizer import EOS_ID
 import attention_layer
 from official.transformer.v2 import beam_search
