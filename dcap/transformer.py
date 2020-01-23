@@ -25,7 +25,7 @@ import tensorflow as tf
 
 from official.nlp.transformer import model_utils
 from official.transformer.utils.tokenizer import EOS_ID
-from official.transformer.v2 import attention_layer
+import attention_layer
 from official.transformer.v2 import beam_search
 from official.transformer.v2 import embedding_layer
 from official.transformer.v2 import ffn_layer
