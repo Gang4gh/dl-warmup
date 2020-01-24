@@ -1,21 +1,4 @@
-# Copyright 2018 The TensorFlow Authors. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-"""Defines the Transformer model in TF 2.0.
-
-Model paper: https://arxiv.org/pdf/1706.03762.pdf
-Transformer model code source: https://github.com/tensorflow/tensor2tensor
+"""The Reformer model in TF 2.x
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -29,17 +12,16 @@ import attention_layer
 from official.transformer.v2 import beam_search
 from official.transformer.v2 import embedding_layer
 from official.transformer.v2 import ffn_layer
-# TODO: ffn_layer adds another duplicated dropout layer?
 import metrics
 
 
 def create_model(params, is_train):
-  """Creates transformer model."""
+  """Creates model."""
   with tf.name_scope("model"):
     if is_train:
       inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
       targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
-      internal_model = Transformer(params, name="transformer_v2")
+      internal_model = Reformer(params, name="reformer")
       logits = internal_model([inputs, targets], training=is_train)
       if params["enable_metrics_in_training"]:
         vocab_size = params["vocab_size"]
@@ -52,32 +34,30 @@ def create_model(params, is_train):
     else:
       inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
       targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
-      internal_model = Transformer(params, name="transformer_v2")
+      internal_model = Reformer(params, name="reformer")
       ret = internal_model([inputs], training=is_train)
       logits = internal_model([inputs, targets], training=is_train)
       outputs, scores = ret["outputs"], ret["scores"]
       return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 
 
-class Transformer(tf.keras.Model):
-  """Transformer model with Keras.
+class Reformer(tf.keras.Model):
+  """Reformer model with Keras.
 
-  Implemented as described in: https://arxiv.org/pdf/1706.03762.pdf
-
-  The Transformer model consists of an encoder and decoder. The input is an int
+  The Reformer model consists of an encoder and decoder. The input is an int
   sequence (or a batch of sequences). The encoder produces a continuous
   representation, and the decoder uses the encoder output to generate
   probabilities for the output sequence.
   """
 
   def __init__(self, params, name=None):
-    """Initialize layers to build Transformer model.
+    """Initialize layers to build model.
 
     Args:
       params: hyperparameter object defining layer sizes, dropout values, etc.
       name: name of the model.
     """
-    super(Transformer, self).__init__(name=name)
+    super(Reformer, self).__init__(name=name)
     self.params = params
     self.embedding_softmax_layer = embedding_layer.EmbeddingSharedWeights(
         params["vocab_size"], params["hidden_size"])
@@ -120,7 +100,7 @@ class Transformer(tf.keras.Model):
 
     # Variance scaling is used here because it seems to work in many problems.
     # Other reasonable initializers may also work just as well.
-    with tf.name_scope("Transformer"):
+    with tf.name_scope("Reformer"):
       # Calculate attention bias for encoder self-attention and decoder
       # multi-headed attention layers.
       attention_bias = model_utils.get_padding_bias(inputs)
@@ -419,7 +399,7 @@ class PrePostProcessingWrapper(tf.keras.layers.Layer):
 
 
 class EncoderStack(tf.keras.layers.Layer):
-  """Transformer encoder stack.
+  """Reformer encoder stack.
 
   The encoder stack is made up of N identical layers. Each layer is composed
   of the sublayers:
@@ -489,7 +469,7 @@ class EncoderStack(tf.keras.layers.Layer):
 
 
 class DecoderStack(tf.keras.layers.Layer):
-  """Transformer decoder stack.
+  """Reformer decoder stack.
 
   Like the encoder stack, the decoder stack is made up of N identical layers.
   Each layer is composed of the sublayers:

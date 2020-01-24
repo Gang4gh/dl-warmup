@@ -1,5 +1,7 @@
 """Train and evaluate deep title generation model.
-Based on: https://github.com/tensorflow/models/tree/master/official/transformer/v2
+Derived from:
+    https://github.com/tensorflow/models/tree/master/official/transformer/v2
+    https://github.com/cerebroai/reformers
 """
 
 import os
@@ -19,6 +21,7 @@ import tensorflow_datasets as tfds
 import misc
 from official.transformer.v2 import optimizer
 import transformer
+import reformer
 from official.transformer.v2 import translate
 from official.utils.flags import core as flags_core
 from official.utils.misc import keras_utils
@@ -27,11 +30,11 @@ import metrics
 
 from data_dtitle.process_dtitle_data import dtitle_reader
 
-class TransformerTask(object):
-  """Main entry of Transformer model."""
+class Seq2SeqTask(object):
+  """Main entry of Seq2Seq model."""
 
   def __init__(self, flags_obj):
-    """Init function of TransformerMain.
+    """Init function
 
     Args:
       flags_obj: Object containing parsed flag values, i.e., FLAGS.
@@ -55,7 +58,7 @@ class TransformerTask(object):
 
     params["use_synthetic_data"] = flags_obj.use_synthetic_data
     params["batch_size"] = flags_obj.batch_size * max(num_gpus, 1)
-    logging.info('actual batch_size = {} * {}'.format(flags_obj.batch_size, num_gpus))
+    logging.info('actual batch_size = {} * {}'.format(flags_obj.batch_size, max(num_gpus, 1)))
     params["repeat_dataset"] = None
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
@@ -69,7 +72,7 @@ class TransformerTask(object):
 
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
-      # like this. What if multiple instances of TransformerTask are created?
+      # like this. What if multiple instances of Seq2SeqTask are created?
       # We should have a better way in the tf.keras.mixed_precision API of doing
       # this.
       loss_scale = flags_core.get_loss_scale(flags_obj,
@@ -82,13 +85,21 @@ class TransformerTask(object):
         distribution_strategy=flags_obj.distribution_strategy,
         num_gpus=num_gpus,
         tpu_address=flags_obj.tpu or "")
-    logging.info("Running transformer with num_gpus = %d", num_gpus)
+    logging.info("Running dtitle model with num_gpus = %d", num_gpus)
 
     if self.distribution_strategy:
       logging.info("For training, using distribution strategy: %s",
                    self.distribution_strategy)
     else:
       logging.info("Not using any distribution strategy.")
+
+
+  def create_model(self, is_train):
+    if self.flags_obj.use_reformer:
+      return reformer.create_model(self.params, is_train=is_train)
+    else:
+      return transformer.create_model(self.params, is_train=is_train)
+
 
   def train(self):
     """Trains the model."""
@@ -102,7 +113,7 @@ class TransformerTask(object):
     test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'), repeat=1)
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
-      model = transformer.create_model(params, is_train=True)
+      model = self.create_model(is_train=True)
       model.compile(optimizer=self._create_optimizer(params), loss=self._create_loss_fn(params))
 
     if not os.path.exists(flags_obj.model_dir):
@@ -145,7 +156,7 @@ class TransformerTask(object):
   def eval(self):
     """Evaluates the model."""
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
-      model = transformer.create_model(self.params, is_train=True)
+      model = self.create_model(is_train=True)
       model.compile(loss=self._create_loss_fn(self.params))
       model.summary()
       self._load_model_weights(model)
@@ -201,7 +212,7 @@ class TransformerTask(object):
     params = self.params
     flags_obj = self.flags_obj
 
-    model = transformer.create_model(params, is_train=False)
+    model = self.create_model(is_train=False)
     model.summary()
     self._load_model_weights(model)
 
@@ -422,7 +433,7 @@ def test(task):
 
 def main(_):
   flags_obj = flags.FLAGS
-  task = TransformerTask(flags_obj)
+  task = Seq2SeqTask(flags_obj)
   if flags_obj.mode == "train":
     task.train()
   elif flags_obj.mode == "predict":

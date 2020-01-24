@@ -255,6 +255,10 @@ def define_transformer_flags():
       name='calc_rouge_scores', default=True,
       help=flags_core.help_wrap('Whether to calculate ROUGE scores or not'))
 
+  flags.DEFINE_bool(
+      name='use_reformer', default=False,
+      help=flags_core.help_wrap('use Reformer model instead of Transformer'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)
