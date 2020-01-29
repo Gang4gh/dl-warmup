@@ -82,7 +82,7 @@ def preprocess_raw_input(FLAGS):
 				continue
 
 		valid += 1 if title else 0
-		if FLAGS.output_raw_html: html = row.html
+		if FLAGS.output_raw_html: html = row.html.strip().lower()
 		print('\t'.join(DTitle_Row(url=url, title=title, hostname=hostname, html=html)))
 	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppressed, from {}'.format(total, valid, valid/total*100, suppressed, suppressed/total*100, FLAGS.input_file), file=sys.stderr)
 
@@ -106,17 +106,35 @@ def print_flags(FLAGS):
 	for f in FLAGS.get_key_flags_for_module(__file__):
 		print('    {}: {}'.format(f.name, f.value))
 
+
+def check_stats(FLAGS):
+	import numpy as np
+	length_data, token_data = [], []
+	for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema):
+		l = len(row.html)
+		length_data.append(l)
+	print('Stats of raw html length:')
+	print('Start\tFreq')
+	hist, bin_edges = np.histogram(length_data, 100)
+	for i in range(100):
+		print('%d\t%d' % (bin_edges[i], hist[i]))
+	print('%d\t-' % bin_edges[100])
+
+
 def main(_):
 	FLAGS = flags.FLAGS
 	if FLAGS.cmd == 'pre-process':
 		preprocess_raw_input(FLAGS)
 	elif FLAGS.cmd == 'build-vocab':
 		build_vocab(FLAGS)
+	elif FLAGS.cmd == 'check-stats':
+		check_stats(FLAGS)
 	elif FLAGS.cmd == 'print-flags':
 		print_flags(FLAGS)
 
+
 if __name__ == '__main__':
-	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'print-flags'], 'the command to execute')
+	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags'], 'the command to execute')
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader

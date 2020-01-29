@@ -95,6 +95,7 @@ class Seq2SeqTask(object):
 
 
   def create_model(self, is_train):
+    logging.info('use_reformer = {}'.format(self.flags_obj.use_reformer))
     if self.flags_obj.use_reformer:
       return reformer.create_model(self.params, is_train=is_train)
     else:
