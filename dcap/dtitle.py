@@ -62,6 +62,8 @@ class Seq2SeqTask(object):
     params["repeat_dataset"] = None
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
+    params["num_hashes"] = flags_obj.num_hashes
+    params["bucket_size"] = flags_obj.bucket_size
 
     self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]

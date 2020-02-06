@@ -259,6 +259,16 @@ def define_transformer_flags():
       name='use_reformer', default=False,
       help=flags_core.help_wrap('use Reformer model instead of Transformer'))
 
+  flags.DEFINE_integer(
+      name='num_hashes',
+      default=4,
+      help=flags_core.help_wrap('number of hashes used in LSH attention'))
+
+  flags.DEFINE_integer(
+      name='bucket_size',
+      default=64,
+      help=flags_core.help_wrap('bucket size for LSH attention'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=None)

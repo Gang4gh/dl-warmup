@@ -419,7 +419,7 @@ class EncoderStack(tf.keras.layers.Layer):
       # Create sublayers for each layer.
       self_attention_layer = attention_layer.LshSelfAttention(
           params["hidden_size"], params["num_heads"],
-          params["attention_dropout"])
+          params["attention_dropout"], params["num_hashes"], params["bucket_size"])
       feed_forward_network = ffn_layer.FeedForwardNetwork(
           params["hidden_size"], params["filter_size"], params["relu_dropout"])
 
@@ -488,10 +488,10 @@ class DecoderStack(tf.keras.layers.Layer):
     """Builds the decoder stack."""
     params = self.params
     for _ in range(params["num_hidden_layers"]):
-      self_attention_layer = attention_layer.LshSelfAttention(
+      self_attention_layer = attention_layer.SelfAttention(
           params["hidden_size"], params["num_heads"],
           params["attention_dropout"])
-      enc_dec_attention_layer = attention_layer.LshAttention(
+      enc_dec_attention_layer = attention_layer.Attention(
           params["hidden_size"], params["num_heads"],
           params["attention_dropout"])
       feed_forward_network = ffn_layer.FeedForwardNetwork(
