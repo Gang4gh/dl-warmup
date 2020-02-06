@@ -123,7 +123,7 @@ class TFLSHAttention(tf.keras.Model):
         print('buckets: ', buckets.shape)
         buckets_0 = tf.reshape(buckets[0], (self.n_hashes, seqlen))
         print('buckets[0]: ', buckets_0[:,0:2])
-        buckets_0_argsort = tf.gather(buckets_0, full_logits_argsort[:, :32], axis=-1)
+        #buckets_0_argsort = tf.gather(buckets_0, full_logits_argsort[:, :32], axis=-1)
         #print(buckets_0_argsort[:,11,:])
         #print(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)
         #print(tf.reduce_any(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)[:,1][:64])

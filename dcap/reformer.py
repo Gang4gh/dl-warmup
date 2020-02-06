@@ -40,7 +40,7 @@ def create_model(params, is_train):
       outputs, scores = ret["outputs"], ret["scores"]
       return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 
-
+#IMPORTANT: THIS IS NOT A COMPLETE AND WORKING REFORMER implemnetation
 class Reformer(tf.keras.Model):
   """Reformer model with Keras.
 

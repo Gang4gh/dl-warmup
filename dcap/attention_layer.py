@@ -186,7 +186,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     self.output_dense_layer = common_layer.Dense3D(
         self.num_heads, size_per_head, kernel_initializer="glorot_uniform",
         use_bias=False, output_projection=True, name="output_transform")
-    super(LshAttention, self).build(input_shape)
+    super(LshSelfAttention, self).build(input_shape)
 
   def get_config(self):
     return {
@@ -198,14 +198,12 @@ class LshSelfAttention(tf.keras.layers.Layer):
     }
 
 
-  def call(self, query_input, source_input, bias, training, cache=None,
+  def call(self, query_input, bias, training, cache=None,
            decode_loop_step=None):
-    """Apply LSH attention mechanism to query_input and source_input.
+    """Apply LSH attention mechanism to query_input and query_input.
 
     Args:
       query_input: A tensor with shape [batch_size, length_query, hidden_size].
-      source_input: A tensor with shape [batch_size, length_source,
-        hidden_size].
       bias: A tensor with shape [batch_size, 1, length_query, length_source],
         the attention bias that will be added to the result of the dot product.
       training: A bool, whether in training mode or not.
@@ -225,9 +223,9 @@ class LshSelfAttention(tf.keras.layers.Layer):
     # projections. Splitting heads is automatically done during the linear
     # projections --> [batch_size, length, num_heads, dim_per_head].
     query = self.sharedQK_dense_layer(query_input)
-    key = self.sharedQK_dense_layer(source_input)
+    key = self.sharedQK_dense_layer(query_input)
     key = tf.math.l2_normalize(key, -1)
-    value = self.value_dense_layer(source_input)
+    value = self.value_dense_layer(query_input)
 
     if cache is not None:
       # Combine cached keys and values with new keys and values.
@@ -267,13 +265,13 @@ class LshSelfAttention(tf.keras.layers.Layer):
 def calculate_full_attention(key, query, value, bias, training, attention_dropout):
   # Calculate dot product attention
   logits = tf.einsum("BTNH,BFNH->BNFT", key, query)
-  #logits += logits + bias
-  logits = tf.math.multiply(logits, (1-bias)) + bias * (- 1e5)
+  logits += logits + bias
+  #logits = tf.math.multiply(logits, (1-bias)) + bias * (- 1e5)
+
   # Note that softmax internally performs math operations using float32
   # for numeric stability. When training with float16, we keep the input
   # and output in float16 for better performance.
   weights = tf.nn.softmax(logits, name="attention_weights")
-  print('weights.shape: ', weights.shape)
 
   #emax = tf.reduce_max(logits, axis=-1, keepdims=True)
   #w1 = tf.exp(logits - emax) / tf.reduce_sum(tf.exp(logits - emax), -1, keepdims=True)
@@ -290,9 +288,8 @@ def calculate_full_attention(key, query, value, bias, training, attention_dropou
 
   if training:
     weights = tf.nn.dropout(weights, rate=attention_dropout)
-    print('*****training is on')
   attention_output = tf.einsum("BNFT,BTNH->BFNH", weights, value)
-  return attention_output, logits
+  return attention_output
 
 
 def get_hash():
@@ -314,12 +311,10 @@ def calculate_LSH_attention(qk, value, bias, training, attention_dropout, num_ha
   #print('final result: ', ret.shape)
   return ret
 
-def get_self_attention_bias(length, dtype=tf.float32):
-	#neg_constant = -1e5
+def get_self_attention_mask(length, dtype=tf.float32):
 	with tf.name_scope("self_attention_bias"):
 		self_locs = tf.linalg.band_part(tf.ones([length, length], dtype=dtype), 0, 0)
 		self_locs = tf.reshape(self_locs, [1, 1, length, length])
-		#bias = neg_constant * self_locs
 	return self_locs
 
 def compare_two_attentions(seq_length, runLSH=True, runFull=True):
@@ -342,12 +337,12 @@ def compare_two_attentions(seq_length, runLSH=True, runFull=True):
 
 	if runFull:
 		print('\n>>>3. run full attention')
-		self_bias = get_self_attention_bias(length)
-		print('self_bias: ', self_bias.shape)
+		self_mask = get_self_attention_mask(length)
+		print('self_mask: ', self_mask.shape)
 
 		q2 = qk * (num_dim ** -0.5)
 		qk2 = make_unit_length(qk)
-		ret2, logits2 = calculate_full_attention(q2, qk2, v, self_bias, False, 0.1)
+		ret2, logits2 = calculate_full_attention(q2, qk2, v, self_mask, False, 0.1)
 		logits2 = tf.reshape(logits2, (-1, length, length))
 		print('logits2.shape: ', logits2.shape)
 
@@ -368,29 +363,14 @@ def compare_two_attentions(seq_length, runLSH=True, runFull=True):
 		#mean_percent = tf.reduce_mean(tf.exp(logits1 - logits2))
 		#print(f'mean_percent = {mean_percent}')
 
-compare_two_attentions(1024 * 8, runFull=False)
+#compare_two_attentions(1024 * 8, runFull=False)
 
-def check_two_attentions_memory_usage(checkLSH=True):
-	attention_type = 'LSH' if checkLSH else 'full'
-	for i in range(1, 64):
-		print(f'checking {attention_type} attention when seq_length = {i}K ...')
-		compare_two_attentions(1024*i, runLSH=checkLSH, runFull=not checkLSH)
-		print(f'OK: {attention_type} attention when seq_length = {i}K.')
-
+#def check_two_attentions_memory_usage(checkLSH=True):
+#	attention_type = 'LSH' if checkLSH else 'full'
+#	for i in range(1, 64):
+#		print(f'checking {attention_type} attention when seq_length = {i}K ...')
+#		compare_two_attentions(1024*i, runLSH=checkLSH, runFull=not checkLSH)
+#		print(f'OK: {attention_type} attention when seq_length = {i}K.')
+#
 #check_two_attentions_memory_usage(checkLSH=True) # max length 35K
 #check_two_attentions_memory_usage(checkLSH=False) # max length 8K
-
-#def sort_key_val(t1, t2, dim=-1):
-#    values = tf.sort(t1, axis=dim)
-#    return values, tf.gather(t2, tf.argsort(t1, axis=dim), axis=dim)
-
-#t1 = tf.random.uniform((3,2 * 4), dtype=tf.int32, maxval=100)
-#t2 = tf.range(2 * 4)
-#print(t1)
-#print(t2)
-#st1, st2 = sort_key_val(t1, t2)
-#print(st1)
-#print(st2)
-#_, undo_sort = sort_key_val(st2, t2)
-#print(undo_sort)
-
