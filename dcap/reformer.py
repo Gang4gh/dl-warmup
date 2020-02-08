@@ -18,9 +18,10 @@ import metrics
 def create_model(params, is_train):
   """Creates model."""
   with tf.name_scope("model"):
+    input_len, output_len = params['max_input_length'], params['max_target_length']
     if is_train:
-      inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
-      targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
+      inputs = tf.keras.layers.Input((input_len,), dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((output_len,), dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
       logits = internal_model([inputs, targets], training=is_train)
       if params["enable_metrics_in_training"]:
@@ -32,8 +33,8 @@ def create_model(params, is_train):
       model = tf.keras.Model([inputs, targets], logits)
       return model
     else:
-      inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
-      targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
+      inputs = tf.keras.layers.Input((input_len,), dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((output_len,), dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
       ret = internal_model([inputs], training=is_train)
       logits = internal_model([inputs, targets], training=is_train)
@@ -133,7 +134,7 @@ class Reformer(tf.keras.Model):
       embedded_inputs = self.embedding_softmax_layer(inputs)
       embedded_inputs = tf.cast(embedded_inputs, self.params["dtype"])
       inputs_padding = model_utils.get_padding(inputs)
-      attention_bias = tf.cast(attention_bias, self.params["dtype"])
+      attention_bias = tf.cast(tf.equal(inputs, 0), tf.bool) # assume inputs is padded by '0'
 
       with tf.name_scope("add_pos_encoding"):
         length = tf.shape(embedded_inputs)[1]
@@ -437,13 +438,12 @@ class EncoderStack(tf.keras.layers.Layer):
         "params": self.params,
     }
 
-  def call(self, encoder_inputs, attention_bias, inputs_padding, training):
+  def call(self, encoder_inputs, padding_mask, inputs_padding, training):
     """Return the output of the encoder layer stacks.
 
     Args:
       encoder_inputs: tensor with shape [batch_size, input_length, hidden_size]
-      attention_bias: bias for the encoder self-attention layer. [batch_size, 1,
-        1, input_length]
+      padding_mask: mask for the encoder self-attention layer, with shape [batch_size, input_length]
       inputs_padding: tensor with shape [batch_size, input_length], inputs with
         zero paddings.
       training: boolean, whether in training mode or not.
@@ -460,7 +460,7 @@ class EncoderStack(tf.keras.layers.Layer):
       with tf.name_scope("layer_%d" % n):
         with tf.name_scope("self_attention"):
           encoder_inputs = self_attention_layer(
-              encoder_inputs, attention_bias, training=training)
+              encoder_inputs, padding_mask, training=training)
         with tf.name_scope("ffn"):
           encoder_inputs = feed_forward_network(
               encoder_inputs, training=training)

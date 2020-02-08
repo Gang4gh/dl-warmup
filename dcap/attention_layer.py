@@ -198,14 +198,14 @@ class LshSelfAttention(tf.keras.layers.Layer):
     }
 
 
-  def call(self, query_input, bias, training, cache=None,
+  def call(self, query_input, padding_mask, training, cache=None,
            decode_loop_step=None):
-    """Apply LSH attention mechanism to query_input and query_input.
+    """Apply LSH self attention mechanism from query_input to query_input(itself).
 
     Args:
       query_input: A tensor with shape [batch_size, length_query, hidden_size].
-      bias: A tensor with shape [batch_size, 1, length_query, length_source],
-        the attention bias that will be added to the result of the dot product.
+      padding_mask: A tensor with shape [batch_size, length_source], type=tf.bool
+        the 'Ture' value means invalid position to be marked out.
       training: A bool, whether in training mode or not.
       cache: (Used during prediction) A dictionary with tensors containing
         results of previous attentions. The dictionary must have the items:
@@ -223,8 +223,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     # projections. Splitting heads is automatically done during the linear
     # projections --> [batch_size, length, num_heads, dim_per_head].
     query = self.sharedQK_dense_layer(query_input)
-    key = self.sharedQK_dense_layer(query_input)
-    key = tf.math.l2_normalize(key, -1)
+    key = tf.math.l2_normalize(query, -1)
     value = self.value_dense_layer(query_input)
 
     if cache is not None:
@@ -248,12 +247,14 @@ class LshSelfAttention(tf.keras.layers.Layer):
       cache["k"] = key
       cache["v"] = value
 
-    # Scale query to prevent the dot product between query and key from growing
-    # too large.
-    depth = (self.hidden_size // self.num_heads)
-    query *= depth ** -0.5
+    ## Scale query to prevent the dot product between query and key from growing
+    ## too large.
+    #depth = (self.hidden_size // self.num_heads)
+    #query *= depth ** -0.5
+    #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
-    attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
+    attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
+
     #attention_output = calculate_LSH_attention(key, query, value, bias, training, self.attention_dropout, self.num_hashes, self.bucket_size)
 
     # Run the outputs through another linear projection layer. Recombining heads
@@ -265,7 +266,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
 def calculate_full_attention(key, query, value, bias, training, attention_dropout):
   # Calculate dot product attention
   logits = tf.einsum("BTNH,BFNH->BNFT", key, query)
-  logits += logits + bias
+  logits += bias
   #logits = tf.math.multiply(logits, (1-bias)) + bias * (- 1e5)
 
   # Note that softmax internally performs math operations using float32
@@ -273,23 +274,47 @@ def calculate_full_attention(key, query, value, bias, training, attention_dropou
   # and output in float16 for better performance.
   weights = tf.nn.softmax(logits, name="attention_weights")
 
-  #emax = tf.reduce_max(logits, axis=-1, keepdims=True)
-  #w1 = tf.exp(logits - emax) / tf.reduce_sum(tf.exp(logits - emax), -1, keepdims=True)
-  #print(tf.reduce_mean(tf.abs(weights - w1), axis=-1))
-
-  #w2 = tf.exp(logits) / tf.reduce_sum(tf.exp(logits), -1, keepdims=True)
-  #print(tf.reduce_mean(tf.abs(weights - w2), axis=-1))
-
-  #logits2 = tf.math.reduce_logsumexp(logits, axis=-1)
-
-  #e = tf.math.log(tf.reduce_sum(tf.exp(logits - emax), -1)) + emax[...,0]
-  #print(tf.abs(logits2 - e))
-  #print(tf.reduce_mean(tf.abs(logits2 - e), axis=-1))
-
   if training:
     weights = tf.nn.dropout(weights, rate=attention_dropout)
   attention_output = tf.einsum("BNFT,BTNH->BFNH", weights, value)
   return attention_output
+
+
+def calculate_full_attention_v2(query, key, value, padding_mask=None, apply_causal_mask=False, apply_soft_selfmask=False, dropout=0.0):
+  """
+  Args:
+    query: with shape [batch_size, query_length, num_heads, dim_per_head]
+    key  : with shape [batch_size, value_length, num_heads, dim_per_head]
+    value: with shape [batch_size, value_length, num_heads, dim_per_head]
+    padding_mask: a mask tensor with shape [batch_size, value_length]
+    apply_causal_mask: mask tokens after current token, used in self attention
+    apply_soft_selfmask: mask query token itself softly, used in self attention
+    dropout: attention dropout ratio
+
+  Returns:
+    Attention output with shape [batch_size, value_length, num_heads, dim_per_head]
+  """
+  _, value_length, _, dim_per_head = value.shape
+
+  query *= dim_per_head ** -0.5
+  logits = tf.einsum("BFNH,BTNH->BNFT", query, key)
+
+  if padding_mask is not None:
+    logits = tf.where(padding_mask[:,None,None,:], -1e9, logits)
+  if apply_causal_mask:
+    causal_validmask =  tf.linalg.band_part(tf.ones([value_length, value_length], dtype=tf.bool), -1, 0)[None,None,:,:]
+    logits = tf.where(causal_validmask, logits, -1e9)
+  if apply_soft_selfmask:
+    self_mask =  tf.linalg.band_part(tf.ones([value_length, value_length], dtype=tf.bool), 0, 0)[None,None,:,:]
+    logits = tf.where(self_mask, -1e5, logits)
+
+  weights = tf.nn.softmax(logits, name="attention_weights")
+
+  if dropout > 0:
+    weights = tf.nn.dropout(weights, rate=dropout)
+
+  attentions = tf.einsum("BNFT,BTNH->BFNH", weights, value)
+  return attentions
 
 
 def get_hash():
