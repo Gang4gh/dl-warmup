@@ -19,9 +19,10 @@ def create_model(params, is_train):
   """Creates model."""
   with tf.name_scope("model"):
     input_len, output_len = params['max_input_length'], params['max_target_length']
+    batch_size = params['batch_size']
     if is_train:
-      inputs = tf.keras.layers.Input((input_len,), dtype="int32", name="inputs")
-      targets = tf.keras.layers.Input((output_len,), dtype="int32", name="targets")
+      inputs = tf.keras.layers.Input((input_len,), batch_size, dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((output_len,), batch_size, dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
       logits = internal_model([inputs, targets], training=is_train)
       if params["enable_metrics_in_training"]:
@@ -33,8 +34,8 @@ def create_model(params, is_train):
       model = tf.keras.Model([inputs, targets], logits)
       return model
     else:
-      inputs = tf.keras.layers.Input((input_len,), dtype="int32", name="inputs")
-      targets = tf.keras.layers.Input((output_len,), dtype="int32", name="targets")
+      inputs = tf.keras.layers.Input((input_len,), batch_size, dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((output_len,), batch_size, dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
       ret = internal_model([inputs], training=is_train)
       logits = internal_model([inputs, targets], training=is_train)

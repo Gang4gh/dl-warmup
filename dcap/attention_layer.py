@@ -253,9 +253,9 @@ class LshSelfAttention(tf.keras.layers.Layer):
     #query *= depth ** -0.5
     #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
-    attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
+    #attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
 
-    #attention_output = calculate_LSH_attention(key, query, value, bias, training, self.attention_dropout, self.num_hashes, self.bucket_size)
+    attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
 
     # Run the outputs through another linear projection layer. Recombining heads
     # is automatically done --> [batch_size, length, hidden_size]
@@ -267,7 +267,6 @@ def calculate_full_attention(key, query, value, bias, training, attention_dropou
   # Calculate dot product attention
   logits = tf.einsum("BTNH,BFNH->BNFT", key, query)
   logits += bias
-  #logits = tf.math.multiply(logits, (1-bias)) + bias * (- 1e5)
 
   # Note that softmax internally performs math operations using float32
   # for numeric stability. When training with float16, we keep the input
@@ -323,17 +322,24 @@ def get_hash():
   buckets = tf.math.argmax(rotated_vecs, axis=-1, output_type=tf.int32)
   #buckets = tf.reshape(buckets, (batch_size, length, num_heads, -1,))
 
-  #output share: [batch_size, num_heads, length, num_hashes]
+  #output shape: [batch_size, num_heads, length, num_hashes]
   return buckets
 
 
 import TFefficient_attention
 from TFutils import sort_key_val, batched_index_select, make_unit_length, chunked_sum, process_inputs_chunk
 
-def calculate_LSH_attention(qk, value, bias, training, attention_dropout, num_hashes, bucket_size):
-  att = TFefficient_attention.TFLSHAttention(dropout = attention_dropout, n_hashes=num_hashes, bucket_size=bucket_size)
-  ret = att(qk, value)
-  #print('final result: ', ret.shape)
+lsh_att = None
+def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=2, bucket_size=64):
+  global lsh_att
+  if lsh_att is None:
+    lsh_att = TFefficient_attention.TFLSHAttention(dropout = dropout, n_hashes=num_hashes, bucket_size=bucket_size, causal=False)
+
+  batch_size, length, num_heads, num_dim = qk.shape
+  qk = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
+  value = tf.reshape(tf.transpose(value, perm=[0,2,1,3]), (-1, length, num_dim))
+  ret = lsh_att(qk, value, tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0))
+  ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
   return ret
 
 def get_self_attention_mask(length, dtype=tf.float32):
@@ -342,41 +348,57 @@ def get_self_attention_mask(length, dtype=tf.float32):
 		self_locs = tf.reshape(self_locs, [1, 1, length, length])
 	return self_locs
 
-def compare_two_attentions(seq_length, runLSH=True, runFull=True):
+def compare_two_attentions(seq_length,
+		runLSH=True, runLSH_v2=False,
+		runFull=False, runFull_v2=False):
 	shape = batch_size, length, num_heads, num_dim = 4, seq_length, 2, 256
 	bucket_count = 128
 	print('>>>1. Prepare inputs(QK, V) with shape: ', shape)
 	tf.random.set_seed(0)
 	qk = tf.random.normal(shape)
-	qk = make_unit_length(qk)
-	v = tf.ones(shape)
+	qk_norm = make_unit_length(qk)
+	#qk_norm = tf.math.l2_normalize(qk, -1)
+	v = tf.random.normal(shape)
 
 	if runLSH:
-		print('\n>>>2. run LSH attention')
-		qk1 = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
-		v1 = tf.reshape(tf.transpose(v, perm=[0,2,1,3]), (-1, length, num_dim))
-		ret1, logits1 = calculate_LSH_attention(qk1, v1, 0, False, 0., 16, length // bucket_count)
-		ret1 = tf.transpose(tf.reshape(ret1, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
-		logits1 = tf.reshape(logits1, (batch_size * num_heads, length, -1))
-		print('logits1.shape: ', logits1.shape)
+		print('\n>>>2.1. run LSH attention')
+		qk2 = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
+		v2 = tf.reshape(tf.transpose(v, perm=[0,2,1,3]), (-1, length, num_dim))
+		ret21 = calculate_LSH_attention(qk2, v2, None, 0, 2, length // bucket_count)
+		ret21 = tf.transpose(tf.reshape(ret21, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
+		print('ret21.shape: ', ret21.shape)
+		#logits2 = tf.reshape(logits2, (batch_size, num_heads, length, -1))
+		#print('logits1.shape: ', logits2.shape)
+
+	if runLSH_v2:
+		print('\n>>>2.1. run LSH attention')
+		qk2 = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
+		v2 = tf.reshape(tf.transpose(v, perm=[0,2,1,3]), (-1, length, num_dim))
+		ret21 = calculate_LSH_attention_v2(qk2, v2, 0, False, 0., 2, length // bucket_count)
+		ret21 = tf.transpose(tf.reshape(ret21, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
 
 	if runFull:
-		print('\n>>>3. run full attention')
-		self_mask = get_self_attention_mask(length)
-		print('self_mask: ', self_mask.shape)
+		print('\n>>>3.1. run full attention')
+		self_bias = get_self_attention_mask(length) * (-1e5)
+		print('self_bias: ', self_bias.shape)
 
-		q2 = qk * (num_dim ** -0.5)
-		qk2 = make_unit_length(qk)
-		ret2, logits2 = calculate_full_attention(q2, qk2, v, self_mask, False, 0.1)
-		logits2 = tf.reshape(logits2, (-1, length, length))
-		print('logits2.shape: ', logits2.shape)
+		q3 = qk * (num_dim ** -0.5)
+		ret31 = calculate_full_attention(qk_norm, q3, v, self_bias, False, 0)
+
+	if runFull_v2:
+		print('\n>>>3.2. run full attention v2')
+		#self_bias = get_self_attention_mask(length) * (-1e5)
+		#print('self_mask: ', self_mask.shape)
+
+		ret32 = calculate_full_attention_v2(qk, qk_norm, v, None, apply_soft_selfmask=True)
+		#logits2 = tf.reshape(logits2, (-1, length, length))
+		#print('logits2.shape: ', logits2.shape)
 
 	if runLSH and runFull:
-		print('\n>>>4. compare results')
+		print('\n>>>4.1. compare results')
 		#loss = tf.keras.losses.MeanAbsoluteError()(ret1, ret2)
 		#loss2 = tf.keras.losses.MeanSquaredError()(ret1, ret2)
 		#print(f'loss = {loss}, loss2 = {loss2}')
-
 		print('logits1: ', logits1[0])
 		print('logits2: ', logits2[0])
 		#sumexp1 = tf.reduce_sum(tf.exp(logits1), axis=-1)
@@ -388,7 +410,14 @@ def compare_two_attentions(seq_length, runLSH=True, runFull=True):
 		#mean_percent = tf.reduce_mean(tf.exp(logits1 - logits2))
 		#print(f'mean_percent = {mean_percent}')
 
-#compare_two_attentions(1024 * 8, runFull=False)
+	if runFull and runFull_v2:
+		print('\n>>>4.2. compare results')
+		print('ret31: ', ret31[0,1,0,:64])
+		print('ret32: ', ret32[0,1,0,:64])
+		diffcount = tf.reduce_sum(tf.cast(tf.abs(ret31-ret32) > 1e-9, tf.int32))
+		print(f'diff count: {diffcount}')
+
+#compare_two_attentions(1024 * 8)
 
 #def check_two_attentions_memory_usage(checkLSH=True):
 #	attention_type = 'LSH' if checkLSH else 'full'

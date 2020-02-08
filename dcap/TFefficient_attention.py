@@ -24,6 +24,10 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dropout, Dense
 from TFutils import sort_key_val, batched_index_select, make_unit_length, chunked_sum, process_inputs_chunk
 
+def debug_print(*args, **kwargs):
+  #print(*args, **kwargs)
+  pass
+
 class TFLSHAttention(tf.keras.Model):
     def __init__( self,
                   dropout = 0.,
@@ -57,6 +61,7 @@ class TFLSHAttention(tf.keras.Model):
 
     def hash_vectors(self, n_buckets, vecs):
         batch_size = vecs.shape[0]
+        debug_print('batch_size: ', batch_size)
         device = vecs.device
 
         # See https://arxiv.org/pdf/1509.02897.pdf
@@ -85,7 +90,7 @@ class TFLSHAttention(tf.keras.Model):
             offsets = tf.range(self.n_hashes)
             offsets = tf.reshape(offsets * n_buckets, (1, -1, 1))
             offsets = tf.cast(offsets, tf.int64)
-            print('offsets: ', offsets.shape)
+            debug_print('offsets: ', offsets.shape)
             buckets = tf.reshape(buckets + offsets, (batch_size, -1,))
         else:
             rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
@@ -103,31 +108,33 @@ class TFLSHAttention(tf.keras.Model):
 
         return buckets
 
-    def call(self, qk, v):
+    def call(self, qk, v, padding_mask):
         batch_size, seqlen, num_dims = qk.shape
         device = qk.device
-        print('qk.shape v.shape:', qk.shape, v.shape)
+        debug_print('qk.shape/v.shape: ', qk.shape, v.shape)
+        debug_print('padding_mask.shape: ', padding_mask.shape)
+        assert padding_mask is None or seqlen == padding_mask.shape[1]
 
-        full_logits = tf.einsum("BTH,BFH->BFT", qk, qk) * (num_dims ** -0.5)
-        print('full_logits.shape: (wihtout mask)', full_logits.shape)
-        print(full_logits[0])
-        full_logits_argsort = tf.argsort(full_logits[0], direction='DESCENDING')
-        print('full_logits_argsort: ', full_logits_argsort)
+        #full_logits = tf.einsum("BTH,BFH->BFT", qk, qk) * (num_dims ** -0.5)
+        #debug_print('full_logits.shape: (wihtout mask)', full_logits.shape)
+        #debug_print(full_logits[0])
+        #full_logits_argsort = tf.argsort(full_logits[0], direction='DESCENDING')
+        #debug_print('full_logits_argsort: ', full_logits_argsort)
 
         n_buckets = seqlen // self.bucket_size
         n_bins = n_buckets
-        print('batch_size, seqlen, device, n_buckets:')
-        print(batch_size, seqlen, device, n_buckets)
+        debug_print('batch_size, seqlen, device, n_buckets:')
+        debug_print(batch_size, seqlen, device, n_buckets)
 
         buckets = self.hash_vectors(n_buckets, qk)
-        print('buckets: ', buckets.shape)
-        buckets_0 = tf.reshape(buckets[0], (self.n_hashes, seqlen))
-        print('buckets[0]: ', buckets_0[:,0:2])
+        debug_print('buckets: ', buckets.shape)
+        #buckets_0 = tf.reshape(buckets[0], (self.n_hashes, seqlen))
+        #debug_print('buckets[0]: ', buckets_0[:,0:2])
         #buckets_0_argsort = tf.gather(buckets_0, full_logits_argsort[:, :32], axis=-1)
-        #print(buckets_0_argsort[:,11,:])
-        #print(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)
-        #print(tf.reduce_any(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)[:,1][:64])
-        print(tf.reduce_sum(tf.cast(tf.reduce_any(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)[:,1], tf.float32))/seqlen)
+        #debug_print(buckets_0_argsort[:,11,:])
+        #debug_print(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)
+        #debug_print(tf.reduce_any(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)[:,1][:64])
+        #debug_print(tf.reduce_sum(tf.cast(tf.reduce_any(buckets_0_argsort[...,0,None] == buckets_0_argsort, 0)[:,1], tf.float32))/seqlen)
         #sys.exit(0)
         # We use the same vector as both a query and a key.
         assert int(buckets.shape[1]) == self.n_hashes * seqlen
@@ -135,16 +142,16 @@ class TFLSHAttention(tf.keras.Model):
         ticker = tf.expand_dims(tf.range(self.n_hashes * seqlen), axis=0)
         buckets_and_t = seqlen * buckets + tf.cast((ticker % seqlen), tf.int64)
         buckets_and_t = tf.stop_gradient(buckets_and_t)
-        print('buckets_and_t.shape: ', buckets_and_t.shape)
+        debug_print('buckets_and_t.shape: ', buckets_and_t.shape)
 
         # Hash-based sort ("s" at the start of variable names means "sorted")
         ticker = tf.reshape(ticker, (-1,))
         sbuckets_and_t, sticker = sort_key_val(buckets_and_t, ticker, dim=-1)
         _, undo_sort = sort_key_val(sticker, ticker, dim=-1)
-        print('ticker.shape: ', ticker.shape)
-        print('sbuckets_and_t.shape: ', sbuckets_and_t.shape)
-        print('sticker.shape: ', sticker.shape)
-        print('undo_sort.shape: ', undo_sort.shape)
+        debug_print('ticker.shape: ', ticker.shape)
+        debug_print('sbuckets_and_t.shape: ', sbuckets_and_t.shape)
+        debug_print('sticker.shape: ', sticker.shape)
+        debug_print('undo_sort.shape: ', undo_sort.shape)
         del ticker
 
         sbuckets_and_t = tf.stop_gradient(sbuckets_and_t)
@@ -152,21 +159,21 @@ class TFLSHAttention(tf.keras.Model):
         undo_sort = tf.stop_gradient(undo_sort)
 
         st = (sticker % seqlen)
-        print('st.shape: ', st.shape)
+        debug_print('st.shape: ', st.shape)
         sqk = batched_index_select(qk, st)
         sv = batched_index_select(v, st)
-        print('sqk.shape: ', sqk.shape)
-        print('sv.shape: ', sv.shape)
+        debug_print('sqk.shape: ', sqk.shape)
+        debug_print('sv.shape: ', sv.shape)
 
         # Split off a "bin" axis so that attention only occurs within chunks.
         bq_t = bkv_t = tf.reshape(st, (batch_size, self.n_hashes * n_bins, -1))
         bqk = tf.reshape(sqk, (batch_size, self.n_hashes * n_bins, -1, sqk.shape[-1]))
         bv = tf.reshape(sv, (batch_size, self.n_hashes * n_bins, -1, sv.shape[-1]))
         bq_buckets = bkv_buckets = tf.reshape(sbuckets_and_t // seqlen, (batch_size, self.n_hashes * n_bins, -1))
-        print('bq_t.shape: ', bq_t.shape)
-        print('bqk.shape: ', bqk.shape)
-        print('bv.shape: ', bv.shape)
-        print('bq_buckets.shape: ', bq_buckets.shape)
+        debug_print('bq_t.shape: ', bq_t.shape)
+        debug_print('bqk.shape: ', bqk.shape)
+        debug_print('bv.shape: ', bv.shape)
+        debug_print('bq_buckets.shape: ', bq_buckets.shape)
 
         # Hashing operates on unit-length vectors. Unnormalized query vectors are
         # fine because they effectively provide a learnable temperature for the
@@ -174,8 +181,8 @@ class TFLSHAttention(tf.keras.Model):
         # the purposes of attention correctly corresponds to hash locality.
         bq = bqk
         bk = make_unit_length(bqk)
-        print('bq.shape: ', bq.shape)
-        print('bk.shape: ', bk.shape)
+        debug_print('bq.shape: ', bq.shape)
+        debug_print('bk.shape: ', bk.shape)
 
 
         # Allow each chunk to attend within itself, and also one chunk back. Chunk
@@ -190,21 +197,28 @@ class TFLSHAttention(tf.keras.Model):
         bv = look_one_back(bv)
         bkv_t = look_one_back(bkv_t)
         bkv_buckets = look_one_back(bkv_buckets)
-        print('apply look_one_back')
-        print('bk.shape', bk.shape)
-        print('bv.shape', bv.shape)
-        print('bkv_t.shape', bkv_t.shape)
-        print('bkv_buckets.shape', bkv_buckets.shape)
+        debug_print('apply look_one_back')
+        debug_print('bk.shape', bk.shape)
+        debug_print('bv.shape', bv.shape)
+        debug_print('bkv_t.shape', bkv_t.shape)
+        debug_print('bkv_buckets.shape', bkv_buckets.shape)
 
 
         # Dot-product attention.
         dots = tf.einsum('bhie,bhje->bhij', bq, bk) * (bq.shape[-1] ** -0.5)
-        print('dots.shape', dots.shape)
+        debug_print('dots.shape', dots.shape)
+
+        # padding masking
+        if padding_mask is not None:
+            mask = bkv_t[:, :, None, :] < tf.reduce_sum(tf.cast(padding_mask, tf.int32), axis=-1)[:,None,None,None]
+            debug_print('********** apply padding mask, mask.shape', mask.shape)
+            dots = tf.where(mask, -1e9, dots)
+            del mask
 
         # Causal masking
         if self.causal:
             mask = bq_t[:, :, :, None] < bkv_t[:, :, None, :] 
-            print('********** apply causal mask: causal/mask.shape', mask.shape)
+            debug_print('********** apply causal mask: causal/mask.shape', mask.shape)
             dots = tf.math.multiply(dots, tf.cast(mask, tf.float32)) + (1-tf.cast(mask, tf.float32)) * (- 1e9)
             del mask
 
@@ -216,10 +230,10 @@ class TFLSHAttention(tf.keras.Model):
         # Mask out attention to other hash buckets.
         if not self._attend_across_buckets:
             bucket_mask = bq_buckets[:, :, :, None] != bkv_buckets[:, :, None, :]
-            print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
+            debug_print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
             dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
             del bucket_mask
-        print('dots.shape (after all masks)', dots.shape)
+        debug_print('dots.shape (after all masks)', dots.shape)
 
         # Don't double-count query-key pairs across multiple rounds of hashing.
         # There are two possible strategies here. (1) The default is to count how
@@ -255,23 +269,22 @@ class TFLSHAttention(tf.keras.Model):
             assert dup_counts.shape == dots.shape
             dots = dots - tf.log(dup_counts + 1e-9)
             del dup_counts
-        print('dots.shape (after discount)', dots.shape)
+        debug_print('dots.shape (after discount)', dots.shape)
 
         # Softmax.
         logits_in_buckets = dots
         dots_logsumexp = tf.math.reduce_logsumexp(dots, axis=-1, keepdims=True)
-        print('dots_logsumexp.shape: ', dots_logsumexp.shape)
+        debug_print('dots_logsumexp.shape: ', dots_logsumexp.shape)
         dots = tf.exp(dots - dots_logsumexp) # weights matrix after softmax
         dots = self.dropout(dots)
-        print('dots.shape (after softmax)', dots.shape)
+        debug_print('dots.shape (after softmax)', dots.shape)
  
-
         bo = tf.einsum('buij,buje->buie', dots, bv)
-        print('bo.shape', bo.shape)
+        debug_print('bo.shape', bo.shape)
         so = tf.reshape(bo, (batch_size, -1, bo.shape[-1]))
         slogits = tf.reshape(dots_logsumexp, (batch_size, -1,))
-        print('so.shape', so.shape)
-        print('slogits.shape', slogits.shape)
+        debug_print('so.shape', so.shape)
+        debug_print('slogits.shape', slogits.shape)
 
         class UnsortLogits(tf.keras.layers.Layer):
             def __init__(self):
@@ -282,31 +295,31 @@ class TFLSHAttention(tf.keras.Model):
                 o = batched_index_select(so, undo_sort)
                 _, logits = sort_key_val(sticker, slogits, dim=-1)
                 #logits2 = batched_index_select(slogits, undo_sort)
-                #print(tf.reduce_sum(tf.cast(logits2 == logits, tf.float32)))
+                #debug_print(tf.reduce_sum(tf.cast(logits2 == logits, tf.float32)))
                 return o, logits
 
             
         unsortlogits = UnsortLogits()
         o, logits = unsortlogits(so, slogits)
-        print('o.shape', o.shape)
-        print('logits.shape', logits.shape)
+        debug_print('o.shape', o.shape)
+        debug_print('logits.shape', logits.shape)
 
         if self.n_hashes == 1:
             out = o
-            print('output o since n_hashes == 1')
+            debug_print('output o since n_hashes == 1')
         else:
             o = tf.reshape(o, (batch_size, self.n_hashes, seqlen, o.shape[-1]))
             logits = tf.reshape(logits, (batch_size, self.n_hashes, seqlen, 1))
             probs = tf.exp(logits - tf.math.reduce_logsumexp(logits, axis=1, keepdims=True))
-            print('o.shape (modified): ', o.shape)
-            print('logits.shape (modified): ', logits.shape)
-            print('probs.shape: ', probs.shape)
-            print('calc.shape ', (o*probs).shape)
+            debug_print('o.shape (modified): ', o.shape)
+            debug_print('logits.shape (modified): ', logits.shape)
+            debug_print('probs.shape: ', probs.shape)
+            debug_print('calc.shape ', (o*probs).shape)
             out = tf.reduce_sum(o * probs, axis=1)
 
         assert out.shape == v.shape
         #return out, buckets
-        return out, logits_in_buckets
+        return out#, logits_in_buckets
 
 class TFLSHSelfAttention(tf.keras.Model):
     def __init__(self, emb, heads = 8, bucket_size = 64, n_hashes = 8, causal = False, attn_chunks = None, random_rotations_per_head = False, attend_across_buckets = True, allow_duplicate_attention = True, **kwargs):
