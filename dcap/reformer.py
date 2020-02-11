@@ -109,7 +109,7 @@ class Reformer(tf.keras.Model):
 
       # Run the inputs through the encoder layer to map the symbol
       # representations to continuous representations.
-      encoder_outputs = self.encode(inputs, attention_bias, training)
+      encoder_outputs = self.encode(inputs, training)
       # Generate output sequence if targets is None, or return logits if target
       # sequence is known.
       if targets is None:
@@ -118,12 +118,11 @@ class Reformer(tf.keras.Model):
         logits = self.decode(targets, encoder_outputs, attention_bias, training)
         return logits
 
-  def encode(self, inputs, attention_bias, training):
+  def encode(self, inputs, training):
     """Generate continuous representation for inputs.
 
     Args:
       inputs: int tensor with shape [batch_size, input_length].
-      attention_bias: float tensor with shape [batch_size, 1, 1, input_length].
       training: boolean, whether in training mode or not.
 
     Returns:

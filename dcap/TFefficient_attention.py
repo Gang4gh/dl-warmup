@@ -28,7 +28,7 @@ def debug_print(*args, **kwargs):
   #print(*args, **kwargs)
   pass
 
-class TFLSHAttention(tf.keras.Model):
+class TFLSHAttention():
     def __init__( self,
                   dropout = 0.,
                   bucket_size = 64,
@@ -39,16 +39,14 @@ class TFLSHAttention(tf.keras.Model):
                   rehash_each_round = True,
                   drop_for_hash_rate = 0.0,
                   random_rotations_per_head = False):
-        super(TFLSHAttention, self).__init__()
+#        super(TFLSHAttention, self).__init__()
         if dropout >= 1.0:
             raise ValueError('Dropout rates must be lower than 1.')
 
         self.dropout = Dropout(dropout)
         self.dropout_for_hash = Dropout(dropout)
 
-        assert rehash_each_round or allow_duplicate_attention, (
-            'The setting {allow_duplicate_attention=False, rehash_each_round=False}'
-            ' is not implemented.')
+#        assert rehash_each_round or allow_duplicate_attention, ( 'The setting {allow_duplicate_attention=False, rehash_each_round=False}' ' is not implemented.')
 
         self.causal = causal
         self.n_hashes = n_hashes
@@ -184,7 +182,6 @@ class TFLSHAttention(tf.keras.Model):
         debug_print('bq.shape: ', bq.shape)
         debug_print('bk.shape: ', bk.shape)
 
-
         # Allow each chunk to attend within itself, and also one chunk back. Chunk
         # boundaries might occur in the middle of a sequence of items from the
         # same bucket, so this increases the chances of attending to relevant items.
@@ -247,10 +244,7 @@ class TFLSHAttention(tf.keras.Model):
                 locs1 = buckets * (self.n_hashes * n_bins) + locs1
                 locs2 = buckets * (self.n_hashes * n_bins) + locs2
             locs = tf.transpose(
-                tf.concat([
-                    tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)),
-                    tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)),
-                ], 1),
+                tf.concat([ tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)), tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)), ], 1),
             perm=[0, 2, 1]) 
 
             slocs = batched_index_select(locs, st)
@@ -286,21 +280,38 @@ class TFLSHAttention(tf.keras.Model):
         debug_print('so.shape', so.shape)
         debug_print('slogits.shape', slogits.shape)
 
-        class UnsortLogits(tf.keras.layers.Layer):
-            def __init__(self):
-                super(UnsortLogits, self).__init__()
-            
-            def call(self, so, slogits):
-                so, slogits = tf.stop_gradient(so), tf.stop_gradient(slogits)
-                o = batched_index_select(so, undo_sort)
-                _, logits = sort_key_val(sticker, slogits, dim=-1)
-                #logits2 = batched_index_select(slogits, undo_sort)
-                #debug_print(tf.reduce_sum(tf.cast(logits2 == logits, tf.float32)))
-                return o, logits
+#        class UnsortLogits(tf.keras.layers.Layer):
+#            def __init__(self):
+#                super(UnsortLogits, self).__init__()
+#
+#            def call(self, so, slogits):
+#                so, slogits = tf.stop_gradient(so), tf.stop_gradient(slogits)
+#                o = batched_index_select(so, undo_sort)
+#                _, logits = sort_key_val(sticker, slogits, dim=-1)
+#                #logits2 = batched_index_select(slogits, undo_sort)
+#                #debug_print(tf.reduce_sum(tf.cast(logits2 == logits, tf.float32)))
+#                return o, logits
+#        unsortlogits = UnsortLogits()
+#        o, logits = unsortlogits(so, slogits)
 
-            
-        unsortlogits = UnsortLogits()
-        o, logits = unsortlogits(so, slogits)
+        # TODO: undrestand the mechanism of custom_gradient
+        @tf.custom_gradient
+        def unsort_output(so, slogits):
+          """Custom gradient for unsort_output."""
+          so = tf.stop_gradient(so)
+          slogits = tf.stop_gradient(slogits)
+
+          o = batched_index_select(so, undo_sort)
+          _, logits = sort_key_val(sticker, slogits, dim=-1)
+          #logits2 = batched_index_select(slogits, undo_sort)
+          #debug_print(tf.reduce_sum(tf.cast(logits2 == logits, tf.float32)))
+
+          def unsort_output_grad(*grads):
+            so_grad = batched_index_select(grads[0], undo_sort)
+            _, slogits_grad = sort_key_val(buckets_and_t, grads[1], dim=-1)
+            return so_grad, slogits_grad
+          return (o, logits), unsort_output_grad
+        o, logits = unsort_output(so, slogits)
         debug_print('o.shape', o.shape)
         debug_print('logits.shape', logits.shape)
 
@@ -319,7 +330,7 @@ class TFLSHAttention(tf.keras.Model):
 
         assert out.shape == v.shape
         #return out, buckets
-        return out#, logits_in_buckets
+        return out
 
 class TFLSHSelfAttention(tf.keras.Model):
     def __init__(self, emb, heads = 8, bucket_size = 64, n_hashes = 8, causal = False, attn_chunks = None, random_rotations_per_head = False, attend_across_buckets = True, allow_duplicate_attention = True, **kwargs):

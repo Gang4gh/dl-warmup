@@ -338,6 +338,22 @@ def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=
   batch_size, length, num_heads, num_dim = qk.shape
   qk = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
   value = tf.reshape(tf.transpose(value, perm=[0,2,1,3]), (-1, length, num_dim))
+  #TODO: not efficient to expand padding_mask here
+  padding_mask = tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0)
+  ret = lsh_att.call(qk, value, padding_mask)
+  ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
+  return ret
+
+def calculate_LSH_attention_v2(qk, value, padding_mask=None, dropout=0, num_hashes=2, bucket_size=64):
+  #TODO: rewrite and clean up LSH attention
+  global lsh_att
+  if lsh_att is None:
+    lsh_att = TFefficient_attention.TFLSHAttention(dropout = dropout, n_hashes=num_hashes, bucket_size=bucket_size, causal=False)
+
+  batch_size, length, num_heads, num_dim = qk.shape
+  qk = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
+  value = tf.reshape(tf.transpose(value, perm=[0,2,1,3]), (-1, length, num_dim))
+  #TODO: not efficient to expand padding_mask here
   ret = lsh_att(qk, value, tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0))
   ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
   return ret
