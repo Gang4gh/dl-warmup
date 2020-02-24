@@ -101,6 +101,44 @@ def build_vocab(FLAGS):
 	print('{}: the subwords tokenizer({}) is ready.'.format(time.asctime(), target_vocab_file))
 
 
+def tokenize_dtitle(FLAGS):
+	import tensorflow as tf
+	import tensorflow_datasets as tfds
+	vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+	tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
+	print(f'initilize tokenizer by vocab file [{vocab_file}].')
+
+	assert FLAGS.input_file.endswith('.dtitle')
+	tfrecord_file = FLAGS.input_file[:-7] + '.tfrecord'
+
+	stats = []
+	def _create_int64List_feature(text, limit):
+		arr = tokenizer.encode(text)
+		stats.append(len(arr))
+		if limit:
+			arr = arr[:limit]
+		return tf.train.Feature(int64_list=tf.train.Int64List(value=arr))
+
+	with tf.io.TFRecordWriter(tfrecord_file) as tfwriter:
+		for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema):
+			datapoint = {
+				'url': _create_int64List_feature(row.url, 0),
+				'title': _create_int64List_feature(row.title, 0),
+				'hostname': _create_int64List_feature(row.hostname, 0),
+				'html': _create_int64List_feature(row.html, FLAGS.token_count_limit),
+			}
+			proto = tf.train.Example(features=tf.train.Features(feature=datapoint)).SerializeToString()
+			tfwriter.write(proto)
+
+	stats = sorted(stats[3::4])
+	print(f'average token count = {sum(stats)/len(stats)}')
+	print(f'95th percentile token count = {stats[len(stats) * 75 // 100]}')
+	print(f'95th percentile token count = {stats[len(stats) * 95 // 100]}')
+	print(f'95th percentile token count = {stats[len(stats) * 99 // 100]}')
+
+	print(f'complete tokenization with token limit {FLAGS.token_count_limit}. write {len(stats)} outputs to {tfrecord_file}.')
+
+
 def print_flags(FLAGS):
 	print('FLAGS:')
 	for f in FLAGS.get_key_flags_for_module(__file__):
@@ -127,6 +165,8 @@ def main(_):
 		preprocess_raw_input(FLAGS)
 	elif FLAGS.cmd == 'build-vocab':
 		build_vocab(FLAGS)
+	elif FLAGS.cmd == 'tokenize-dtitle':
+		tokenize_dtitle(FLAGS)
 	elif FLAGS.cmd == 'check-stats':
 		check_stats(FLAGS)
 	elif FLAGS.cmd == 'print-flags':
@@ -134,7 +174,7 @@ def main(_):
 
 
 if __name__ == '__main__':
-	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags'], 'the command to execute')
+	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags', 'tokenize-dtitle'], 'the command to execute')
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
@@ -157,6 +197,8 @@ if __name__ == '__main__':
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')
 	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
+	# params for tokenize-dtitle
+	flags.DEFINE_integer('token_count_limit', 30*1024, 'max allowed token count, 0 means no limit')
 
 	app.run(main)
 
