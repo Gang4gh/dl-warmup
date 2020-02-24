@@ -60,7 +60,7 @@ def preprocess_raw_input(FLAGS):
 		if FLAGS.remove_head:
 			html = re.sub(r'<head.*?</head>', ' ', html, flags=re.I)
 
-		url, title, hostname, html = (re.sub(r'\W+', ' ', s).strip().lower() for s in [url, title, hostname, html])
+		url, title, hostname, html = (re.sub(r'\s+', ' ', s).strip().lower() for s in [url, title, hostname, html])
 		title_tokens = [w for w in re.split(r'\W+', title) if w]
 
 		if FLAGS.check_enoughtokens and len(title_tokens) <= 1:
@@ -191,7 +191,7 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('suppress_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
 	flags.DEFINE_boolean('output_raw_html', False, 'output unmodified html body')
-	flags.DEFINE_integer('doc_length_limit', 2048000, 'max allowed html length')
+	flags.DEFINE_integer('doc_length_limit', 200*1024, 'max allowed html length')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
