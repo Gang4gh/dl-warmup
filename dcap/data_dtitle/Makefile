@@ -44,6 +44,9 @@ $(TAG)-test.dtitle: $(DTITLE_FILES)
 $(TAG)-vocab-%.subwords: $(TAG)-training.dtitle
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=$* $(ARGS)
 
+%-vocab-64gb.subwords: %-training.dtitle
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$*-vocab-64gb --target_vocab_size=8192 --max_corpus_chars=64 $(ARGS)
+
 %.tfrecord: %.dtitle $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=tokenize-dtitle --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=8192 $(ARGS)
 

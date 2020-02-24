@@ -90,7 +90,7 @@ def preprocess_raw_input(FLAGS):
 def build_vocab(FLAGS):
 	import tensorflow_datasets as tfds
 	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
-	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}g.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
+	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
 	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema, 100*1024) for s in [row.url, row.hostname, row.html, row.title])
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
 			target_vocab_size = FLAGS.target_vocab_size,
