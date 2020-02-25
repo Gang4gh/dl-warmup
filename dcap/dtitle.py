@@ -357,6 +357,7 @@ class Seq2SeqTask(object):
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
     return ds
 
+
   def _create_dataset(self, dtitle_file, repeat, batch_size=None, shuffle_size=None):
     batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
@@ -365,6 +366,42 @@ class Seq2SeqTask(object):
     hostname_segment_limit = 64 # max hostname segment length
 
     eos = self.EOS_id
+
+    def _data_tokenization(ln):
+      url, tar, hostname, html = tf.strings.split(ln, '\t')
+
+      url = self.tokenizer.encode(url.numpy())
+      hostname = self.tokenizer.encode(hostname.numpy())
+      html = self.tokenizer.encode(html.numpy())
+      tar = self.tokenizer.encode(tar.numpy())
+
+      return url, hostname, html, tar
+
+    def _data_concatenation(url, hostname, html, tar):
+      if self.flags_obj.input_schema == 'v0':
+        # baseline
+        return html[:max_input_length - 1] + [eos], tar + [eos]
+      elif self.flags_obj.input_schema == 'v1':
+        # concatenated
+        url = [eos+1] + url[:user_segment_limit-2] + [eos]
+        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
+        html = [eos+3] + html[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
+        return url + hostname + html, tar + [eos]
+      elif self.flags_obj.input_schema == 'v2':
+        # concatenated + fixed positins (padding)
+        #url = [eos+1] + url[:user_segment_limit - 2] + [eos] + [0] * max(0, user_segment_limit - 2 - len(url))
+        url = tf.concat([[eos+2], hostname[:hostname_segment_limit - 2], [eos], [0] * max(0, hostname_segment_limit - 2 - len(hostname))], 0)
+        #hostname = [eos+2] + hostname[:hostname_segment_limit - 2] + [eos] + [0] * max(0, hostname_segment_limit - 2 - len(hostname))
+        #html = [eos+3] + html[:max_input_length - user_segment_limit - hostname_segment_limit - 2] + [eos]
+        return url, tar #url + hostname + html, tar + [eos]
+      elif self.flags_obj.input_schema == 'v3':
+        # fixed positins (padding)
+        url = url[:user_segment_limit - 1] + [eos] + [0] * max(0, user_segment_limit - 1 - len(url))
+        hostname = hostname[:hostname_segment_limit - 1] + [eos] + [0] * max(0, hostname_segment_limit - 1 - len(hostname))
+        html = html[:max_input_length - user_segment_limit - hostname_segment_limit - 1] + [eos]
+        return url + hostname + html, tar + [eos]
+      else:
+        raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
 
     def _data_encode(ln):
       url, tar, hostname, html = tf.strings.split(ln, '\t')
@@ -399,7 +436,9 @@ class Seq2SeqTask(object):
         raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
 
     ds = tf.data.TextLineDataset(dtitle_file)
-    ds = ds.map(lambda ln: tf.py_function(_data_encode, (ln,), [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.map(lambda ln: tf.py_function(_data_encode, [ln], [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    #ds = ds.map(lambda ln: tf.py_function(_data_tokenization, [ln], [tf.int32, tf.int32, tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    #ds = ds.map(lambda *X: tf.py_function(_data_concatenation, X, [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds = ds.filter(lambda body, title: tf.size(title) <= max_target_length)
     ds = ds.repeat(repeat)
     if shuffle_size:

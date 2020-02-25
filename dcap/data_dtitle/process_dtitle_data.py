@@ -132,9 +132,9 @@ def tokenize_dtitle(FLAGS):
 
 	stats = sorted(stats[3::4])
 	print(f'average token count = {sum(stats)/len(stats)}')
-	print(f'95th percentile token count = {stats[len(stats) * 75 // 100]}')
+	print(f'75th percentile token count = {stats[len(stats) * 75 // 100]}')
 	print(f'95th percentile token count = {stats[len(stats) * 95 // 100]}')
-	print(f'95th percentile token count = {stats[len(stats) * 99 // 100]}')
+	print(f'99th percentile token count = {stats[len(stats) * 99 // 100]}')
 
 	print(f'complete tokenization with token limit {FLAGS.token_count_limit}. write {len(stats)} outputs to {tfrecord_file}.')
 

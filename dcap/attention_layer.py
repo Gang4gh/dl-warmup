@@ -198,8 +198,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     }
 
 
-  def call(self, query_input, padding_mask, training, cache=None,
-           decode_loop_step=None):
+  def call(self, query_input, padding_mask, training):
     """Apply LSH self attention mechanism from query_input to query_input(itself).
 
     Args:
@@ -207,14 +206,6 @@ class LshSelfAttention(tf.keras.layers.Layer):
       padding_mask: A tensor with shape [batch_size, length_source], type=tf.bool
         the 'Ture' value means invalid position to be marked out.
       training: A bool, whether in training mode or not.
-      cache: (Used during prediction) A dictionary with tensors containing
-        results of previous attentions. The dictionary must have the items:
-            {"k": tensor with shape [batch_size, i, heads, dim_per_head],
-             "v": tensor with shape [batch_size, i, heads, dim_per_head]}
-        where i is the current decoded length for non-padded decode, or max
-        sequence length for padded decode.
-      decode_loop_step: An integer, step number of the decoding loop. Used only
-        for autoregressive inference on TPU.
 
     Returns:
       Attention layer output with shape [batch_size, length_query, hidden_size]
@@ -225,27 +216,6 @@ class LshSelfAttention(tf.keras.layers.Layer):
     query = self.sharedQK_dense_layer(query_input)
     key = tf.math.l2_normalize(query, -1)
     value = self.value_dense_layer(query_input)
-
-    if cache is not None:
-      # Combine cached keys and values with new keys and values.
-      if decode_loop_step is not None:
-        cache_k_shape = cache["k"].shape.as_list()
-        indices = tf.reshape(
-            tf.one_hot(decode_loop_step, cache_k_shape[1], dtype=key.dtype),
-            [1, cache_k_shape[1], 1, 1])
-        key = cache["k"] + key * indices
-        cache_v_shape = cache["v"].shape.as_list()
-        indices = tf.reshape(
-            tf.one_hot(decode_loop_step, cache_v_shape[1], dtype=value.dtype),
-            [1, cache_v_shape[1], 1, 1])
-        value = cache["v"] + value * indices
-      else:
-        key = tf.concat([tf.cast(cache["k"], key.dtype), key], axis=1)
-        value = tf.concat([tf.cast(cache["v"], value.dtype), value], axis=1)
-
-      # Update cache
-      cache["k"] = key
-      cache["v"] = value
 
     ## Scale query to prevent the dot product between query and key from growing
     ## too large.
@@ -341,20 +311,6 @@ def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=
   #TODO: not efficient to expand padding_mask here
   padding_mask = tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0)
   ret = lsh_att.call(qk, value, padding_mask)
-  ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
-  return ret
-
-def calculate_LSH_attention_v2(qk, value, padding_mask=None, dropout=0, num_hashes=2, bucket_size=64):
-  #TODO: rewrite and clean up LSH attention
-  global lsh_att
-  if lsh_att is None:
-    lsh_att = TFefficient_attention.TFLSHAttention(dropout = dropout, n_hashes=num_hashes, bucket_size=bucket_size, causal=False)
-
-  batch_size, length, num_heads, num_dim = qk.shape
-  qk = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
-  value = tf.reshape(tf.transpose(value, perm=[0,2,1,3]), (-1, length, num_dim))
-  #TODO: not efficient to expand padding_mask here
-  ret = lsh_att(qk, value, tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0))
   ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
   return ret
 
