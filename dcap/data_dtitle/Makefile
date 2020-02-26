@@ -50,7 +50,7 @@ $(TAG)-vocab-%.subwords: $(TAG)-training.dtitle
 %.tfrecord: %.dtitle $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=tokenize-dtitle --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=8192 $(ARGS)
 
-$(TAG)-meta.log: $(TAG)-training.dtitle $(TAG)-test.dtitle $(TAG)-vocab-8192.subwords $(TAG)-training.tfrecord $(TAG)-test.tfrecord
+$(TAG)-meta.log: $(TAG)-training.dtitle $(TAG)-test.dtitle $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
 	@echo ---------- source code  ---------- >> $@
 	cat process_dtitle_data.py >> $@

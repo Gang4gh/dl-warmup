@@ -47,12 +47,13 @@ def preprocess_raw_input(FLAGS):
 		#hostname = re.sub(r'#N#|#R#|#TAB#', ' ', hostname)
 		#html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
 
-		m = re.match(f'.{{,{FLAGS.doc_length_limit}}}(?=[^\\w&</])', html)
-		if m:
-			html = m.group(0)
-		else:
-			print('invalid input, no-match, {}'.format(url), file=sys.stderr)
-			continue
+		if len(html) > FLAGS.doc_length_limit:
+			m = re.match(f'.{{,{FLAGS.doc_length_limit}}}(?=[^\\w&</])', html)
+			if m:
+				html = m.group(0)
+			else:
+				print('invalid input, no-match, {}'.format(url), file=sys.stderr)
+				continue
 
 		if FLAGS.remove_title:
 			html = re.sub(r'<title.*?</title>', ' ', html, flags=re.I)
