@@ -307,7 +307,7 @@ class TFLSHAttention():
           #debug_print(tf.reduce_sum(tf.cast(logits2 == logits, tf.float32)))
 
           def unsort_output_grad(*grads):
-            so_grad = batched_index_select(grads[0], undo_sort)
+            so_grad = batched_index_select(grads[0], sticker)
             _, slogits_grad = sort_key_val(buckets_and_t, grads[1], dim=-1)
             return so_grad, slogits_grad
           return (o, logits), unsort_output_grad
