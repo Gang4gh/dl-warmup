@@ -110,7 +110,9 @@ def tokenize_dtitle(FLAGS):
 	print(f'initilize tokenizer by vocab file [{vocab_file}].')
 
 	assert FLAGS.input_file.endswith('.dtitle')
-	tfrecord_file = FLAGS.input_file[:-7] + '.tfrecord'
+	tfrecord_file = FLAGS.input_file[:-7] + '.tokenized.tfrecord'
+	if FLAGS.compression_type == 'GZIP':
+		tfrecord_file += '.gz'
 
 	stats = []
 	def _create_int64List_feature(text, limit):
@@ -120,7 +122,7 @@ def tokenize_dtitle(FLAGS):
 			arr = arr[:limit]
 		return tf.train.Feature(int64_list=tf.train.Int64List(value=arr))
 
-	with tf.io.TFRecordWriter(tfrecord_file) as tfwriter:
+	with tf.io.TFRecordWriter(tfrecord_file, FLAGS.compression_type) as tfwriter:
 		for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema):
 			datapoint = {
 				'url': _create_int64List_feature(row.url, 0),
@@ -200,6 +202,7 @@ if __name__ == '__main__':
 	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
 	# params for tokenize-dtitle
 	flags.DEFINE_integer('token_count_limit', 30*1024, 'max allowed token count, 0 means no limit')
+	flags.DEFINE_enum('compression_type', 'GZIP', ['', 'GZIP'], 'compression type used for tfrecord files')
 
 	app.run(main)
 
