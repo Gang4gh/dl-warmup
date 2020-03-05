@@ -31,15 +31,12 @@ endif
 %.raw.gz: %.raw
 	gzip $<
 
-%.dtitle.gz: %.dtitle
-	gzip $<
-
 %.$(TAG).dtitle: %.raw.gz
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) \
 		| shuf --random-source=$(DTITLE_RAW) > $@
 
-$(TAG)-training.dtitle: $(DTITLE_FILES)
-	tail -q -n +101 $^ > $@
+$(TAG)-training.dtitle.gz: $(DTITLE_FILES)
+	tail -q -n +101 $^ | gzip > $@
 
 $(TAG)-test.dtitle: $(DTITLE_FILES)
 	head -q -n 100 $^ > $@
