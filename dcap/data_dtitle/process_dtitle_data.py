@@ -110,7 +110,7 @@ def tokenize_dtitle(FLAGS):
 	print(f'initilize tokenizer by vocab file [{vocab_file}].')
 
 	assert FLAGS.input_file.endswith('.dtitle')
-	tfrecord_file = FLAGS.input_file[:-7] + '.tokenized.tfrecord'
+	tfrecord_file = FLAGS.input_file[:-7] + '.tokenized-tfrecord'
 	if FLAGS.compression_type == 'GZIP':
 		tfrecord_file += '.gz'
 

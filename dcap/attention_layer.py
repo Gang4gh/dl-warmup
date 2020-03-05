@@ -153,7 +153,7 @@ class SelfAttention(Attention):
 class LshSelfAttention(tf.keras.layers.Layer):
   """Multi-headed LSH attention layer."""
 
-  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, bucket_size):
+  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size):
     """Initialize LshSelfAttention.
 
     Args:
@@ -171,6 +171,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     self.num_heads = num_heads
     self.attention_dropout = 0#attention_dropout
     self.num_hashes = num_hashes
+    self.test_num_hashes = test_num_hashes
     self.bucket_size = bucket_size
 
   def build(self, input_shape):
@@ -194,6 +195,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
         "num_heads": self.num_heads,
         "attention_dropout": self.attention_dropout,
         "num_hashes": self.num_hashes,
+        "test_num_hashes": self.test_num_hashes,
         "bucket_size": self.bucket_size,
     }
 
@@ -225,7 +227,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
 
     #attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
 
-    attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
+    attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
 
     # Run the outputs through another linear projection layer. Recombining heads
     # is automatically done --> [batch_size, length, hidden_size]

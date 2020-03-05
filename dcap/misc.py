@@ -222,8 +222,8 @@ def define_transformer_flags():
       help=flags_core.help_wrap('loss_fn: corss_entropy, smoothed_corss_entropy'))
 
   flags.DEFINE_string(
-      name='input_schema', default='v2',
-      help=flags_core.help_wrap('input_schema: {v0, v1, v2, v3}. v0: html only; '
+      name='input_concat_schema', default='v2',
+      help=flags_core.help_wrap('input_concat_schema: [v0, v1, v2, v3]. v0: html only; '
           'v1: concatenated (url, hostname, html); '
           'v2: concatenated and padded (url, hostname, html); '
           'v3: padded (url, hostname, html)'))
@@ -262,12 +262,21 @@ def define_transformer_flags():
   flags.DEFINE_integer(
       name='num_hashes',
       default=2,
-      help=flags_core.help_wrap('number of hashes used in LSH attention'))
+      help=flags_core.help_wrap('number of hashes used in LSH attention for training'))
+
+  flags.DEFINE_integer(
+      name='test_num_hashes',
+      default=8,
+      help=flags_core.help_wrap('number of hashes used in LSH attention for test'))
 
   flags.DEFINE_integer(
       name='bucket_size',
       default=64,
       help=flags_core.help_wrap('bucket size for LSH attention'))
+
+  flags.DEFINE_string(
+      name='val_data_dir', default=None,
+      help=flags_core.help_wrap('validation data file used in training. If None, then try to find matching test file based on data_dir'))
 
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',

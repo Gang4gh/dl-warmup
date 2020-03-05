@@ -47,6 +47,7 @@ class Seq2SeqTask(object):
 
     params["num_gpus"] = num_gpus
     params["data_dir"] = flags_obj.data_dir
+    params["val_data_dir"] = flags_obj.val_data_dir
     params["model_dir"] = flags_obj.model_dir
     params["static_batch"] = flags_obj.static_batch
     params["max_input_length"] = flags_obj.max_input_length
@@ -69,8 +70,6 @@ class Seq2SeqTask(object):
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]
     params["vocab_size"] = self.tokenizer.vocab_size
     logging.info('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
-
-    logging.info('use input schema: {}'.format(self.flags_obj.input_schema))
 
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
@@ -113,7 +112,7 @@ class Seq2SeqTask(object):
         enable_xla=flags_obj.enable_xla)
 
     train_ds = self._create_dataset(params['data_dir'], repeat=None)
-    test_ds = self._create_dataset(params['data_dir'].replace('training', 'test'), repeat=1)
+    test_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle', params['data_dir']), repeat=1)
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = self.create_model(is_train=True)
@@ -138,7 +137,7 @@ class Seq2SeqTask(object):
       logging.info("Reach the target train_steps({}) and exit.".format(flags_obj.train_steps))
       return None
 
-    logging.info("Start train iteration at global step:{}".format(current_step))
+    logging.info(f'Start train iteration at global step: {current_step}')
     model.summary()
     #print(model.variables)
     history = model.fit(
@@ -338,12 +337,7 @@ class Seq2SeqTask(object):
     else:
       return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
-  def _create_random_dataset(self, dtitle_file=None, repeat=None, batch_size=None):
-    vocab_size = self.params["vocab_size"]
-    batch_size = batch_size or self.params['batch_size']
-    max_input_length = self.params['max_input_length']
-    max_target_length = self.params['max_target_length']
-
+  def _create_random_dataset(self, vocab_size, batch_size, max_input_length, max_target_length):
     def _random_example_generator():
       while True:
         X = np.random.randint(1, vocab_size, (batch_size, max_input_length))
@@ -353,99 +347,103 @@ class Seq2SeqTask(object):
     ds = tf.data.Dataset.from_generator(_random_example_generator,
                                         output_types=(tf.int32, tf.int32),
                                         output_shapes=((batch_size, max_input_length), (batch_size, max_target_length)))
-    ds = ds.map(lambda x, y: ((x, y), y))
-    ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
     return ds
 
+  def _create_dtitle_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+    def _dtitle_encode(ln):
+      url, tar, hostname, html = tf.strings.split(ln, '\t')
 
-  def _create_dataset(self, dtitle_file, repeat, batch_size=None, shuffle_size=None):
+      url = self.tokenizer.encode(url.numpy())
+      hostname = self.tokenizer.encode(hostname.numpy())
+      html = self.tokenizer.encode(html.numpy())
+      tar = self.tokenizer.encode(tar.numpy())
+
+      if self.flags_obj.input_concat_schema == 'v0':
+        # baseline
+        return html[:max_input_length - 1] + [eos], tar + [eos]
+      elif self.flags_obj.input_concat_schema == 'v1':
+        # concatenated
+        url = [eos+1] + url[:url_segment_limit-2] + [eos]
+        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
+        html = [eos+3] + html[:html_segment_limit-2] + [eos]
+        return url + hostname + html, tar + [eos]
+      elif self.flags_obj.input_concat_schema == 'v2':
+        # concatenated + fixed positins (padding)
+        url = [eos+1] + url[:url_segment_limit - 2] + [eos] + [0] * max(0, url_segment_limit - 2 - len(url))
+        hostname = [eos+2] + hostname[:hostname_segment_limit - 2] + [eos] + [0] * max(0, hostname_segment_limit - 2 - len(hostname))
+        html = [eos+3] + html[:html_segment_limit-2] + [eos]
+        return url + hostname + html, tar + [eos]
+      elif self.flags_obj.input_concat_schema == 'v3':
+        # fixed positins (padding)
+        url = url[:url_segment_limit - 1] + [eos] + [0] * max(0, url_segment_limit - 1 - len(url))
+        hostname = hostname[:hostname_segment_limit - 1] + [eos] + [0] * max(0, hostname_segment_limit - 1 - len(hostname))
+        html = html[:html_segment_limit-1] + [eos]
+        return url + hostname + html, tar + [eos]
+      else:
+        raise ValueError('invalid input_concat_schema: ' + self.flags_obj.input_concat_schema)
+
+    ds = tf.data.TextLineDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
+    ds = ds.map(lambda ln: tf.py_function(_dtitle_encode, [ln], [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.filter(lambda _, target: tf.size(target) <= max_target_length)
+    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
+    return ds
+
+  def _create_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length):
+    def _convert_proto_to_tensor(proto):
+      X = tf.reshape(tf.io.parse_tensor(proto, tf.int32), shape=[batch_size, -1])
+      return X[:, :max_input_length], X[:, max_input_length:]
+
+    ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
+    ds = ds.map(_convert_proto_to_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    return ds
+
+  def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+    ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
+    description = {
+      'url': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+      'title': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+      'hostname': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+      'html': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+      }
+    def _tf_parse_and_truncate(proto):
+      ex = tf.io.parse_single_example(proto, description)
+      return [ tf.concat([[eos+1], tf.cast(ex['url'][:url_segment_limit-2], tf.int32), [eos]], axis=0),
+             tf.concat([[eos+2], tf.cast(ex['hostname'][:hostname_segment_limit-2], tf.int32), [eos]], axis=0),
+             tf.concat([[eos+3], tf.cast(ex['html'][:html_segment_limit-2], tf.int32), [eos]], axis=0),
+             tf.concat([tf.cast(ex['title'], tf.int32), [eos]], axis=0) ]
+    ds = ds.map(_tf_parse_and_truncate, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.filter(lambda _a, _b, _c, target: tf.size(target) <= max_target_length)
+    ds = ds.padded_batch(batch_size, padded_shapes=([url_segment_limit], [hostname_segment_limit], [html_segment_limit], [max_target_length]), drop_remainder=True)
+    ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
+    return ds
+
+  def _create_dataset(self, data_file, repeat, batch_size=None, shuffle_size=None):
     batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
-    user_segment_limit = 64 # max url segment length
-    hostname_segment_limit = 64 # max hostname segment length
+    url_segment_limit = 64 # max url length
+    hostname_segment_limit = 64 # max hostname length
+    html_segment_limit = max_input_length - url_segment_limit - hostname_segment_limit # max html length
 
-    eos = self.EOS_id
+    if data_file == '__random_input__':
+      logging.info(f'open one random dataset.')
+      ds = self._create_random_dataset(self.params["vocab_size"], batch_size, max_input_length, max_target_length)
+    elif data_file.endswith('.dtitle') or data_file.endswith('.dtitle.gz'):
+      logging.info(f'open one dtitle dataset from "{data_file}".')
+      ds = self._create_dtitle_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id)
+    elif data_file.endswith('.tfrecord') or data_file.endswith('.tfrecord.gz'):
+      logging.info(f'open one tfrecord dataset from "{data_file}".')
+      ds = self._create_tfrecord_dataset(data_file, batch_size, max_input_length, max_target_length)
+    elif data_file.endswith('.tokenized-tfrecord') or data_file.endswith('tokenized-tfrecord.gz'):
+      logging.info(f'open one tokenized-tfrecord dataset from "{data_file}".')
+      ds = self._create_tokenized_tfrecord_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id)
+    else:
+      raise ValueError(f'invalid input file format: {data_file}')
 
-    def _data_tokenization(ln):
-      url, tar, hostname, html = tf.strings.split(ln, '\t')
-
-      url = self.tokenizer.encode(url.numpy())
-      hostname = self.tokenizer.encode(hostname.numpy())
-      html = self.tokenizer.encode(html.numpy())
-      tar = self.tokenizer.encode(tar.numpy())
-
-      return url, hostname, html, tar
-
-    def _data_concatenation(url, hostname, html, tar):
-      if self.flags_obj.input_schema == 'v0':
-        # baseline
-        return html[:max_input_length - 1] + [eos], tar + [eos]
-      elif self.flags_obj.input_schema == 'v1':
-        # concatenated
-        url = [eos+1] + url[:user_segment_limit-2] + [eos]
-        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
-        html = [eos+3] + html[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
-        return url + hostname + html, tar + [eos]
-      elif self.flags_obj.input_schema == 'v2':
-        # concatenated + fixed positins (padding)
-        #url = [eos+1] + url[:user_segment_limit - 2] + [eos] + [0] * max(0, user_segment_limit - 2 - len(url))
-        url = tf.concat([[eos+2], hostname[:hostname_segment_limit - 2], [eos], [0] * max(0, hostname_segment_limit - 2 - len(hostname))], 0)
-        #hostname = [eos+2] + hostname[:hostname_segment_limit - 2] + [eos] + [0] * max(0, hostname_segment_limit - 2 - len(hostname))
-        #html = [eos+3] + html[:max_input_length - user_segment_limit - hostname_segment_limit - 2] + [eos]
-        return url, tar #url + hostname + html, tar + [eos]
-      elif self.flags_obj.input_schema == 'v3':
-        # fixed positins (padding)
-        url = url[:user_segment_limit - 1] + [eos] + [0] * max(0, user_segment_limit - 1 - len(url))
-        hostname = hostname[:hostname_segment_limit - 1] + [eos] + [0] * max(0, hostname_segment_limit - 1 - len(hostname))
-        html = html[:max_input_length - user_segment_limit - hostname_segment_limit - 1] + [eos]
-        return url + hostname + html, tar + [eos]
-      else:
-        raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
-
-    def _data_encode(ln):
-      url, tar, hostname, html = tf.strings.split(ln, '\t')
-
-      url = self.tokenizer.encode(url.numpy())
-      hostname = self.tokenizer.encode(hostname.numpy())
-      html = self.tokenizer.encode(html.numpy())
-      tar = self.tokenizer.encode(tar.numpy())
-
-      if self.flags_obj.input_schema == 'v0':
-        # baseline
-        return html[:max_input_length - 1] + [eos], tar + [eos]
-      elif self.flags_obj.input_schema == 'v1':
-        # concatenated
-        url = [eos+1] + url[:user_segment_limit-2] + [eos]
-        hostname = [eos+2] + hostname[:hostname_segment_limit-2] + [eos]
-        html = [eos+3] + html[:max_input_length-user_segment_limit-hostname_segment_limit-2] + [eos]
-        return url + hostname + html, tar + [eos]
-      elif self.flags_obj.input_schema == 'v2':
-        # concatenated + fixed positins (padding)
-        url = [eos+1] + url[:user_segment_limit - 2] + [eos] + [0] * max(0, user_segment_limit - 2 - len(url))
-        hostname = [eos+2] + hostname[:hostname_segment_limit - 2] + [eos] + [0] * max(0, hostname_segment_limit - 2 - len(hostname))
-        html = [eos+3] + html[:max_input_length - user_segment_limit - hostname_segment_limit - 2] + [eos]
-        return url + hostname + html, tar + [eos]
-      elif self.flags_obj.input_schema == 'v3':
-        # fixed positins (padding)
-        url = url[:user_segment_limit - 1] + [eos] + [0] * max(0, user_segment_limit - 1 - len(url))
-        hostname = hostname[:hostname_segment_limit - 1] + [eos] + [0] * max(0, hostname_segment_limit - 1 - len(hostname))
-        html = html[:max_input_length - user_segment_limit - hostname_segment_limit - 1] + [eos]
-        return url + hostname + html, tar + [eos]
-      else:
-        raise ValueError('invalid input_schema:' + self.flags_obj.input_schema)
-
-    ds = tf.data.TextLineDataset(dtitle_file)
-    ds = ds.map(lambda ln: tf.py_function(_data_encode, [ln], [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    #ds = ds.map(lambda ln: tf.py_function(_data_tokenization, [ln], [tf.int32, tf.int32, tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    #ds = ds.map(lambda *X: tf.py_function(_data_concatenation, X, [tf.int32, tf.int32]), num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds = ds.filter(lambda body, title: tf.size(title) <= max_target_length)
-    ds = ds.repeat(repeat)
+    if repeat != 1:
+      ds = ds.repeat(repeat)
     if shuffle_size:
-      ds = ds.shuffle(shuffle_size)
-    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=False)
-    if batch_size and batch_size == 1:
-      ds = ds.unbatch()
+      ds = ds.shuffle(shuffle_size // batch_size)
     ds = ds.map(lambda x, y: ((x, y), y))
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
 
@@ -458,26 +456,66 @@ class Seq2SeqTask(object):
     sys.exit()
 
 
-def test(task):
-  ds = task._create_dataset(task.params['data_dir'], repeat=1)
-  N = 1
-  logging.info('Begin read dataset, batch_count=%d, batch_size=%d', N, task.params["batch_size"])
-  np.set_printoptions(threshold=2048)
-  for batch, ((inp, tar), _) in enumerate(ds):
-    if batch == N: break
-    for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
-      htmlbody = task._trim_and_decode(inp1.numpy(), 3)
-      title = task._trim_and_decode(tar1.numpy())
-      print('{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch*4+index, inp1, tar1, htmlbody, title))
-      break
-  logging.info('End of read')
+  def convert_dtitle_to_tfrecord(self, max_batch_count=None, logging_step=1, compression_type='GZIP'):
+    data_file = self.params['data_dir']
+    if data_file.endswith('.dtitle'):
+      tfrecord_file = data_file[:-7] + '.tfrecord'
+    elif data_file.endswith('.dtitle.gz'):
+      tfrecord_file = data_file[:-10] + '.tfrecord'
+    else:
+      raise ValueError(f'invalid data_file postfix : {data_file}')
+    if compression_type == 'GZIP':
+      tfrecord_file += '.gz'
 
+    ds = self._create_dataset(data_file, repeat=1)
+    with tf.io.TFRecordWriter(tfrecord_file, compression_type) as tfwriter:
+      for batch, ((inp, tar), _) in enumerate(ds):
+        if max_batch_count and batch == max_batch_count: break
+        if (batch + 1) % (logging_step * 1024) == 0:
+          logging.info(f'convert {(batch+1)//logging_step//1024}K batches')
+        proto = tf.io.serialize_tensor(tf.concat([inp, tar], axis=-1)).numpy()
+        tfwriter.write(proto)
+    logging.info(f'convert {batch} batches in total.')
+
+def test_read_and_dump_datasets(task):
+  def _dump_to_file(filename, data_file, batch_count, decode_fn, repeat=1):
+    logging.info(f'read data_file {data_file}, batch_count={batch_count}')
+    ds = task._create_dataset(data_file, repeat=1)
+    for r in range(repeat):
+      start_time = time.time()
+      out_filename = filename + f'-r{r}.log'
+      logging.info(f'round {r}, write output to {out_filename}')
+      with open(out_filename, 'w') as ow:
+        for batch, ((inp, tar), _) in enumerate(ds):
+          if batch == batch_count: break
+          for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
+            htmlbody = decode_fn(inp1.numpy(), 3, concatenate_segments=False)
+            title = decode_fn(tar1.numpy(), concatenate_segments=False)
+            ow.write('{}.{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch, index, inp1, tar1, htmlbody, title))
+      logging.info(f'end of round {r}, --- {int(time.time() - start_time)} seconds ---')
+
+  np.set_printoptions(threshold=2048)
+  repeat_times = 1
+  for idx, bc in enumerate([100, 1000, 10000]):
+    #_dump_to_file(f'out-random-{idx}.batch{bc}', '__random_input__', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    #_dump_to_file(f'out-dtitle-{idx}.batch{bc}', task.params['data_dir'], batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    _dump_to_file(f'out-dtitle-gz-{idx}.batch{bc}', task.params['data_dir'] + '.gz', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    #_dump_to_file(f'out-tfrecord-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    _dump_to_file(f'out-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    #_dump_to_file(f'out-tokenized-tfrecord-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    _dump_to_file(f'out-tokenized-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+
+
+def test(task):
+  test_read_and_dump_datasets(task)
 
 def main(_):
   flags_obj = flags.FLAGS
   task = Seq2SeqTask(flags_obj)
   if flags_obj.mode == "train":
     task.train()
+  elif flags_obj.mode == "train-prep":
+    task.convert_dtitle_to_tfrecord()
   elif flags_obj.mode == "predict":
     task.predict()
   elif flags_obj.mode == "eval":
@@ -485,7 +523,7 @@ def main(_):
   elif flags_obj.mode == 'test':
     test(task)
   else:
-    raise ValueError("Invalid mode {}".format(flags_obj.mode))
+    raise ValueError(f'invalid mode : {flags_obj.mode}')
 
 
 if __name__ == "__main__":
