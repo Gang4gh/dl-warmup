@@ -109,8 +109,8 @@ def tokenize_dtitle(FLAGS):
 	tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
 	print(f'initilize tokenizer by vocab file [{vocab_file}].')
 
-	assert FLAGS.input_file.endswith('.dtitle')
-	tfrecord_file = FLAGS.input_file[:-7] + '.tokenized-tfrecord'
+	assert FLAGS.input_file.endswith('.dtitle.gz')
+	tfrecord_file = FLAGS.input_file[:-10] + '.tokenized-tfrecord'
 	if FLAGS.compression_type == 'GZIP':
 		tfrecord_file += '.gz'
 
