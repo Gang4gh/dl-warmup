@@ -390,11 +390,12 @@ class Seq2SeqTask(object):
 
   def _create_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length):
     def _convert_proto_to_tensor(proto):
-      X = tf.reshape(tf.io.parse_tensor(proto, tf.int32), shape=[batch_size, -1])
+      X = tf.reshape(tf.io.parse_tensor(proto, tf.int32), shape=[-1, max_input_length + max_target_length])
       return X[:, :max_input_length], X[:, max_input_length:]
 
     ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
     ds = ds.map(_convert_proto_to_tensor, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.unbatch().batch(batch_size, drop_remainder=True)
     return ds
 
   def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):

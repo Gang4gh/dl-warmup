@@ -266,7 +266,7 @@ def define_transformer_flags():
 
   flags.DEFINE_integer(
       name='test_num_hashes',
-      default=8,
+      default=None,
       help=flags_core.help_wrap('number of hashes used in LSH attention for test'))
 
   flags.DEFINE_integer(
