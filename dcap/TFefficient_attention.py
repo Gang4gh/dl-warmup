@@ -106,7 +106,10 @@ class TFLSHAttention():
 
         return buckets
 
-    def call(self, qk, v, padding_mask):
+    def call(self, qk, v, padding_mask, num_hashes=None):
+        if num_hashes:
+          self.n_hashes = num_hashes
+
         batch_size, seqlen, num_dims = qk.shape
         device = qk.device
         debug_print('qk.shape/v.shape: ', qk.shape, v.shape)

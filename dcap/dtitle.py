@@ -64,6 +64,7 @@ class Seq2SeqTask(object):
     params["dtype"] = flags_core.get_tf_dtype(flags_obj)
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
     params["num_hashes"] = flags_obj.num_hashes
+    params["test_num_hashes"] = flags_obj.test_num_hashes
     params["bucket_size"] = flags_obj.bucket_size
 
     self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
@@ -98,6 +99,7 @@ class Seq2SeqTask(object):
   def create_model(self, is_train):
     logging.info('use_reformer = {}'.format(self.flags_obj.use_reformer))
     if self.flags_obj.use_reformer:
+      logging.info(f'num_hashes, test_num_hashes = {self.params["num_hashes"]}, {self.params["test_num_hashes"]}')
       return reformer.create_model(self.params, is_train=is_train)
     else:
       return transformer.create_model(self.params, is_train=is_train)
@@ -525,7 +527,7 @@ def main(_):
         print(f'read {idx//1024}K batches')
       pass
   elif flags_obj.mode == "train-prep":
-    # cache contains 2+ uncompressed files, which might not fit some scenarios
+    # build-in dataset.cache generates 2+ uncompressed files, which might not fit in some scenarios
     task.convert_dtitle_to_tfrecord()
   elif flags_obj.mode == "predict":
     task.predict()

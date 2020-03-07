@@ -288,16 +288,6 @@ def calculate_full_attention_v2(query, key, value, padding_mask=None, apply_caus
   return attentions
 
 
-def get_hash():
-  rotated_vecs = tf.einsum('blhd,bdHi->bhlHi', vecs, random_rotations)
-  rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
-  buckets = tf.math.argmax(rotated_vecs, axis=-1, output_type=tf.int32)
-  #buckets = tf.reshape(buckets, (batch_size, length, num_heads, -1,))
-
-  #output shape: [batch_size, num_heads, length, num_hashes]
-  return buckets
-
-
 import TFefficient_attention
 from TFutils import sort_key_val, batched_index_select, make_unit_length, chunked_sum, process_inputs_chunk
 
@@ -312,7 +302,7 @@ def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=
   value = tf.reshape(tf.transpose(value, perm=[0,2,1,3]), (-1, length, num_dim))
   #TODO: not efficient to expand padding_mask here
   padding_mask = tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0)
-  ret = lsh_att.call(qk, value, padding_mask)
+  ret = lsh_att.call(qk, value, padding_mask, num_hashes=num_hashes)
   ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
   return ret
 
