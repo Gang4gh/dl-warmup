@@ -112,7 +112,8 @@ class Seq2SeqTask(object):
         enable_xla=flags_obj.enable_xla)
 
     train_ds = self._create_dataset(params['data_dir'], repeat=None)
-    test_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle', params['data_dir']), repeat=1)
+    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle', params['data_dir']), repeat=1)
+    val_ds = val_ds.take(flags_obj.validation_example_count // params["batch_size"]).cache()
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = self.create_model(is_train=True)
@@ -146,8 +147,8 @@ class Seq2SeqTask(object):
         epochs=(flags_obj.train_steps-1) // flags_obj.steps_between_evals + 1,
         steps_per_epoch=min(flags_obj.steps_between_evals, flags_obj.train_steps - current_step),
         callbacks=self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr),
-        validation_data=test_ds,
-        validation_steps=flags_obj.validation_example_count // params["batch_size"],
+        validation_data=val_ds,
+        validation_steps=flags_obj.validation_example_count // params["batch_size"], # redundant but suppress one warining
         verbose=1)
     logging.info("Train history: {}".format(history.history))
     current_step = model.optimizer.iterations.numpy() - 1
@@ -418,7 +419,7 @@ class Seq2SeqTask(object):
     ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
     return ds
 
-  def _create_dataset(self, data_file, repeat, batch_size=None, shuffle_size=None):
+  def _create_dataset(self, data_file, repeat, batch_size=None, shuffle_size=None, create_cache=False):
     batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
@@ -441,6 +442,9 @@ class Seq2SeqTask(object):
     else:
       raise ValueError(f'invalid input file format: {data_file}')
 
+    cache_desc = f'{data_file}.{batch_size}_{max_input_length}_{max_target_length}_{url_segment_limit}_{hostname_segment_limit}.cache'
+    if create_cache or os.path.isfile(f'{cache_desc}.index'):
+      ds = ds.cache(cache_desc)
     if repeat != 1:
       ds = ds.repeat(repeat)
     if shuffle_size:
@@ -455,7 +459,6 @@ class Seq2SeqTask(object):
     for var in tf.train.list_variables(ckpt_path):
       print(var)
     sys.exit()
-
 
   def convert_dtitle_to_tfrecord(self, max_batch_count=None, logging_step=1, compression_type='GZIP'):
     data_file = self.params['data_dir']
@@ -515,7 +518,14 @@ def main(_):
   task = Seq2SeqTask(flags_obj)
   if flags_obj.mode == "train":
     task.train()
+  elif flags_obj.mode == "train-cache":
+    ds = task._create_dataset(task.params['data_dir'], repeat=1, create_cache=True)
+    for idx, ((inp, tar), _) in enumerate(ds):
+      if idx % 1024 == 0:
+        print(f'read {idx//1024}K batches')
+      pass
   elif flags_obj.mode == "train-prep":
+    # cache contains 2+ uncompressed files, which might not fit some scenarios
     task.convert_dtitle_to_tfrecord()
   elif flags_obj.mode == "predict":
     task.predict()

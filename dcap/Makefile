@@ -11,7 +11,7 @@ DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
 DTAG ?= 1217-noTH2s-r0.1
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
-DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.gz $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
+DATA_FILES = $(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-test.dtitle $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
 CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py $(DATA_DIR)/Makefile $(DATA_DIR)/*.py))
 
 all: check-params
@@ -49,15 +49,7 @@ train-debug: $(DATA_FILES)
 	TF_FORCE_GPU_ALLOW_GROWTH=true $(MAKE) train
 
 train: clean-training-env $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=1024 --use_reformer $(ARGS)
-
-training-perf:
-	$(MAKE) train ARGS='--train_steps=200 --nouse_reformer --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.gz'
-	$(MAKE) train ARGS='--train_steps=200 --nouse_reformer --data_dir=$(DATA_DIR)/$(DTAG)-training.tfrecord.gz'
-	$(MAKE) train ARGS='--train_steps=200 --nouse_reformer --data_dir=$(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz'
-	$(MAKE) train ARGS='--train_steps=200 --nouse_reformer --data_dir=__random_input__'
-	$(MAKE) train ARGS='--train_steps=200 --nouse_reformer --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle'
-	$(MAKE) train ARGS='--train_steps=200 --nouse_reformer --data_dir=$(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord'
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=1024 --use_reformer $(ARGS)
 
 TRAINING_ROOT = running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
 

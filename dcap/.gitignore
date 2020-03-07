@@ -6,6 +6,7 @@ data_dtitle/split_raw
 *.subwords
 *.tfrecord
 *.tokenized-tfrecord
+*.cache.*
 *meta.log
 
 # model dir
