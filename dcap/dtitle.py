@@ -129,8 +129,8 @@ class Seq2SeqTask(object):
     ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=12)
     if ckpt_mgr.latest_checkpoint:
       #self._print_variables_and_exit(flags_obj.model_dir)
-      model.fit((np.ones((1, params['max_input_length']), np.int32), np.ones((1, params['max_target_length']), np.int32)),
-          np.ones((1, params['max_target_length']), np.int32),
+      model.fit([tf.ones([params["batch_size"], params['max_input_length']], tf.int32), tf.ones([params["batch_size"], params['max_target_length']], tf.int32)],
+          tf.ones([params["batch_size"], params['max_target_length']], tf.int32),
           verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
       current_step = model.optimizer.iterations.numpy() - 1
