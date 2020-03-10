@@ -34,22 +34,24 @@ check-params:
 	@echo CODE_FILES = $(CODE_FILES)
 	@echo ARGS ?= $(ARGS)
 
-clean-training-env:
-	pkill -f tensorboard\ --port\ $(PORT); sleep 1
-	rm -rf model; sleep 1
+tb:
 	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --bind_all --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
 
-tbr tensorboard_root:
-	$(MAKE) tb MDIR=. PORT=$(PORT)
+ktb kill-tensorboard:
+	pkill -f tensorboard\ --port\ $(PORT); sleep 1
+
+tbr tensorboard_root: kill-tensorboard
+	@MDIR=. $(MAKE) --no-print-directory tb
 
 %-training.tfrecord.gz: %-training.dtitle.gz %-$(VOCAB).subwords
 	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=train-prep --data_dir=$< --vocab_file=$(subst -training.dtitle.gz,,$<)-$(VOCAB) --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=0 $(ARGS)
 
-train-debug: $(DATA_FILES)
-	TF_FORCE_GPU_ALLOW_GROWTH=true $(MAKE) train
-
 tm train-model: $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=1024 --use_reformer $(ARGS)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer $(ARGS)
+
+clean-training-env: kill-tensorboard
+	rm -rf $(MDIR); sleep 1
+	@$(MAKE) --no-print-directory tb
 
 train: clean-training-env
 	$(MAKE) train-model
@@ -63,8 +65,8 @@ tc trainingcenter: $(DATA_FILES)
 	$(MAKE) --no-print-directory check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
 
-eval:
-	python3 dtitle.py --mode=eval    --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --num_gpus=-1 $(ARGS)
+eval: $(DATA_FILES)
+	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer $(ARGS)
 
 predict:
 	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 $(ARGS)
@@ -106,3 +108,11 @@ running_center/pred-$(TIMESTAMP)/%: running_center/%
 	@echo ===== start of '$<' =====
 	$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)-1k ARGS='--max_predict_count=1024'
 	#$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)
+
+batch:
+	$(MAKE) eval ARGS='--use_full_attention_in_reformer --model_dir=model-40iter-hash2/'
+	#$(MAKE) eval ARGS='--test_num_hashes=1 --model_dir=model-40iter-hash2/'
+	#$(MAKE) eval ARGS='--test_num_hashes=2 --model_dir=model-40iter-hash2/'
+	#$(MAKE) eval ARGS='--test_num_hashes=4 --model_dir=model-40iter-hash2/'
+	#$(MAKE) eval ARGS='--test_num_hashes=8 --model_dir=model-40iter-hash2/'
+	#$(MAKE) eval ARGS='--test_num_hashes=16 --model_dir=model-40iter-hash2/'

@@ -149,11 +149,13 @@ class SelfAttention(Attention):
     return super(SelfAttention, self).call(
         query_input, query_input, bias, training, cache, decode_loop_step)
 
+import TFefficient_attention
+from TFutils import make_unit_length
 
 class LshSelfAttention(tf.keras.layers.Layer):
   """Multi-headed LSH attention layer."""
 
-  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size):
+  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size, use_full_attention_in_reformer):
     """Initialize LshSelfAttention.
 
     Args:
@@ -173,6 +175,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     self.num_hashes = num_hashes
     self.test_num_hashes = test_num_hashes or num_hashes
     self.bucket_size = bucket_size
+    self.use_full_attention_in_reformer = use_full_attention_in_reformer
 
   def build(self, input_shape):
     """Builds the layer."""
@@ -197,6 +200,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
         "num_hashes": self.num_hashes,
         "test_num_hashes": self.test_num_hashes,
         "bucket_size": self.bucket_size,
+        "use_full_attention_in_reformer": use_full_attention_in_reformer,
     }
 
 
@@ -216,7 +220,6 @@ class LshSelfAttention(tf.keras.layers.Layer):
     # projections. Splitting heads is automatically done during the linear
     # projections --> [batch_size, length, num_heads, dim_per_head].
     query = self.sharedQK_dense_layer(query_input)
-    key = tf.math.l2_normalize(query, -1)
     value = self.value_dense_layer(query_input)
 
     ## Scale query to prevent the dot product between query and key from growing
@@ -225,9 +228,13 @@ class LshSelfAttention(tf.keras.layers.Layer):
     #query *= depth ** -0.5
     #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
-    #attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
-
-    attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
+    if self.use_full_attention_in_reformer:
+      key = make_unit_length(query)
+      #key = tf.math.l2_normalize(query, -1)
+      padding_mask = tf.concat([tf.zeros([16, 128], tf.bool), padding_mask[:, 128:]], axis=-1)
+      attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
+    else:
+      attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
 
     # Run the outputs through another linear projection layer. Recombining heads
     # is automatically done --> [batch_size, length, hidden_size]
@@ -287,9 +294,6 @@ def calculate_full_attention_v2(query, key, value, padding_mask=None, apply_caus
   attentions = tf.einsum("BNFT,BTNH->BFNH", weights, value)
   return attentions
 
-
-import TFefficient_attention
-from TFutils import sort_key_val, batched_index_select, make_unit_length, chunked_sum, process_inputs_chunk
 
 lsh_att = None
 def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=2, bucket_size=64):

@@ -203,35 +203,42 @@ class TFLSHAttention():
         debug_print('bkv_t.shape', bkv_t.shape)
         debug_print('bkv_buckets.shape', bkv_buckets.shape)
 
-
         # Dot-product attention.
         dots = tf.einsum('bhie,bhje->bhij', bq, bk) * (bq.shape[-1] ** -0.5)
         debug_print('dots.shape', dots.shape)
 
         # padding masking
         if padding_mask is not None:
-            mask = bkv_t[:, :, None, :] < tf.reduce_sum(tf.cast(padding_mask, tf.int32), axis=-1)[:,None,None,None]
+            #mask = bkv_t[:, :, None, :] < tf.reduce_sum(tf.cast(padding_mask, tf.int32), axis=-1)[:,None,None,None]
+            #dots = tf.where(mask, -1e9, dots)
+
+            # 128 = Url segment (64 tokens) + Hostname segment (64 tokens)
+            mask = bkv_t[:, :, None, :] < seqlen - tf.reduce_sum(tf.cast(padding_mask[:, 128:], tf.int32), axis=-1)[:,None,None,None]
+            dots = tf.where(mask, dots, -1e9)
+
             debug_print('********** apply padding mask, mask.shape', mask.shape)
-            dots = tf.where(mask, -1e9, dots)
             del mask
 
         # Causal masking
         if self.causal:
-            mask = bq_t[:, :, :, None] < bkv_t[:, :, None, :] 
+            mask = bq_t[:, :, :, None] >= bkv_t[:, :, None, :]
             debug_print('********** apply causal mask: causal/mask.shape', mask.shape)
-            dots = tf.math.multiply(dots, tf.cast(mask, tf.float32)) + (1-tf.cast(mask, tf.float32)) * (- 1e9)
+            #dots = tf.math.multiply(dots, tf.cast(mask, tf.float32)) + (1-tf.cast(mask, tf.float32)) * (- 1e9)
+            dots = tf.where(mask, dots, -1e9)
             del mask
 
         # Mask out attention to self except when no other targets are available.
         self_mask = bq_t[:, :, :, None] == bkv_t[:, :, None, :]
-        dots = tf.math.multiply(dots, (1-tf.cast(self_mask, tf.float32))) + tf.cast(self_mask, tf.float32) * (- 1e5)
+        #dots = tf.math.multiply(dots, (1-tf.cast(self_mask, tf.float32))) + tf.cast(self_mask, tf.float32) * (- 1e5)
+        dots = tf.where(self_mask, -1e5, dots)
         del self_mask
 
         # Mask out attention to other hash buckets.
         if not self._attend_across_buckets:
             bucket_mask = bq_buckets[:, :, :, None] != bkv_buckets[:, :, None, :]
             debug_print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
-            dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
+            #dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
+            dots = tf.where(bucket_mask, -1e9, dots)
             del bucket_mask
         debug_print('dots.shape (after all masks)', dots.shape)
 

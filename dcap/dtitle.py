@@ -1,7 +1,10 @@
 """Train and evaluate deep title generation model.
-Derived from:
-    https://github.com/tensorflow/models/tree/master/official/transformer/v2
-    https://github.com/cerebroai/reformers
+refered projects:
+    [] https://github.com/tensorflow/models/tree/master/official/transformer/v2
+    [] https://github.com/google/trax/tree/master/trax
+    [] https://github.com/cerebroai/reformers *
+    [] https://github.com/lucidrains/reformer-pytorch/tree/master/reformer_pytorch
+*: this project is incomplete, don't recommend to follow
 """
 
 import os
@@ -65,6 +68,7 @@ class Seq2SeqTask(object):
     params["enable_metrics_in_training"] = flags_obj.enable_metrics_in_training
     params["num_hashes"] = flags_obj.num_hashes
     params["test_num_hashes"] = flags_obj.test_num_hashes
+    params["use_full_attention_in_reformer"] = flags_obj.use_full_attention_in_reformer
     params["bucket_size"] = flags_obj.bucket_size
 
     self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
@@ -96,12 +100,13 @@ class Seq2SeqTask(object):
       logging.info("Not using any distribution strategy.")
 
 
-  def create_model(self, is_train):
+  def create_model(self, mode):
     logging.info('use_reformer = {}'.format(self.flags_obj.use_reformer))
     if self.flags_obj.use_reformer:
       logging.info(f'num_hashes, test_num_hashes = {self.params["num_hashes"]}, {self.params["test_num_hashes"]}')
-      return reformer.create_model(self.params, is_train=is_train)
+      return reformer.create_model(self.params, mode=mode)
     else:
+      is_train = mode == 'train' or mode == 'eval'
       return transformer.create_model(self.params, is_train=is_train)
 
 
@@ -118,7 +123,7 @@ class Seq2SeqTask(object):
     val_ds = val_ds.take(flags_obj.validation_example_count // params["batch_size"]).cache()
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
-      model = self.create_model(is_train=True)
+      model = self.create_model(mode='train')
       model.compile(optimizer=self._create_optimizer(params), loss=self._create_loss_fn(params))
 
     if not os.path.exists(flags_obj.model_dir):
@@ -161,15 +166,15 @@ class Seq2SeqTask(object):
   def eval(self):
     """Evaluates the model."""
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
-      model = self.create_model(is_train=True)
+      model = self.create_model(mode='eval')
       model.compile(loss=self._create_loss_fn(self.params))
       model.summary()
       self._load_model_weights(model)
 
-    N = 128
-    ds = self._create_dataset(self.params['data_dir'], repeat=1)
+    N = self.flags_obj.validation_example_count // self.params["batch_size"]
+    ds = self._create_dataset(self.params['data_dir'], repeat=1).take(N)
     res = model.evaluate(ds, steps=N)
-    logging.info('Evaluate {} steps, res={}'.format(N, res))
+    logging.info('Evaluate {} batches, res={}'.format(N, res))
 
   _UNDERSCORE_REPLACEMENT = "\\&undsc"
   def _decode_and_fix(self, ids):
@@ -217,7 +222,7 @@ class Seq2SeqTask(object):
     params = self.params
     flags_obj = self.flags_obj
 
-    model = self.create_model(is_train=False)
+    model = self.create_model(mode='predict')
     model.summary()
     self._load_model_weights(model)
 
@@ -312,12 +317,10 @@ class Seq2SeqTask(object):
   def _load_model_weights(self, model):
     checkpoint = tf.train.Checkpoint(model=model)
     checkpoint_path = tf.train.latest_checkpoint(self.flags_obj.model_dir)
+    assert checkpoint_path, 'Latest checkpoint is invalid, failed to load model.'
     """Loads model weights when it is provided."""
-    if checkpoint_path:
-      checkpoint.restore(checkpoint_path).expect_partial()
-      logging.info("load model weights from: {}".format(checkpoint_path))
-    else:
-      logging.info('no checkpoint found from: {}'.format(checkpoint_path))
+    checkpoint.restore(checkpoint_path).expect_partial()
+    logging.info("load model weights from: {}".format(checkpoint_path))
 
   def _create_optimizer(self, params):
     """Creates optimizer."""

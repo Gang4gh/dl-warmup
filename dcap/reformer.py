@@ -15,16 +15,16 @@ from official.transformer.v2 import ffn_layer
 import metrics
 
 
-def create_model(params, is_train):
+def create_model(params, mode):
   """Creates model."""
   with tf.name_scope("model"):
     input_len, output_len = params['max_input_length'], params['max_target_length']
     batch_size = params['batch_size']
-    if is_train:
+    if mode == 'train' or mode == 'eval':
       inputs = tf.keras.layers.Input((input_len,), batch_size, dtype="int32", name="inputs")
       targets = tf.keras.layers.Input((output_len,), batch_size, dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
-      logits = internal_model([inputs, targets], training=is_train)
+      logits = internal_model([inputs, targets], training=mode == 'train')
       if params["enable_metrics_in_training"]:
         vocab_size = params["vocab_size"]
         label_smoothing = params["label_smoothing"]
@@ -420,7 +420,7 @@ class EncoderStack(tf.keras.layers.Layer):
       # Create sublayers for each layer.
       self_attention_layer = attention_layer.LshSelfAttention(
           params["hidden_size"], params["num_heads"],
-          params["attention_dropout"], params["num_hashes"], params['test_num_hashes'], params["bucket_size"])
+          params["attention_dropout"], params["num_hashes"], params['test_num_hashes'], params["bucket_size"], params["use_full_attention_in_reformer"])
       feed_forward_network = ffn_layer.FeedForwardNetwork(
           params["hidden_size"], params["filter_size"], params["relu_dropout"])
 

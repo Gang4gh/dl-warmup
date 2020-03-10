@@ -259,6 +259,10 @@ def define_transformer_flags():
       name='use_reformer', default=False,
       help=flags_core.help_wrap('use Reformer model instead of Transformer'))
 
+  flags.DEFINE_bool(
+      name='use_full_attention_in_reformer', default=False,
+      help=flags_core.help_wrap('use full attention in reformer, instead of LSH attention, for eval purpose'))
+
   flags.DEFINE_integer(
       name='num_hashes',
       default=2,
