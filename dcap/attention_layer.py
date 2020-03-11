@@ -150,7 +150,6 @@ class SelfAttention(Attention):
         query_input, query_input, bias, training, cache, decode_loop_step)
 
 import TFefficient_attention
-from TFutils import make_unit_length
 
 class LshSelfAttention(tf.keras.layers.Layer):
   """Multi-headed LSH attention layer."""
@@ -229,9 +228,8 @@ class LshSelfAttention(tf.keras.layers.Layer):
     #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
     if self.use_full_attention_in_reformer:
-      key = make_unit_length(query)
-      #key = tf.math.l2_normalize(query, -1)
-      padding_mask = tf.concat([tf.zeros([16, 128], tf.bool), padding_mask[:, 128:]], axis=-1)
+      key = tf.math.l2_normalize(query, -1)
+      #padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], 128], tf.bool), padding_mask[:, 128:]], axis=-1)
       attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
     else:
       attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
@@ -324,8 +322,7 @@ def compare_two_attentions(seq_length,
 	print('>>>1. Prepare inputs(QK, V) with shape: ', shape)
 	tf.random.set_seed(0)
 	qk = tf.random.normal(shape)
-	qk_norm = make_unit_length(qk)
-	#qk_norm = tf.math.l2_normalize(qk, -1)
+	qk_norm = tf.math.l2_normalize(qk, -1)
 	v = tf.random.normal(shape)
 
 	if runLSH:

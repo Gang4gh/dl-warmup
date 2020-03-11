@@ -22,7 +22,7 @@
 import sys
 import tensorflow as tf
 from tensorflow.keras.layers import Dropout, Dense
-from TFutils import sort_key_val, batched_index_select, make_unit_length, chunked_sum, process_inputs_chunk
+from TFutils import sort_key_val, batched_index_select, chunked_sum, process_inputs_chunk
 
 def debug_print(*args, **kwargs):
   #print(*args, **kwargs)
@@ -181,7 +181,7 @@ class TFLSHAttention():
         # attention softmax, but normalizing keys is needed so that similarity for
         # the purposes of attention correctly corresponds to hash locality.
         bq = bqk
-        bk = make_unit_length(bqk)
+        bk = tf.math.l2_normalize(bqk, -1)
         debug_print('bq.shape: ', bq.shape)
         debug_print('bk.shape: ', bk.shape)
 
@@ -209,13 +209,19 @@ class TFLSHAttention():
 
         # padding masking
         if padding_mask is not None:
-            #mask = bkv_t[:, :, None, :] < tf.reduce_sum(tf.cast(padding_mask, tf.int32), axis=-1)[:,None,None,None]
-            #dots = tf.where(mask, -1e9, dots)
+            # padding length based mask, Url segment (64 tokens), Hostname segment (64 tokens)
+            #mask = tf.where(bkv_t[:, :, None, :] < 128
+            #           , tf.where(bkv_t[:, :, None, :] < 64
+            #               , bkv_t[:, :, None, :] >= 64 - tf.reduce_sum(tf.cast(padding_mask[:, :64], tf.int32), axis=-1)[:,None,None,None]
+            #               , bkv_t[:, :, None, :] >= 128 - tf.reduce_sum(tf.cast(padding_mask[:, 64:128], tf.int32), axis=-1)[:,None,None,None])
+            #           , bkv_t[:, :, None, :] >= seqlen - tf.reduce_sum(tf.cast(padding_mask[:, 128:], tf.int32), axis=-1)[:,None,None,None]
+            #           )
 
-            # 128 = Url segment (64 tokens) + Hostname segment (64 tokens)
-            mask = bkv_t[:, :, None, :] < seqlen - tf.reduce_sum(tf.cast(padding_mask[:, 128:], tf.int32), axis=-1)[:,None,None,None]
-            dots = tf.where(mask, dots, -1e9)
+            # padding position based mask
+            mask = tf.gather(padding_mask, bkv_t, batch_dims=1)[:,:,None,:]
+            #tf.debugging.assert_equal(mask, mask2, message='two masks are diff')
 
+            dots = tf.where(mask, -1e9, dots)
             debug_print('********** apply padding mask, mask.shape', mask.shape)
             del mask
 
