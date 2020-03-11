@@ -170,7 +170,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     super(LshSelfAttention, self).__init__()
     self.hidden_size = hidden_size
     self.num_heads = num_heads
-    self.attention_dropout = 0#attention_dropout
+    self.attention_dropout = attention_dropout
     self.num_hashes = num_hashes
     self.test_num_hashes = test_num_hashes or num_hashes
     self.bucket_size = bucket_size

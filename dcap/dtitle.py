@@ -47,7 +47,6 @@ class Seq2SeqTask(object):
     # Add flag-defined parameters to params object
     num_gpus = flags_core.get_num_gpus(flags_obj)
     self.params = params = misc.get_model_params(flags_obj.param_set, num_gpus)
-
     params["num_gpus"] = num_gpus
     params["data_dir"] = flags_obj.data_dir
     params["val_data_dir"] = flags_obj.val_data_dir
@@ -71,6 +70,13 @@ class Seq2SeqTask(object):
     params["use_full_attention_in_reformer"] = flags_obj.use_full_attention_in_reformer
     params["bucket_size"] = flags_obj.bucket_size
 
+    if flags_obj.attention_dropout is not None:
+      params['attention_dropout'] = flags_obj.attention_dropout
+    if flags_obj.use_reformer and not params["use_full_attention_in_reformer"]:
+      params['attention_dropout'] = 0.0
+    logging.info(f'attention_dropout = {params["attention_dropout"]}')
+
+    assert self.flags_obj.vocab_file, 'vocab file is None'
     self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]
     params["vocab_size"] = self.tokenizer.vocab_size
