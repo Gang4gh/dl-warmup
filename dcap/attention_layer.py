@@ -327,9 +327,8 @@ def compare_two_attentions(seq_length,
 
 	if runLSH:
 		print('\n>>>2.1. run LSH attention')
-		qk2 = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
-		v2 = tf.reshape(tf.transpose(v, perm=[0,2,1,3]), (-1, length, num_dim))
-		ret21 = calculate_LSH_attention(qk2, v2, None, 0, 2, length // bucket_count)
+		padding_mask = tf.zeros([batch_size, length], dtype=tf.bool)
+		ret21 = calculate_LSH_attention(qk, v, padding_mask, 0, 2, length // bucket_count)
 		ret21 = tf.transpose(tf.reshape(ret21, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
 		print('ret21.shape: ', ret21.shape)
 		#logits2 = tf.reshape(logits2, (batch_size, num_heads, length, -1))

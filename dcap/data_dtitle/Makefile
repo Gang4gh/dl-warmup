@@ -41,18 +41,19 @@ $(TAG)-training.dtitle.gz: $(DTITLE_FILES)
 $(TAG)-test.dtitle: $(DTITLE_FILES)
 	head -q -n 100 $^ > $@
 
+%.dtitle.gz: %.dtitle
+	gzip -fk $<
+
 $(TAG)-vocab-%.subwords: $(TAG)-training.dtitle.gz
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=$* $(ARGS)
 
 %-vocab-8192-64gb.subwords: %-training.dtitle.gz
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$*-vocab-64gb --target_vocab_size=8192 --max_corpus_chars=64 $(ARGS)
 
-%.tokenized-tfrecord: %.dtitle.gz
-	python3 process_dtitle_data.py --cmd=tokenize-dtitle --input_file=$< --vocab_file_prefix=$(subst -test.dtitle.gz,-vocab,$(subst -training.dtitle.gz,-vocab,$<)) --target_vocab_size=8192 --compression_type= $(ARGS)
 %.tokenized-tfrecord.gz: %.dtitle.gz
 	python3 process_dtitle_data.py --cmd=tokenize-dtitle --input_file=$< --vocab_file_prefix=$(subst -test.dtitle.gz,-vocab,$(subst -training.dtitle.gz,-vocab,$<)) --target_vocab_size=8192 $(ARGS)
 
-$(TAG)-meta.log: $(TAG)-training.dtitle.gz $(TAG)-test.dtitle $(TAG)-vocab-8192.subwords
+$(TAG)-meta.log: $(TAG)-training.dtitle.gz $(TAG)-test.dtitle.gz $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
 	@echo ---------- source code  ---------- >> $@
 	cat process_dtitle_data.py >> $@

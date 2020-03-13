@@ -21,7 +21,7 @@
 # SOFTWARE.
 import sys
 import tensorflow as tf
-from tensorflow.keras.layers import Dropout, Dense
+from tensorflow.keras.layers import Dense
 from TFutils import sort_key_val, batched_index_select, chunked_sum, process_inputs_chunk
 
 def debug_print(*args, **kwargs):
@@ -43,8 +43,7 @@ class TFLSHAttention():
         if dropout >= 1.0:
             raise ValueError('Dropout rates must be lower than 1.')
 
-        self.dropout = Dropout(dropout)
-        self.dropout_for_hash = Dropout(dropout)
+        self.dropout = dropout
 
 #        assert rehash_each_round or allow_duplicate_attention, ( 'The setting {allow_duplicate_attention=False, rehash_each_round=False}' ' is not implemented.')
 
@@ -77,8 +76,7 @@ class TFLSHAttention():
 
         random_rotations = tf.broadcast_to(tf.random.normal(rotations_shape), (batch_size, vecs.shape[-1], self.n_hashes if self._rehash_each_round else 1, rot_size // 2))
 
-        dropped_vecs = self.dropout_for_hash(vecs)
-        rotated_vecs = tf.einsum('btf,bfhi->bhti', dropped_vecs, random_rotations)
+        rotated_vecs = tf.einsum('btf,bfhi->bhti', vecs, random_rotations)
 
         if self._rehash_each_round:
             rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
@@ -170,11 +168,9 @@ class TFLSHAttention():
         bq_t = bkv_t = tf.reshape(st, (batch_size, self.n_hashes * n_bins, -1))
         bqk = tf.reshape(sqk, (batch_size, self.n_hashes * n_bins, -1, sqk.shape[-1]))
         bv = tf.reshape(sv, (batch_size, self.n_hashes * n_bins, -1, sv.shape[-1]))
-        bq_buckets = bkv_buckets = tf.reshape(sbuckets_and_t // seqlen, (batch_size, self.n_hashes * n_bins, -1))
         debug_print('bq_t.shape: ', bq_t.shape)
         debug_print('bqk.shape: ', bqk.shape)
         debug_print('bv.shape: ', bv.shape)
-        debug_print('bq_buckets.shape: ', bq_buckets.shape)
 
         # Hashing operates on unit-length vectors. Unnormalized query vectors are
         # fine because they effectively provide a learnable temperature for the
@@ -191,25 +187,26 @@ class TFLSHAttention():
         def look_one_back(x):
             # actually this is a rotation
             x_extra = tf.concat([x[:, -1:, ...], x[:, :-1, ...]], axis=1)
+            #x1 = tf.reshape(x, [batch_size, self.n_hashes, n_bins] + x.shape[2:])
+            #x_extra = tf.reshape(tf.concat([x1[:, :,  1:2, ...], x1[:, :, :-1, ...]], axis=2), x.shape)
             return tf.concat([x, x_extra], axis=2)
 
         bk = look_one_back(bk)
         bv = look_one_back(bv)
         bkv_t = look_one_back(bkv_t)
-        bkv_buckets = look_one_back(bkv_buckets)
         debug_print('apply look_one_back')
         debug_print('bk.shape', bk.shape)
         debug_print('bv.shape', bv.shape)
         debug_print('bkv_t.shape', bkv_t.shape)
-        debug_print('bkv_buckets.shape', bkv_buckets.shape)
 
         # Dot-product attention.
-        dots = tf.einsum('bhie,bhje->bhij', bq, bk) * (bq.shape[-1] ** -0.5)
+        dots = tf.einsum('bhie,bhje->bhij', bq * (bq.shape[-1] ** -0.5), bk)
         debug_print('dots.shape', dots.shape)
 
         # padding masking
         if padding_mask is not None:
             # padding length based mask, Url segment (64 tokens), Hostname segment (64 tokens)
+            #mask = bkv_t[:, :, None, :] >= seqlen - tf.reduce_sum(tf.cast(padding_mask[:, 128:], tf.int32), axis=-1)[:,None,None,None]
             #mask = tf.where(bkv_t[:, :, None, :] < 128
             #           , tf.where(bkv_t[:, :, None, :] < 64
             #               , bkv_t[:, :, None, :] >= 64 - tf.reduce_sum(tf.cast(padding_mask[:, :64], tf.int32), axis=-1)[:,None,None,None]
@@ -241,6 +238,8 @@ class TFLSHAttention():
 
         # Mask out attention to other hash buckets.
         if not self._attend_across_buckets:
+            bq_buckets = bkv_buckets = tf.reshape(sbuckets_and_t // seqlen, (batch_size, self.n_hashes * n_bins, -1))
+            bkv_buckets = look_one_back(bkv_buckets)
             bucket_mask = bq_buckets[:, :, :, None] != bkv_buckets[:, :, None, :]
             debug_print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
             #dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
@@ -286,8 +285,8 @@ class TFLSHAttention():
         dots_logsumexp = tf.math.reduce_logsumexp(dots, axis=-1, keepdims=True)
         debug_print('dots_logsumexp.shape: ', dots_logsumexp.shape)
         dots = tf.exp(dots - dots_logsumexp) # weights matrix after softmax
-        dots = self.dropout(dots)
-        debug_print('dots.shape (after softmax)', dots.shape)
+        if self.dropout:
+          dots = tf.nn.dropout(dots, rate=dropout)
  
         bo = tf.einsum('buij,buje->buie', dots, bv)
         debug_print('bo.shape', bo.shape)
