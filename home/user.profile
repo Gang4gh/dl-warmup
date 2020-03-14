@@ -23,3 +23,9 @@ export CUDA_HOME=/usr/local/cuda
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
 export PYTHONPATH=$HOME/tensorflow/models
+if [ -f /pod/pod.env ]; then
+    . /pod/pod.env
+fi
+if [ -f /pod.env ]; then
+    . /pod.env
+fi
