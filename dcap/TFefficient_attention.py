@@ -22,7 +22,7 @@
 import sys
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-from TFutils import sort_key_val, batched_index_select, chunked_sum, process_inputs_chunk
+from TFutils import sort_key_val, batched_index_select, process_inputs_chunk
 
 def debug_print(*args, **kwargs):
   #print(*args, **kwargs)
@@ -248,35 +248,46 @@ class TFLSHAttention():
         debug_print('dots.shape (after all masks)', dots.shape)
 
         # Don't double-count query-key pairs across multiple rounds of hashing.
-        # There are two possible strategies here. (1) The default is to count how
-        # many times a query-key pair is repeated, and to lower its log-prob
-        # correspondingly at each repetition. (2) When hard_k is set, the code
-        # instead masks all but the first occurence of each query-key pair.
+        # Here to count how many times a query-key pair is repeated,
+        # and to lower its log-prob correspondingly at each repetition.
         if not self._allow_duplicate_attention:
             locs1 = undo_sort // bq_t.shape[-1]
             locs2 = (locs1 + 1) % (self.n_hashes * n_bins)
-            if not self._attend_across_buckets:
-                locs1 = buckets * (self.n_hashes * n_bins) + locs1
-                locs2 = buckets * (self.n_hashes * n_bins) + locs2
             locs = tf.transpose(
                 tf.concat([ tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)), tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)), ], 1),
             perm=[0, 2, 1]) 
-
             slocs = batched_index_select(locs, st)
             b_locs = tf.reshape(slocs, (batch_size, self.n_hashes * n_bins, -1, 2 * self.n_hashes))
-
             b_locs1 = b_locs[:, :, :, None, :self.n_hashes]
 
-            bq_locs = b_locs1.expand(b_locs.shape[:3] + (2, self.n_hashes))
+            bq_locs = tf.broadcast_to(b_locs1, b_locs.shape[:3] + (2, self.n_hashes))
             bq_locs = tf.reshape(bq_locs, b_locs.shape)
             bkv_locs = look_one_back(b_locs)
 
-            dup_counts = (bq_locs[:, :, :, None, :] == bkv_locs[:, :, None, :, :])
-            # for memory considerations, chunk summation of last dimension for counting duplicates
-            dup_counts = chunked_sum(dup_counts, chunks=(self.n_hashes * batch_size))
+            dup_counts = tf.math.reduce_sum(tf.cast(bq_locs[:, :, :, None, :] == bkv_locs[:, :, None, :, :], tf.float32), -1)
             dup_counts = tf.stop_gradient(dup_counts)
+
+            #bkv_t2 = tf.reshape(bkv_t, (batch_size, self.n_hashes, n_bins, -1))
+            #bkv_t2 = tf.transpose(bkv_t2, perm=[0,2,1,3])
+            #bkv_t3 = tf.reshape(bkv_t2, (batch_size * n_bins, -1))
+            #print('bkv_t3:', bkv_t3.shape)
+            #res = tf.map_fn(lambda bkv: tf.math.bincount(bkv, minlength=seqlen), bkv_t3)
+            #res = tf.reshape(res, (batch_size, n_bins, seqlen))
+            #print('res (after map):', res.shape)
+            #tf.print('res[0,0]:', res[0,0], summarize=1000)
+            #print('bkv_t2:', bkv_t2.shape)
+            #res = tf.gather(res, bkv_t2, batch_dims=2)
+            #res = tf.reshape(tf.transpose(res, perm=[0,2,1,3]), (batch_size, self.n_hashes * n_bins, 1, -1))
+            #print('res (final):', res.shape)
+            #print('dup_counts:', dup_counts.shape)
+            #comp = res == tf.cast(dup_counts, tf.int32)
+            #print('comp.shape:', comp.shape)
+            #tf.print(res[0,0], summarize=20)
+            #tf.print(dup_counts[0,0], summarize=20)
+            #print('same count', tf.math.reduce_sum(tf.cast(comp.shape, tf.int32)))
+
             assert dup_counts.shape == dots.shape
-            dots = dots - tf.log(dup_counts + 1e-9)
+            dots = tf.where(dup_counts == 0, dots, dots - tf.math.log(dup_counts))
             del dup_counts
         debug_print('dots.shape (after discount)', dots.shape)
 

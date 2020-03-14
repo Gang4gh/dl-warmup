@@ -154,7 +154,7 @@ import TFefficient_attention
 class LshSelfAttention(tf.keras.layers.Layer):
   """Multi-headed LSH attention layer."""
 
-  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size, use_full_attention_in_reformer):
+  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size, use_full_attention_in_reformer, allow_duplicated_attention):
     """Initialize LshSelfAttention.
 
     Args:
@@ -175,6 +175,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
     self.test_num_hashes = test_num_hashes or num_hashes
     self.bucket_size = bucket_size
     self.use_full_attention_in_reformer = use_full_attention_in_reformer
+    self.allow_duplicated_attention = allow_duplicated_attention
 
   def build(self, input_shape):
     """Builds the layer."""
@@ -199,7 +200,8 @@ class LshSelfAttention(tf.keras.layers.Layer):
         "num_hashes": self.num_hashes,
         "test_num_hashes": self.test_num_hashes,
         "bucket_size": self.bucket_size,
-        "use_full_attention_in_reformer": use_full_attention_in_reformer,
+        "use_full_attention_in_reformer": self.use_full_attention_in_reformer,
+        "allow_duplicated_attention": self.allow_duplicated_attention
     }
 
 
@@ -232,7 +234,7 @@ class LshSelfAttention(tf.keras.layers.Layer):
       #padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], 128], tf.bool), padding_mask[:, 128:]], axis=-1)
       attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
     else:
-      attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0)
+      attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0, allow_duplicated_attention=self.allow_duplicated_attention)
 
     # Run the outputs through another linear projection layer. Recombining heads
     # is automatically done --> [batch_size, length, hidden_size]
@@ -294,10 +296,10 @@ def calculate_full_attention_v2(query, key, value, padding_mask=None, apply_caus
 
 
 lsh_att = None
-def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=2, bucket_size=64):
+def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=2, bucket_size=64, allow_duplicated_attention=True):
   global lsh_att
   if lsh_att is None:
-    lsh_att = TFefficient_attention.TFLSHAttention(dropout = dropout, n_hashes=num_hashes, bucket_size=bucket_size, causal=False)
+    lsh_att = TFefficient_attention.TFLSHAttention(dropout = dropout, n_hashes=num_hashes, bucket_size=bucket_size, causal=False, allow_duplicate_attention=allow_duplicated_attention)
 
   batch_size, length, num_heads, num_dim = qk.shape
   qk = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))

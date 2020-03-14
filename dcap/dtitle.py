@@ -68,6 +68,8 @@ class Seq2SeqTask(object):
     params["num_hashes"] = flags_obj.num_hashes
     params["test_num_hashes"] = flags_obj.test_num_hashes
     params["use_full_attention_in_reformer"] = flags_obj.use_full_attention_in_reformer
+    params["allow_duplicated_attention"] = flags_obj.allow_duplicated_attention
+    logging.info(f'allow_duplicated_attention = {flags_obj.allow_duplicated_attention}')
     params["bucket_size"] = flags_obj.bucket_size
 
     if flags_obj.attention_dropout is not None:

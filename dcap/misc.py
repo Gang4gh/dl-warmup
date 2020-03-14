@@ -286,6 +286,10 @@ def define_transformer_flags():
       name='attention_dropout', default=None,
       help=flags_core.help_wrap('dropout rate for attention layers'))
 
+  flags.DEFINE_bool(
+      name='allow_duplicated_attention', default=True,
+      help=flags_core.help_wrap('allow duplicated attention in LSH attention'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=16)
