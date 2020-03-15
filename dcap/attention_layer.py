@@ -330,7 +330,7 @@ def compare_two_attentions(seq_length,
 	if runLSH:
 		print('\n>>>2.1. run LSH attention')
 		padding_mask = tf.zeros([batch_size, length], dtype=tf.bool)
-		ret21 = calculate_LSH_attention(qk, v, padding_mask, 0, 2, length // bucket_count)
+		ret21 = calculate_LSH_attention(qk, v, padding_mask, 0, 2, length // bucket_count, False)
 		ret21 = tf.transpose(tf.reshape(ret21, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
 		print('ret21.shape: ', ret21.shape)
 		#logits2 = tf.reshape(logits2, (batch_size, num_heads, length, -1))
@@ -383,7 +383,8 @@ def compare_two_attentions(seq_length,
 		diffcount = tf.reduce_sum(tf.cast(tf.abs(ret31-ret32) > 1e-9, tf.int32))
 		print(f'diff count: {diffcount}')
 
-#compare_two_attentions(1024 * 8)
+if __name__ == "__main__":
+	compare_two_attentions(1024 * 8)
 
 #def check_two_attentions_memory_usage(checkLSH=True):
 #	attention_type = 'LSH' if checkLSH else 'full'

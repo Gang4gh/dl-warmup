@@ -28,6 +28,16 @@ def debug_print(*args, **kwargs):
   #print(*args, **kwargs)
   pass
 
+def print_tensor(tensor, summarize=16):
+  import inspect
+  frame = inspect.currentframe()
+  frame = inspect.getouterframes(frame)[1]
+  string = inspect.getframeinfo(frame[0]).code_context[0].strip()
+  args = string[string.find('(') + 1:-1].split(',')
+  tensor_name = args[0] if '[' not in args[0] else ', '.join(args[:next(idx for idx, arg in enumerate(args) if ']' in arg)+1])
+  tf.print(f'{tensor_name} : shape {tensor.shape} = ', tensor, **({'summarize': summarize} if summarize else {}))
+
+
 class TFLSHAttention():
     def __init__( self,
                   dropout = 0.,
@@ -73,6 +83,7 @@ class TFLSHAttention():
             vecs.shape[-1],
             self.n_hashes if self._rehash_each_round else 1,
             rot_size // 2)
+        debug_print('rotations_shape: ', rotations_shape)
 
         random_rotations = tf.broadcast_to(tf.random.normal(rotations_shape), (batch_size, vecs.shape[-1], self.n_hashes if self._rehash_each_round else 1, rot_size // 2))
 
@@ -251,11 +262,10 @@ class TFLSHAttention():
         # Here to count how many times a query-key pair is repeated,
         # and to lower its log-prob correspondingly at each repetition.
         if not self._allow_duplicate_attention:
+            # TODO: not efficient and contains bugs, re-implementat it or disable this option
             locs1 = undo_sort // bq_t.shape[-1]
             locs2 = (locs1 + 1) % (self.n_hashes * n_bins)
-            locs = tf.transpose(
-                tf.concat([ tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)), tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)), ], 1),
-            perm=[0, 2, 1]) 
+            locs = tf.transpose(tf.concat([ tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)), tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)), ], 1), perm=[0, 2, 1])
             slocs = batched_index_select(locs, st)
             b_locs = tf.reshape(slocs, (batch_size, self.n_hashes * n_bins, -1, 2 * self.n_hashes))
             b_locs1 = b_locs[:, :, :, None, :self.n_hashes]
@@ -267,28 +277,11 @@ class TFLSHAttention():
             dup_counts = tf.math.reduce_sum(tf.cast(bq_locs[:, :, :, None, :] == bkv_locs[:, :, None, :, :], tf.float32), -1)
             dup_counts = tf.stop_gradient(dup_counts)
 
-            #bkv_t2 = tf.reshape(bkv_t, (batch_size, self.n_hashes, n_bins, -1))
-            #bkv_t2 = tf.transpose(bkv_t2, perm=[0,2,1,3])
-            #bkv_t3 = tf.reshape(bkv_t2, (batch_size * n_bins, -1))
-            #print('bkv_t3:', bkv_t3.shape)
-            #res = tf.map_fn(lambda bkv: tf.math.bincount(bkv, minlength=seqlen), bkv_t3)
-            #res = tf.reshape(res, (batch_size, n_bins, seqlen))
-            #print('res (after map):', res.shape)
-            #tf.print('res[0,0]:', res[0,0], summarize=1000)
-            #print('bkv_t2:', bkv_t2.shape)
-            #res = tf.gather(res, bkv_t2, batch_dims=2)
-            #res = tf.reshape(tf.transpose(res, perm=[0,2,1,3]), (batch_size, self.n_hashes * n_bins, 1, -1))
-            #print('res (final):', res.shape)
-            #print('dup_counts:', dup_counts.shape)
-            #comp = res == tf.cast(dup_counts, tf.int32)
-            #print('comp.shape:', comp.shape)
-            #tf.print(res[0,0], summarize=20)
-            #tf.print(dup_counts[0,0], summarize=20)
-            #print('same count', tf.math.reduce_sum(tf.cast(comp.shape, tf.int32)))
-
             assert dup_counts.shape == dots.shape
-            dots = tf.where(dup_counts == 0, dots, dots - tf.math.log(dup_counts))
+            #dots = dots - tf.math.log(dup_counts + 1e-9)
+            dots = tf.where(dup_counts <= 1, dots, dots - tf.math.log(dup_counts))
             del dup_counts
+
         debug_print('dots.shape (after discount)', dots.shape)
 
         # Softmax.
