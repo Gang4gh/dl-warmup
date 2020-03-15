@@ -229,9 +229,9 @@ class LshSelfAttention(tf.keras.layers.Layer):
     #query *= depth ** -0.5
     #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
+    #padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], 128], tf.bool), padding_mask[:, 128:]], axis=-1)
     if self.use_full_attention_in_reformer:
       key = tf.math.l2_normalize(query, -1)
-      #padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], 128], tf.bool), padding_mask[:, 128:]], axis=-1)
       attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
     else:
       attention_output = calculate_LSH_attention(query, value, padding_mask, num_hashes=self.num_hashes if training else self.test_num_hashes, bucket_size=self.bucket_size, dropout = self.attention_dropout if training else 0.0, allow_duplicated_attention=self.allow_duplicated_attention)
@@ -257,17 +257,16 @@ def calculate_full_attention(key, query, value, bias, training, attention_dropou
   attention_output = tf.einsum("BNFT,BTNH->BFNH", weights, value)
   return attention_output
 
-
 def calculate_full_attention_v2(query, key, value, padding_mask=None, apply_causal_mask=False, apply_soft_selfmask=False, dropout=0.0):
   """
   Args:
-    query: with shape [batch_size, query_length, num_heads, dim_per_head]
-    key  : with shape [batch_size, value_length, num_heads, dim_per_head]
-    value: with shape [batch_size, value_length, num_heads, dim_per_head]
-    padding_mask: a mask tensor with shape [batch_size, value_length]
-    apply_causal_mask: mask tokens after current token, used in self attention
-    apply_soft_selfmask: mask query token itself softly, used in self attention
-    dropout: attention dropout ratio
+    query: shape is [batch_size, query_length, num_heads, dim_per_head]
+    key  : shape is [batch_size, value_length, num_heads, dim_per_head]
+    value: shape is [batch_size, value_length, num_heads, dim_per_head]
+    padding_mask: a tf.bool mask tensor, shape is [batch_size, value_length], True means a position is masked out
+    apply_causal_mask: mask tokens after current position, used in self attention
+    apply_soft_selfmask: mask tokens to itself softly, used in self attention
+    dropout: attention dropout before softmax
 
   Returns:
     Attention output with shape [batch_size, value_length, num_heads, dim_per_head]
@@ -278,17 +277,16 @@ def calculate_full_attention_v2(query, key, value, padding_mask=None, apply_caus
   logits = tf.einsum("BFNH,BTNH->BNFT", query, key)
 
   if padding_mask is not None:
-    logits = tf.where(padding_mask[:,None,None,:], -1e9, logits)
+    logits += tf.cast(padding_mask, tf.float32)[:,None,None,:] * (-1e9)
   if apply_causal_mask:
     causal_validmask =  tf.linalg.band_part(tf.ones([value_length, value_length], dtype=tf.bool), -1, 0)[None,None,:,:]
     logits = tf.where(causal_validmask, logits, -1e9)
   if apply_soft_selfmask:
-    self_mask =  tf.linalg.band_part(tf.ones([value_length, value_length], dtype=tf.bool), 0, 0)[None,None,:,:]
-    logits = tf.where(self_mask, -1e5, logits)
+    self_mask_bias = tf.linalg.band_part(tf.ones([value_length, value_length], dtype=tf.float32), 0, 0)[None,None,:,:] * (-1e5)
+    logits += self_mask_bias
 
   weights = tf.nn.softmax(logits, name="attention_weights")
-
-  if dropout > 0:
+  if dropout:
     weights = tf.nn.dropout(weights, rate=dropout)
 
   attentions = tf.einsum("BNFT,BTNH->BFNH", weights, value)

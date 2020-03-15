@@ -229,7 +229,7 @@ class TFLSHAttention():
             mask = tf.gather(padding_mask, bkv_t, batch_dims=1)[:,:,None,:]
             #tf.debugging.assert_equal(mask, mask2, message='two masks are diff')
 
-            dots = tf.where(mask, -1e9, dots)
+            dots += tf.cast(mask, tf.float32) * (-1e9)
             debug_print('********** apply padding mask, mask.shape', mask.shape)
             del mask
 
@@ -237,14 +237,13 @@ class TFLSHAttention():
         if self.causal:
             mask = bq_t[:, :, :, None] >= bkv_t[:, :, None, :]
             debug_print('********** apply causal mask: causal/mask.shape', mask.shape)
-            #dots = tf.math.multiply(dots, tf.cast(mask, tf.float32)) + (1-tf.cast(mask, tf.float32)) * (- 1e9)
-            dots = tf.where(mask, dots, -1e9)
+            dots = tf.math.multiply(dots, tf.cast(mask, tf.float32)) + (1-tf.cast(mask, tf.float32)) * (- 1e9)
             del mask
 
         # Mask out attention to self except when no other targets are available.
         self_mask = bq_t[:, :, :, None] == bkv_t[:, :, None, :]
         #dots = tf.math.multiply(dots, (1-tf.cast(self_mask, tf.float32))) + tf.cast(self_mask, tf.float32) * (- 1e5)
-        dots = tf.where(self_mask, -1e5, dots)
+        dots += tf.cast(self_mask, tf.float32) * (-1e5)
         del self_mask
 
         # Mask out attention to other hash buckets.
@@ -253,8 +252,7 @@ class TFLSHAttention():
             bkv_buckets = look_one_back(bkv_buckets)
             bucket_mask = bq_buckets[:, :, :, None] != bkv_buckets[:, :, None, :]
             debug_print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
-            #dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
-            dots = tf.where(bucket_mask, -1e9, dots)
+            dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
             del bucket_mask
         debug_print('dots.shape (after all masks)', dots.shape)
 
@@ -262,7 +260,7 @@ class TFLSHAttention():
         # Here to count how many times a query-key pair is repeated,
         # and to lower its log-prob correspondingly at each repetition.
         if not self._allow_duplicate_attention:
-            # TODO: not efficient and contains bugs, re-implementat it or disable this option
+            # TODO: not efficient and contains bugs, re-implement it or disable this option
             locs1 = undo_sort // bq_t.shape[-1]
             locs2 = (locs1 + 1) % (self.n_hashes * n_bins)
             locs = tf.transpose(tf.concat([ tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)), tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)), ], 1), perm=[0, 2, 1])
@@ -278,7 +276,7 @@ class TFLSHAttention():
             dup_counts = tf.stop_gradient(dup_counts)
 
             assert dup_counts.shape == dots.shape
-            #dots = dots - tf.math.log(dup_counts + 1e-9)
+            #dots = dots - tf.math.log(dup_counts + 1e-9) # doesn't work as dup_counts contains 0
             dots = tf.where(dup_counts <= 1, dots, dots - tf.math.log(dup_counts))
             del dup_counts
 
