@@ -133,8 +133,7 @@ class Reformer(tf.keras.Model):
       # applying dropout.
       embedded_inputs = self.embedding_softmax_layer(inputs)
       embedded_inputs = tf.cast(embedded_inputs, self.params["dtype"])
-      inputs_padding = model_utils.get_padding(inputs)
-      attention_bias = tf.cast(tf.equal(inputs, 0), tf.bool) # assume inputs is padded by '0'
+      padding_mask = tf.cast(tf.equal(inputs, 0), tf.bool) # assume inputs is padded by '0'
 
       with tf.name_scope("add_pos_encoding"):
         length = tf.shape(embedded_inputs)[1]
@@ -148,7 +147,7 @@ class Reformer(tf.keras.Model):
             encoder_inputs, rate=self.params["layer_postprocess_dropout"])
 
       return self.encoder_stack(
-          encoder_inputs, attention_bias, inputs_padding, training=training)
+          encoder_inputs, padding_mask, training=training)
 
   def decode(self, targets, encoder_outputs, attention_bias, training):
     """Generate logits for each value in the target sequence.
@@ -438,14 +437,12 @@ class EncoderStack(tf.keras.layers.Layer):
         "params": self.params,
     }
 
-  def call(self, encoder_inputs, padding_mask, inputs_padding, training):
+  def call(self, encoder_inputs, padding_mask, training):
     """Return the output of the encoder layer stacks.
 
     Args:
       encoder_inputs: tensor with shape [batch_size, input_length, hidden_size]
       padding_mask: mask for the encoder self-attention layer, with shape [batch_size, input_length]
-      inputs_padding: tensor with shape [batch_size, input_length], inputs with
-        zero paddings.
       training: boolean, whether in training mode or not.
 
     Returns:

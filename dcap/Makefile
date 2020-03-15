@@ -59,11 +59,15 @@ train: clean-training-env
 TRAINING_ROOT = running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
 
 tc trainingcenter: $(DATA_FILES)
+ifeq (,$(wildcard $(TRAINING_ROOT)Makefile.config))
 	mkdir -p $(TRAINING_ROOT)
 	cp -p --parents $(CODE_FILES) $(TRAINING_ROOT)
 	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
 	$(MAKE) --no-print-directory check-params > $(TRAINING_ROOT)Makefile.config
 	$(MAKE) -C $(TRAINING_ROOT) train
+else
+	$(MAKE) -C $(TRAINING_ROOT) train-model
+endif
 
 eval: $(DATA_FILES)
 	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer $(ARGS)
@@ -110,9 +114,13 @@ running_center/pred-$(TIMESTAMP)/%: running_center/%
 	#$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)
 
 batch:
-	$(MAKE) eval ARGS='--use_full_attention_in_reformer --model_dir=model-40iter-hash2/'
-	#$(MAKE) eval ARGS='--test_num_hashes=1 --model_dir=model-40iter-hash2/'
-	#$(MAKE) eval ARGS='--test_num_hashes=2 --model_dir=model-40iter-hash2/'
-	#$(MAKE) eval ARGS='--test_num_hashes=4 --model_dir=model-40iter-hash2/'
-	#$(MAKE) eval ARGS='--test_num_hashes=8 --model_dir=model-40iter-hash2/'
-	#$(MAKE) eval ARGS='--test_num_hashes=16 --model_dir=model-40iter-hash2/'
+	$(MAKE) eval ARGS='--use_full_attention_in_reformer'
+	$(MAKE) eval ARGS='--test_num_hashes=1'
+	$(MAKE) eval ARGS='--test_num_hashes=2'
+	$(MAKE) eval ARGS='--test_num_hashes=4'
+	$(MAKE) eval ARGS='--test_num_hashes=8'
+	$(MAKE) eval ARGS='--test_num_hashes=16'
+	$(MAKE) eval ARGS='--test_num_hashes=32'
+	$(MAKE) eval ARGS='--test_num_hashes=64'
+
+# CUDA_VISIBLE_DEVICES=
