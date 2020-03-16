@@ -113,7 +113,18 @@ running_center/pred-$(TIMESTAMP)/%: running_center/%
 	$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)-1k ARGS='--max_predict_count=1024'
 	#$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)
 
+batch0:
+	CUDA_VISIBLE_DEVICES=0 $(MAKE) batch
+batch1:
+	CUDA_VISIBLE_DEVICES=1 $(MAKE) batch
+batch2:
+	CUDA_VISIBLE_DEVICES=2 $(MAKE) batch
+batch3:
+	CUDA_VISIBLE_DEVICES=3 $(MAKE) batch
+
 batch:
+	#MDIR=running_center/iter9-oldmodelnewdata-0225-noTH2s-r0.1-max3k-20200226-082518/model $(MAKE) eval ARGS='--use_reformer=0'
+	#MDIR=running_center/iter9-oldmodelnewdata-0225-noT2s-r0.1-max3k-20200226-085623/model $(MAKE) eval ARGS='--use_reformer=0'
 	$(MAKE) eval ARGS='--use_full_attention_in_reformer'
 	$(MAKE) eval ARGS='--test_num_hashes=1'
 	$(MAKE) eval ARGS='--test_num_hashes=2'
@@ -122,5 +133,3 @@ batch:
 	$(MAKE) eval ARGS='--test_num_hashes=16'
 	$(MAKE) eval ARGS='--test_num_hashes=32'
 	$(MAKE) eval ARGS='--test_num_hashes=64'
-
-# CUDA_VISIBLE_DEVICES=

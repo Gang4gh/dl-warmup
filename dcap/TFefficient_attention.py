@@ -197,9 +197,9 @@ class TFLSHAttention():
         # same bucket, so this increases the chances of attending to relevant items.
         def look_one_back(x):
             # actually this is a rotation
-            x_extra = tf.concat([x[:, -1:, ...], x[:, :-1, ...]], axis=1)
-            #x1 = tf.reshape(x, [batch_size, self.n_hashes, n_bins] + x.shape[2:])
-            #x_extra = tf.reshape(tf.concat([x1[:, :,  1:2, ...], x1[:, :, :-1, ...]], axis=2), x.shape)
+            #x_extra = tf.concat([x[:, -1:, ...], x[:, :-1, ...]], axis=1)
+            x1 = tf.reshape(x, [batch_size, self.n_hashes, n_bins] + x.shape[2:])
+            x_extra = tf.reshape(tf.concat([x1[:, :,  1:2, ...], x1[:, :, :-1, ...]], axis=2), x.shape)
             return tf.concat([x, x_extra], axis=2)
 
         bk = look_one_back(bk)

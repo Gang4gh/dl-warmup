@@ -33,14 +33,14 @@ from official.transformer.v2 import ffn_layer
 import metrics
 
 
-def create_model(params, is_train):
+def create_model(params, mode):
   """Creates transformer model."""
   with tf.name_scope("model"):
-    if is_train:
+    if mode == 'train' or mode == 'eval':
       inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
       targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
       internal_model = Transformer(params, name="transformer_v2")
-      logits = internal_model([inputs, targets], training=is_train)
+      logits = internal_model([inputs, targets], training=mode == 'train')
       if params["enable_metrics_in_training"]:
         vocab_size = params["vocab_size"]
         label_smoothing = params["label_smoothing"]
@@ -53,8 +53,8 @@ def create_model(params, is_train):
       inputs = tf.keras.layers.Input((None,), dtype="int32", name="inputs")
       targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
       internal_model = Transformer(params, name="transformer_v2")
-      ret = internal_model([inputs], training=is_train)
-      logits = internal_model([inputs, targets], training=is_train)
+      ret = internal_model([inputs], training=False)
+      logits = internal_model([inputs, targets], training=False)
       outputs, scores = ret["outputs"], ret["scores"]
       return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 

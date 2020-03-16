@@ -37,8 +37,8 @@ def create_model(params, mode):
       inputs = tf.keras.layers.Input((input_len,), batch_size, dtype="int32", name="inputs")
       targets = tf.keras.layers.Input((output_len,), batch_size, dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
-      ret = internal_model([inputs], training=is_train)
-      logits = internal_model([inputs, targets], training=is_train)
+      ret = internal_model([inputs], training=False)
+      logits = internal_model([inputs, targets], training=False)
       outputs, scores = ret["outputs"], ret["scores"]
       return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 

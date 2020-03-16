@@ -114,8 +114,7 @@ class Seq2SeqTask(object):
       logging.info(f'num_hashes, test_num_hashes = {self.params["num_hashes"]}, {self.params["test_num_hashes"]}')
       return reformer.create_model(self.params, mode=mode)
     else:
-      is_train = mode == 'train' or mode == 'eval'
-      return transformer.create_model(self.params, is_train=is_train)
+      return transformer.create_model(self.params, mode=mode)
 
 
   def train(self):
