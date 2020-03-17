@@ -123,13 +123,13 @@ batch3:
 	CUDA_VISIBLE_DEVICES=3 $(MAKE) batch
 
 batch:
-	#MDIR=running_center/iter9-oldmodelnewdata-0225-noTH2s-r0.1-max3k-20200226-082518/model $(MAKE) eval ARGS='--use_reformer=0'
-	#MDIR=running_center/iter9-oldmodelnewdata-0225-noT2s-r0.1-max3k-20200226-085623/model $(MAKE) eval ARGS='--use_reformer=0'
-	$(MAKE) eval ARGS='--use_full_attention_in_reformer'
-	$(MAKE) eval ARGS='--test_num_hashes=1'
-	$(MAKE) eval ARGS='--test_num_hashes=2'
-	$(MAKE) eval ARGS='--test_num_hashes=4'
-	$(MAKE) eval ARGS='--test_num_hashes=8'
-	$(MAKE) eval ARGS='--test_num_hashes=16'
-	$(MAKE) eval ARGS='--test_num_hashes=32'
-	$(MAKE) eval ARGS='--test_num_hashes=64'
+	#MDIR=running_center/iter9-oldmodelnewdata-0225-noTH2s-r0.1-max3k-20200226-082518/model $(MAKE) eval ARGS='--use_reformer=0 $(ARGS)'
+	#MDIR=running_center/iter9-oldmodelnewdata-0225-noT2s-r0.1-max3k-20200226-085623/model $(MAKE) eval ARGS='--use_reformer=0 $(ARGS)'
+	$(MAKE) eval ARGS='--use_full_attention_in_reformer $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=1 $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=2 $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=4 $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=8 $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=16 $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=32 $(ARGS)'
+	$(MAKE) eval ARGS='--test_num_hashes=64 $(ARGS)'

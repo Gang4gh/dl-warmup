@@ -122,7 +122,6 @@ class TFLSHAttention():
         batch_size, seqlen, num_dims = qk.shape
         device = qk.device
         debug_print('qk.shape/v.shape: ', qk.shape, v.shape)
-        debug_print('padding_mask.shape: ', padding_mask.shape)
         assert padding_mask is None or seqlen == padding_mask.shape[1]
 
         #full_logits = tf.einsum("BTH,BFH->BFT", qk, qk) * (num_dims ** -0.5)

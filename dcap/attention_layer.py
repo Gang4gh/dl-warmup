@@ -18,9 +18,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from absl import flags
 import tensorflow as tf
 from official.nlp import bert_modeling as common_layer
 
+flags.DEFINE_enum('attention_padding_strategy', 'classic', ['classic', 'last-segment', 'no-padding'], 'padding strategy in attention calculation')
+FLAGS = flags.FLAGS
 
 class Attention(tf.keras.layers.Layer):
   """Multi-headed attention layer."""
@@ -229,7 +232,14 @@ class LshSelfAttention(tf.keras.layers.Layer):
     #query *= depth ** -0.5
     #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
-    #padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], 128], tf.bool), padding_mask[:, 128:]], axis=-1)
+    if FLAGS.attention_padding_strategy == 'last-segment':
+      last_segment_start_pos = 128
+      padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], last_segment_start_pos], tf.bool), padding_mask[:, last_segment_start_pos:]], axis=-1)
+    elif FLAGS.attention_padding_strategy == 'no-padding':
+      padding_mask = None
+    else:
+      pass # use input padding mask
+
     if self.use_full_attention_in_reformer:
       key = tf.math.l2_normalize(query, -1)
       attention_output = calculate_full_attention_v2(query, key, value, padding_mask, apply_soft_selfmask=True, dropout = self.attention_dropout if training else 0)
@@ -303,7 +313,8 @@ def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=
   qk = tf.reshape(tf.transpose(qk, perm=[0,2,1,3]), (-1, length, num_dim))
   value = tf.reshape(tf.transpose(value, perm=[0,2,1,3]), (-1, length, num_dim))
   #TODO: not efficient to expand padding_mask here
-  padding_mask = tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0)
+  if padding_mask is not None:
+    padding_mask = tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0)
   ret = lsh_att.call(qk, value, padding_mask, num_hashes=num_hashes)
   ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
   return ret
