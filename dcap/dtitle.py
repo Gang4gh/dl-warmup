@@ -68,8 +68,6 @@ class Seq2SeqTask(object):
     params["num_hashes"] = flags_obj.num_hashes
     params["test_num_hashes"] = flags_obj.test_num_hashes
     params["use_full_attention_in_reformer"] = flags_obj.use_full_attention_in_reformer
-    params["allow_duplicated_attention"] = flags_obj.allow_duplicated_attention
-    logging.info(f'allow_duplicated_attention = {flags_obj.allow_duplicated_attention}')
     params["bucket_size"] = flags_obj.bucket_size
 
     if flags_obj.attention_dropout is not None:
@@ -77,6 +75,7 @@ class Seq2SeqTask(object):
     if flags_obj.use_reformer and not params["use_full_attention_in_reformer"]:
       params['attention_dropout'] = 0.0
     logging.info(f'attention_dropout = {params["attention_dropout"]}')
+    logging.info(f'attention_padding_strategy = {flags_obj.attention_padding_strategy}')
 
     assert self.flags_obj.vocab_file, 'vocab file is None'
     self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
@@ -112,6 +111,7 @@ class Seq2SeqTask(object):
     logging.info('use_reformer = {}'.format(self.flags_obj.use_reformer))
     if self.flags_obj.use_reformer:
       logging.info(f'num_hashes, test_num_hashes = {self.params["num_hashes"]}, {self.params["test_num_hashes"]}')
+      logging.info(f'allow_duplicated_attention = {self.flags_obj.allow_duplicated_attention}')
       return reformer.create_model(self.params, mode=mode)
     else:
       return transformer.create_model(self.params, mode=mode)
@@ -126,7 +126,7 @@ class Seq2SeqTask(object):
         enable_xla=flags_obj.enable_xla)
 
     train_ds = self._create_dataset(params['data_dir'], repeat=None)
-    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle', params['data_dir']), repeat=1)
+    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle.gz', params['data_dir']), repeat=1)
     val_ds = val_ds.take(flags_obj.validation_example_count // params["batch_size"]).cache()
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
@@ -241,7 +241,7 @@ class Seq2SeqTask(object):
       ds = ds.take(flags_obj.max_predict_count)
 
     inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores, null_probs = [], [], [], [], [], [], [], []
-    for ((inp, tar), _) in ds:
+    for ((inp, tar), _) in ds.unbatch():
       inputs.append(inp.numpy())
       input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
       targets.append(tar.numpy())
@@ -301,7 +301,7 @@ class Seq2SeqTask(object):
       with open(out_path, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\tNullProb\n')
         for inp, pred, null_prob in zip(input_strings, pred_strings, null_probs):
-          f.write('{}\t{}\t{}\n'.format(inp[0], re.sub(r'[\t\n]+', ' ', html.unescape(pred)), null_prob)) # pred may contains '\n' after unescape
+          f.write('{}\t{}\t{}\n'.format(inp[0], re.sub(r'[\t\r\n]+', ' ', html.unescape(pred)), null_prob)) # pred may contains '\n' after unescape
       logging.info('write compact prediction to {}'.format(out_path))
 
 
@@ -514,11 +514,8 @@ def test_read_and_dump_datasets(task):
   repeat_times = 1
   for idx, bc in enumerate([100, 1000, 10000]):
     #_dump_to_file(f'out-random-{idx}.batch{bc}', '__random_input__', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    #_dump_to_file(f'out-dtitle-{idx}.batch{bc}', task.params['data_dir'], batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     _dump_to_file(f'out-dtitle-gz-{idx}.batch{bc}', task.params['data_dir'] + '.gz', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    #_dump_to_file(f'out-tfrecord-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     _dump_to_file(f'out-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    #_dump_to_file(f'out-tokenized-tfrecord-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     _dump_to_file(f'out-tokenized-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
 
 

@@ -22,7 +22,11 @@ from absl import flags
 import tensorflow as tf
 from official.nlp import bert_modeling as common_layer
 
-flags.DEFINE_enum('attention_padding_strategy', 'classic', ['classic', 'last-segment', 'no-padding'], 'padding strategy in attention calculation')
+flags.DEFINE_enum('attention_padding_strategy', 'classic', ['classic', 'last-segment', 'no-padding'],
+    help='padding strategy in attention calculation')
+flags.DEFINE_bool('allow_duplicated_attention', True,
+    help='allow duplicated attention in LSH attention')
+
 FLAGS = flags.FLAGS
 
 class Attention(tf.keras.layers.Layer):
@@ -157,7 +161,10 @@ import TFefficient_attention
 class LshSelfAttention(tf.keras.layers.Layer):
   """Multi-headed LSH attention layer."""
 
-  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size, use_full_attention_in_reformer, allow_duplicated_attention):
+  def __init__(self, hidden_size, num_heads, attention_dropout, num_hashes, test_num_hashes, bucket_size, use_full_attention_in_reformer
+              , allow_duplicated_attention = None
+              , attention_padding_strategy = None
+              ):
     """Initialize LshSelfAttention.
 
     Args:
@@ -178,7 +185,8 @@ class LshSelfAttention(tf.keras.layers.Layer):
     self.test_num_hashes = test_num_hashes or num_hashes
     self.bucket_size = bucket_size
     self.use_full_attention_in_reformer = use_full_attention_in_reformer
-    self.allow_duplicated_attention = allow_duplicated_attention
+    self.allow_duplicated_attention = allow_duplicated_attention or FLAGS.allow_duplicated_attention
+    self.attention_padding_strategy = attention_padding_strategy or FLAGS.attention_padding_strategy
 
   def build(self, input_shape):
     """Builds the layer."""
@@ -204,7 +212,8 @@ class LshSelfAttention(tf.keras.layers.Layer):
         "test_num_hashes": self.test_num_hashes,
         "bucket_size": self.bucket_size,
         "use_full_attention_in_reformer": self.use_full_attention_in_reformer,
-        "allow_duplicated_attention": self.allow_duplicated_attention
+        "allow_duplicated_attention": self.allow_duplicated_attention,
+        "attention_padding_strategy": self.attention_padding_strategy
     }
 
 

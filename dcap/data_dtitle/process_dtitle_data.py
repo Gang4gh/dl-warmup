@@ -41,7 +41,10 @@ def preprocess_raw_input(FLAGS):
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
 		url, title, hostname, html = row.url, row.title, row.hostname, row.html
-		if not url or not title or not html: continue
+		if FLAGS.for_inference:
+			if not url or not html: continue
+		else:
+			if not url or not title or not html: continue
 
 		#title = re.sub(r'#N#|#R#|#TAB#', ' ', title)
 		#hostname = re.sub(r'#N#|#R#|#TAB#', ' ', hostname)
@@ -73,7 +76,7 @@ def preprocess_raw_input(FLAGS):
 		if FLAGS.check_fuzzymatch and any(token not in html for token in title_tokens):
 			continue
 
-		if (FLAGS.suppress_enoughtokens and len(title_tokens) <= 1
+		if not FLAGS.for_inference and (FLAGS.suppress_enoughtokens and len(title_tokens) <= 1
 			or FLAGS.suppress_exactmatch and title not in html
 			or FLAGS.suppress_fuzzymatch and any(token not in html for token in title_tokens)):
 			if  FLAGS.max_suppress_ratio * (valid + suppressed) >= suppressed:
@@ -195,6 +198,7 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('suppress_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
 	flags.DEFINE_boolean('output_raw_html', False, 'output unmodified html body')
 	flags.DEFINE_integer('doc_length_limit', 200*1024, 'max allowed html length')
+	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')

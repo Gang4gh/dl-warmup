@@ -265,7 +265,7 @@ def define_transformer_flags():
 
   flags.DEFINE_integer(
       name='num_hashes',
-      default=2,
+      default=4,
       help=flags_core.help_wrap('number of hashes used in LSH attention for training'))
 
   flags.DEFINE_integer(
@@ -285,10 +285,6 @@ def define_transformer_flags():
   flags.DEFINE_float(
       name='attention_dropout', default=None,
       help=flags_core.help_wrap('dropout rate for attention layers'))
-
-  flags.DEFINE_bool(
-      name='allow_duplicated_attention', default=True,
-      help=flags_core.help_wrap('allow duplicated attention in LSH attention'))
 
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
