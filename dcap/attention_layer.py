@@ -325,7 +325,7 @@ def calculate_LSH_attention(qk, value, padding_mask=None, dropout=0, num_hashes=
   if padding_mask is not None:
     padding_mask = tf.keras.backend.repeat_elements(padding_mask, rep=num_heads, axis=0)
   ret = lsh_att.call(qk, value, padding_mask, num_hashes=num_hashes)
-  ret = tf.transpose(tf.reshape(ret, (batch_size, num_heads, length, num_dim)), perm=[0,2,1,3])
+  ret = tf.transpose(tf.reshape(ret, (-1, num_heads, length, num_dim)), perm=[0,2,1,3])
   return ret
 
 def get_self_attention_mask(length, dtype=tf.float32):

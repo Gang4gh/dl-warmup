@@ -283,8 +283,16 @@ def define_transformer_flags():
       help=flags_core.help_wrap('validation data file used in training. If None, then try to find matching test file based on data_dir'))
 
   flags.DEFINE_float(
+      name='one_dropout', default=None,
+      help=flags_core.help_wrap('one dropout rate for all layers'))
+
+  flags.DEFINE_float(
       name='attention_dropout', default=None,
       help=flags_core.help_wrap('dropout rate for attention layers'))
+
+  flags.DEFINE_float(
+      name='lsh_attention_dropout', default=0.0,
+      help=flags_core.help_wrap('dropout rate for lsh_attention layers'))
 
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',

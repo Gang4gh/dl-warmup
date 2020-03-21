@@ -83,7 +83,7 @@ predict-cpu:
 
 #INPUT_DATA = $(HOME)/CaptionData/October_Scraping_joinedData-1204.tsv
 INPUT_DATA = /data/aether/gluo/63a274d4-33be-4b54-b52d-28487a80465a
-PREDICTION = ../pred-unittest/
+PREDICTION = ./pred-unittest/
 PRED_ABSPATH = $(abspath $(PREDICTION))
 #usage: make predict-test INPUT_DATA=<input_file> PREDICTION=<output_dir>
 prediction: $(INPUT_DATA) $(CODE_FILES)
@@ -98,9 +98,9 @@ else
 	$(error PREDICTION is not specified)
 endif
 	mkdir -p $(PRED_ABSPATH)
-	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS=
+	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--for_inference'
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--check_enoughtokens --check_exactmatch'
-	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --calc_rouge_scores=0 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
 DLTS_DIRS=$(wildcard running_center/dlts*)
 sync-all:

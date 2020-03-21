@@ -46,16 +46,11 @@ class TFLSHAttention():
                   causal = False,
                   allow_duplicate_attention = True,
                   attend_across_buckets = True,
-                  rehash_each_round = True,
                   drop_for_hash_rate = 0.0,
                   random_rotations_per_head = False):
-#        super(TFLSHAttention, self).__init__()
-        if dropout >= 1.0:
-            raise ValueError('Dropout rates must be lower than 1.')
+        assert dropout >= 0 and dropout <= 1.0, 'dropout rates must be in [0, 1.0]'
 
         self.dropout = dropout
-
-#        assert rehash_each_round or allow_duplicate_attention, ( 'The setting {allow_duplicate_attention=False, rehash_each_round=False}' ' is not implemented.')
 
         self.causal = causal
         self.n_hashes = n_hashes
@@ -63,16 +58,13 @@ class TFLSHAttention():
 
         self._allow_duplicate_attention = allow_duplicate_attention
         self._attend_across_buckets = attend_across_buckets
-        self._rehash_each_round = rehash_each_round
         self._random_rotations_per_head = random_rotations_per_head
 
     def hash_vectors(self, n_buckets, vecs):
-        batch_size = vecs.shape[0]
-        debug_print('batch_size: ', batch_size)
-        device = vecs.device
+        batch_size = tf.shape(vecs)[0]
 
         # See https://arxiv.org/pdf/1509.02897.pdf
-        # We sample a different random rotation for each round of hashing to
+        # Sample a different random rotation for each round of hashing to
         # decrease the probability of hash misses.
         assert n_buckets % 2 == 0
 
@@ -81,37 +73,23 @@ class TFLSHAttention():
         rotations_shape = (
             batch_size if self._random_rotations_per_head else 1,
             vecs.shape[-1],
-            self.n_hashes if self._rehash_each_round else 1,
+            self.n_hashes,
             rot_size // 2)
         debug_print('rotations_shape: ', rotations_shape)
 
-        random_rotations = tf.broadcast_to(tf.random.normal(rotations_shape), (batch_size, vecs.shape[-1], self.n_hashes if self._rehash_each_round else 1, rot_size // 2))
+        random_rotations = tf.broadcast_to(tf.random.normal(rotations_shape), (batch_size, vecs.shape[-1], self.n_hashes, rot_size // 2))
 
         rotated_vecs = tf.einsum('btf,bfhi->bhti', vecs, random_rotations)
 
-        if self._rehash_each_round:
-            rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
-            buckets = tf.math.argmax(rotated_vecs, axis=-1)
-            # buckets is now (self.n_hashes, seqlen). Next we add offsets so that
-            # bucket numbers from different hashing rounds don't overlap.
-            offsets = tf.range(self.n_hashes)
-            offsets = tf.reshape(offsets * n_buckets, (1, -1, 1))
-            offsets = tf.cast(offsets, tf.int64)
-            debug_print('offsets: ', offsets.shape)
-            buckets = tf.reshape(buckets + offsets, (batch_size, -1,))
-        else:
-            rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
-            # In this configuration, we map each item to the top self.n_hashes buckets
-            rotated_vecs = tf.squeeze(rotated_vecs, axis=0)
-            bucket_range = tf.range(rotated_vecs.shape[-1])
-            bucket_range = tf.reshape(bucket_range, (1, -1))
-            bucket_range = tf.broadcast_to(bucket_range, rotated_vecs.shape)
-
-            _, buckets = sort_key_val(rotated_vecs, bucket_range, axis=-1)
-            buckets = buckets[:, -self.n_hashes:]
-
-            h, *_ = buckets.shape 
-            buckets = tf.reshape(buckets.permute((*_, h)), (-1,))
+        rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
+        buckets = tf.math.argmax(rotated_vecs, axis=-1)
+        # buckets is now (batch_size, self.n_hashes, seqlen). Next we add offsets so that
+        # bucket numbers from different hashing rounds don't overlap.
+        offsets = tf.range(self.n_hashes)
+        offsets = tf.reshape(offsets * n_buckets, (1, -1, 1))
+        offsets = tf.cast(offsets, tf.int64)
+        debug_print('offsets: ', offsets.shape)
+        buckets = tf.reshape(buckets + offsets, (-1, self.n_hashes * n_buckets * self.bucket_size))
 
         return buckets
 
@@ -119,21 +97,13 @@ class TFLSHAttention():
         if num_hashes:
           self.n_hashes = num_hashes
 
-        batch_size, seqlen, num_dims = qk.shape
-        device = qk.device
+        _, seqlen, num_dims = qk.shape
+
         debug_print('qk.shape/v.shape: ', qk.shape, v.shape)
         assert padding_mask is None or seqlen == padding_mask.shape[1]
 
-        #full_logits = tf.einsum("BTH,BFH->BFT", qk, qk) * (num_dims ** -0.5)
-        #debug_print('full_logits.shape: (wihtout mask)', full_logits.shape)
-        #debug_print(full_logits[0])
-        #full_logits_argsort = tf.argsort(full_logits[0], direction='DESCENDING')
-        #debug_print('full_logits_argsort: ', full_logits_argsort)
-
         n_buckets = seqlen // self.bucket_size
         n_bins = n_buckets
-        debug_print('batch_size, seqlen, device, n_buckets:')
-        debug_print(batch_size, seqlen, device, n_buckets)
 
         buckets = self.hash_vectors(n_buckets, qk)
         debug_print('buckets: ', buckets.shape)
@@ -175,9 +145,9 @@ class TFLSHAttention():
         debug_print('sv.shape: ', sv.shape)
 
         # Split off a "bin" axis so that attention only occurs within chunks.
-        bq_t = bkv_t = tf.reshape(st, (batch_size, self.n_hashes * n_bins, -1))
-        bqk = tf.reshape(sqk, (batch_size, self.n_hashes * n_bins, -1, sqk.shape[-1]))
-        bv = tf.reshape(sv, (batch_size, self.n_hashes * n_bins, -1, sv.shape[-1]))
+        bq_t = bkv_t = tf.reshape(st, (-1, self.n_hashes * n_bins, self.bucket_size))
+        bqk = tf.reshape(sqk, (-1, self.n_hashes * n_bins, self.bucket_size, num_dims))
+        bv = tf.reshape(sv, (-1, self.n_hashes * n_bins, self.bucket_size, num_dims))
         debug_print('bq_t.shape: ', bq_t.shape)
         debug_print('bqk.shape: ', bqk.shape)
         debug_print('bv.shape: ', bv.shape)
@@ -197,8 +167,12 @@ class TFLSHAttention():
         def look_one_back(x):
             # actually this is a rotation
             #x_extra = tf.concat([x[:, -1:, ...], x[:, :-1, ...]], axis=1)
-            x1 = tf.reshape(x, [batch_size, self.n_hashes, n_bins] + x.shape[2:])
-            x_extra = tf.reshape(tf.concat([x1[:, :,  1:2, ...], x1[:, :, :-1, ...]], axis=2), x.shape)
+            if len(x.shape) == 3:
+              x1 = tf.reshape(x, [-1, self.n_hashes, n_bins, x.shape[2]])
+            else:
+              x1 = tf.reshape(x, [-1, self.n_hashes, n_bins, x.shape[2], x.shape[3]])
+
+            x_extra = tf.reshape(tf.concat([x1[:, :, 1:2, ...], x1[:, :, :-1, ...]], axis=2), tf.shape(x))
             return tf.concat([x, x_extra], axis=2)
 
         bk = look_one_back(bk)
@@ -247,7 +221,7 @@ class TFLSHAttention():
 
         # Mask out attention to other hash buckets.
         if not self._attend_across_buckets:
-            bq_buckets = bkv_buckets = tf.reshape(sbuckets_and_t // seqlen, (batch_size, self.n_hashes * n_bins, -1))
+            bq_buckets = bkv_buckets = tf.reshape(sbuckets_and_t // seqlen, (-1, self.n_hashes * n_bins, self.bucket_size))
             bkv_buckets = look_one_back(bkv_buckets)
             bucket_mask = bq_buckets[:, :, :, None] != bkv_buckets[:, :, None, :]
             debug_print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
@@ -262,9 +236,9 @@ class TFLSHAttention():
             # TODO: not efficient and contains bugs, re-implement it or disable this option
             locs1 = undo_sort // bq_t.shape[-1]
             locs2 = (locs1 + 1) % (self.n_hashes * n_bins)
-            locs = tf.transpose(tf.concat([ tf.reshape(locs1, (batch_size, self.n_hashes, seqlen)), tf.reshape(locs2, (batch_size, self.n_hashes, seqlen)), ], 1), perm=[0, 2, 1])
+            locs = tf.transpose(tf.concat([ tf.reshape(locs1, (-1, self.n_hashes, seqlen)), tf.reshape(locs2, (-1, self.n_hashes, seqlen)), ], 1), perm=[0, 2, 1])
             slocs = batched_index_select(locs, st)
-            b_locs = tf.reshape(slocs, (batch_size, self.n_hashes * n_bins, -1, 2 * self.n_hashes))
+            b_locs = tf.reshape(slocs, (-1, self.n_hashes * n_bins, self.bucket_size, 2 * self.n_hashes))
             b_locs1 = b_locs[:, :, :, None, :self.n_hashes]
 
             bq_locs = tf.broadcast_to(b_locs1, b_locs.shape[:3] + (2, self.n_hashes))
@@ -291,8 +265,8 @@ class TFLSHAttention():
  
         bo = tf.einsum('buij,buje->buie', dots, bv)
         debug_print('bo.shape', bo.shape)
-        so = tf.reshape(bo, (batch_size, -1, bo.shape[-1]))
-        slogits = tf.reshape(dots_logsumexp, (batch_size, -1,))
+        so = tf.reshape(bo, (-1, self.n_hashes * seqlen, num_dims))
+        slogits = tf.reshape(dots_logsumexp, (-1, self.n_hashes * seqlen,))
         debug_print('so.shape', so.shape)
         debug_print('slogits.shape', slogits.shape)
 
@@ -335,8 +309,8 @@ class TFLSHAttention():
             out = o
             debug_print('output o since n_hashes == 1')
         else:
-            o = tf.reshape(o, (batch_size, self.n_hashes, seqlen, o.shape[-1]))
-            logits = tf.reshape(logits, (batch_size, self.n_hashes, seqlen, 1))
+            o = tf.reshape(o, (-1, self.n_hashes, seqlen, num_dims))
+            logits = tf.reshape(logits, (-1, self.n_hashes, seqlen, 1))
             probs = tf.exp(logits - tf.math.reduce_logsumexp(logits, axis=1, keepdims=True))
             debug_print('o.shape (modified): ', o.shape)
             debug_print('logits.shape (modified): ', logits.shape)
@@ -344,7 +318,7 @@ class TFLSHAttention():
             debug_print('calc.shape ', (o*probs).shape)
             out = tf.reduce_sum(o * probs, axis=1)
 
-        assert out.shape == v.shape
+        assert out.shape[1:] == v.shape[1:]
         #return out, buckets
         return out
 

@@ -70,11 +70,14 @@ class Seq2SeqTask(object):
     params["use_full_attention_in_reformer"] = flags_obj.use_full_attention_in_reformer
     params["bucket_size"] = flags_obj.bucket_size
 
+    if flags_obj.one_dropout is not None:
+      params['layer_postprocess_dropout'] = flags_obj.one_dropout
+      params['attention_dropout'] = flags_obj.one_dropout
+      params['relu_dropout'] = flags_obj.one_dropout
     if flags_obj.attention_dropout is not None:
       params['attention_dropout'] = flags_obj.attention_dropout
-    if flags_obj.use_reformer and not params["use_full_attention_in_reformer"]:
-      params['attention_dropout'] = 0.0
-    logging.info(f'attention_dropout = {params["attention_dropout"]}')
+    params['lsh_attention_dropout'] = params['attention_dropout'] if params["use_full_attention_in_reformer"] else flags_obj.lsh_attention_dropout
+    logging.info(f'dropouts (postprocess, attention, lsh_attention, relu) = {[params[k] for k in ["layer_postprocess_dropout", "attention_dropout", "lsh_attention_dropout", "relu_dropout"]]}')
     logging.info(f'attention_padding_strategy = {flags_obj.attention_padding_strategy}')
 
     assert self.flags_obj.vocab_file, 'vocab file is None'
@@ -324,7 +327,7 @@ class Seq2SeqTask(object):
   def _load_model_weights(self, model):
     checkpoint = tf.train.Checkpoint(model=model)
     checkpoint_path = tf.train.latest_checkpoint(self.flags_obj.model_dir)
-    assert checkpoint_path, 'Latest checkpoint is invalid, failed to load model.'
+    assert checkpoint_path, 'Latest checkpoint does not exist or is invalid.'
     """Loads model weights when it is provided."""
     checkpoint.restore(checkpoint_path).expect_partial()
     logging.info("load model weights from: {}".format(checkpoint_path))

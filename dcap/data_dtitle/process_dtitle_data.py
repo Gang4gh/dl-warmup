@@ -88,7 +88,8 @@ def preprocess_raw_input(FLAGS):
 		valid += 1 if title else 0
 		if FLAGS.output_raw_html: html = row.html.strip().lower()
 		print('\t'.join(DTitle_Row(url=url, title=title, hostname=hostname, html=html)))
-	print('process {} examples, including {} ({:.2f}%) valid and {} ({:.2f}%) suppressed, from {}'.format(total, valid, valid/total*100, suppressed, suppressed/total*100, FLAGS.input_file), file=sys.stderr)
+	no_title = total - valid - suppressed
+	print(f'processed {total} example(s), including {valid} ({valid/total*100:.2f}%) valid, {suppressed} ({suppressed/total*100:.2f}%) suppressed and {no_title} ({no_title/total*100:.2f}) examples without target_title, from {FLAGS.input_file}', file=sys.stderr)
 
 
 def build_vocab(FLAGS):

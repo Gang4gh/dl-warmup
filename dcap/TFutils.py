@@ -28,8 +28,9 @@ def make_unit_length(x, epsilon=1e-6):
     return tf.math.truediv(x, norm + epsilon)
 
 def sort_key_val(t1, t2, dim=-1):
+    # TODO: looks inefficient to sort t1 twice
     values = tf.sort(t1, axis=dim)
-    t2 = tf.broadcast_to(t2, t1.shape)
+    t2 = tf.broadcast_to(t2, tf.shape(t1))
     return values, tf.gather(t2, tf.argsort(t1, axis=dim), axis=dim, batch_dims=1)
 
 def batched_index_select(values, indices):

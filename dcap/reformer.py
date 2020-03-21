@@ -34,15 +34,15 @@ def create_model(params, mode):
       model = tf.keras.Model([inputs, targets], logits)
       return model
     else:
-      inputs = tf.keras.layers.Input((input_len,), batch_size, dtype="int32", name="inputs")
-      targets = tf.keras.layers.Input((output_len,), batch_size, dtype="int32", name="targets")
+      inputs = tf.keras.layers.Input((input_len,), dtype="int32", name="inputs")
+      targets = tf.keras.layers.Input((None,), dtype="int32", name="targets")
       internal_model = Reformer(params, name="reformer")
       ret = internal_model([inputs], training=False)
       logits = internal_model([inputs, targets], training=False)
       outputs, scores = ret["outputs"], ret["scores"]
       return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 
-#IMPORTANT: THIS IS NOT A COMPLETE AND WORKING REFORMER implemnetation
+#IMPORTANT: THIS IS NOT A COMPLETE AND WORKING REFORMER implementation
 class Reformer(tf.keras.Model):
   """Reformer model with Keras.
 
@@ -419,7 +419,7 @@ class EncoderStack(tf.keras.layers.Layer):
       # Create sublayers for each layer.
       self_attention_layer = attention_layer.LshSelfAttention(
           params["hidden_size"], params["num_heads"],
-          params["attention_dropout"], params["num_hashes"], params['test_num_hashes'], params["bucket_size"], params["use_full_attention_in_reformer"])
+          params["lsh_attention_dropout"], params["num_hashes"], params['test_num_hashes'], params["bucket_size"], params["use_full_attention_in_reformer"])
       feed_forward_network = ffn_layer.FeedForwardNetwork(
           params["hidden_size"], params["filter_size"], params["relu_dropout"])
 
