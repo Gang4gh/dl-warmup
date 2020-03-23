@@ -121,3 +121,6 @@ fi
 trap 'echo -ne "\033]2;$PWD\$ $(history 1 | cut -c8-)\007"' DEBUG
 
 export LD_LIBRARY_PATH=$CUDA_HOME/extras/CUPTI/lib64:$CUDA_HOME/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+# disable xon/xoff to repurpos Ctrl-S/Ctrl-Q
+stty -ixon

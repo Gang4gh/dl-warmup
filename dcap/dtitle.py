@@ -1,9 +1,9 @@
 """Train and evaluate deep title generation model.
 refered projects:
-    [] https://github.com/tensorflow/models/tree/master/official/transformer/v2
-    [] https://github.com/google/trax/tree/master/trax
-    [] https://github.com/cerebroai/reformers *
-    [] https://github.com/lucidrains/reformer-pytorch/tree/master/reformer_pytorch
+    https://github.com/tensorflow/models/tree/master/official/transformer/v2
+    https://github.com/google/trax/tree/master/trax
+    https://github.com/cerebroai/reformers *
+    https://github.com/lucidrains/reformer-pytorch/tree/master/reformer_pytorch
 *: this project is incomplete, don't recommend to follow
 """
 
@@ -11,8 +11,8 @@ import os
 import sys
 import time
 import re
-import numpy as np
 import html
+import numpy as np
 
 from absl import app
 from absl import flags
@@ -22,10 +22,9 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 
 import misc
-from official.transformer.v2 import optimizer
 import transformer
 import reformer
-from official.transformer.v2 import translate
+from official.transformer.v2 import optimizer
 from official.utils.flags import core as flags_core
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
@@ -33,7 +32,8 @@ import metrics
 
 from data_dtitle.process_dtitle_data import dtitle_reader
 
-class Seq2SeqTask(object):
+
+class Seq2SeqTask():
   """Main entry of Seq2Seq model."""
 
   def __init__(self, flags_obj):
@@ -109,7 +109,6 @@ class Seq2SeqTask(object):
     else:
       logging.info("Not using any distribution strategy.")
 
-
   def create_model(self, mode):
     logging.info('use_reformer = {}'.format(self.flags_obj.use_reformer))
     if self.flags_obj.use_reformer:
@@ -118,7 +117,6 @@ class Seq2SeqTask(object):
       return reformer.create_model(self.params, mode=mode)
     else:
       return transformer.create_model(self.params, mode=mode)
-
 
   def train(self):
     """Trains the model."""
@@ -145,8 +143,8 @@ class Seq2SeqTask(object):
     if ckpt_mgr.latest_checkpoint:
       #self._print_variables_and_exit(flags_obj.model_dir)
       model.fit([tf.ones([params["batch_size"], params['max_input_length']], tf.int32), tf.ones([params["batch_size"], params['max_target_length']], tf.int32)],
-          tf.ones([params["batch_size"], params['max_target_length']], tf.int32),
-          verbose=0)
+                tf.ones([params["batch_size"], params['max_target_length']], tf.int32),
+                verbose=0)
       checkpoint.restore(ckpt_mgr.latest_checkpoint).assert_consumed()
       current_step = model.optimizer.iterations.numpy() - 1
       logging.info("Loaded checkpoint %s, current_step %d", ckpt_mgr.latest_checkpoint, current_step)
@@ -187,6 +185,7 @@ class Seq2SeqTask(object):
     logging.info('Evaluate {} batches, res={}'.format(N, res))
 
   _UNDERSCORE_REPLACEMENT = "\\&undsc"
+
   def _decode_and_fix(self, ids):
     return self.tokenizer.decode(ids).replace(self._UNDERSCORE_REPLACEMENT, '_')
 
@@ -211,12 +210,12 @@ class Seq2SeqTask(object):
 
     logging.info('calculate ROUGE scores of %d summaries', len(summaries))
     rouge = Pythonrouge(summary_file_exist=False,
-                          summary=summaries, reference=references,
-                          n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
-                          recall_only=False, stemming=True, stopwords=False,
-                          word_level=True, length_limit=max_length is not None, length=max_length,
-                          use_cf=False, cf=95, scoring_formula='average',
-                          resampling=True, samples=1000, favor=True, p=0.5)
+                        summary=summaries, reference=references,
+                        n_gram=2, ROUGE_SU4=False, ROUGE_L=True,
+                        recall_only=False, stemming=True, stopwords=False,
+                        word_level=True, length_limit=max_length is not None, length=max_length,
+                        use_cf=False, cf=95, scoring_formula='average',
+                        resampling=True, samples=1000, favor=True, p=0.5)
     scores = rouge.calc_score()
     logging.info('ROUGE(1/2/L) Scores:')
     logging.info('>   ROUGE-1-R/F1: %f / %f', scores['ROUGE-1-R'], scores['ROUGE-1-F'])
