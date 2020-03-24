@@ -2,6 +2,10 @@
 set nu
 set backspace=2
 
+" enable mouse
+set mouse=a
+set ttymouse=xterm2
+
 " tab step and overwrite tabstop=4 for python files
 set tabstop=4
 augroup tabstopFour
@@ -61,10 +65,11 @@ call plug#begin('~/.vim/plugged')
 Plug 'itchyny/lightline.vim'
 set noshowmode
 set laststatus=2
+set timeoutlen=1000 ttimeoutlen=0
 
 " file explorer
 Plug 'scrooloose/nerdtree', { 'on':  'NERDTreeToggle' }
-map <C-O> :NERDTreeToggle<CR>
+map <C-L> :NERDTreeToggle<CR>
 autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
 
 " comment code
@@ -75,7 +80,7 @@ Plug 'tpope/vim-fugitive'
 
 " toggle location/quickfix lists
 Plug 'Valloric/ListToggle'
-map <C-L> :LToggle<CR>
+map <C-H> :LToggle<CR>
 map <C-J> :lnext<CR>
 map <C-K> :lprevious<CR>
 
