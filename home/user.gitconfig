@@ -6,3 +6,7 @@
 [core]
 	pager = less -x1,5
 	editor = vi
+[alias]
+	co = checkout
+	d = diff
+	s = status

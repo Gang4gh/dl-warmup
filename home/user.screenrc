@@ -37,7 +37,7 @@ bindkey "\033\060" select 10
 # Alt-w to enter copy mode
 bindkey "\033w" copy
 # Alt-r to switch layout
-bindkey "\033y" layout next # or, eval "layout next" "focus left" "select 3"
+bindkey "\033y" eval "layout next" "resize -1" "resize +1" #layout next # or, eval "layout next" "focus left" "select 3"
 
 # eanble 256 color, refer: http://robotsrule.us/vim/
 attrcolor b ".I"    # allow bold colors - necessary for some reason

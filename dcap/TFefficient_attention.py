@@ -45,7 +45,6 @@ class TFLSHAttention():
                   n_hashes = 8,
                   causal = False,
                   allow_duplicate_attention = True,
-                  attend_across_buckets = True,
                   drop_for_hash_rate = 0.0,
                   random_rotations_per_head = False):
         assert dropout >= 0 and dropout <= 1.0, 'dropout rates must be in [0, 1.0]'
@@ -57,7 +56,6 @@ class TFLSHAttention():
         self.bucket_size = bucket_size
 
         self._allow_duplicate_attention = allow_duplicate_attention
-        self._attend_across_buckets = attend_across_buckets
         self._random_rotations_per_head = random_rotations_per_head
 
     def hash_vectors(self, n_buckets, vecs):
@@ -199,10 +197,11 @@ class TFLSHAttention():
             #           )
 
             # padding position based mask
-            mask = tf.gather(padding_mask, bkv_t, batch_dims=1)[:,:,None,:]
+            mask = tf.cast(tf.gather(padding_mask, bkv_t, batch_dims=1)[:,:,None,:], tf.float32)
             #tf.debugging.assert_equal(mask, mask2, message='two masks are diff')
 
-            dots += tf.cast(mask, tf.float32) * (-1e9)
+            dots = tf.math.multiply(dots, (1-mask)) + mask * (-1e9)
+            #dots += mask * (-1e9)
             debug_print('********** apply padding mask, mask.shape', mask.shape)
             del mask
 
@@ -214,20 +213,10 @@ class TFLSHAttention():
             del mask
 
         # Mask out attention to self except when no other targets are available.
-        self_mask = bq_t[:, :, :, None] == bkv_t[:, :, None, :]
-        #dots = tf.math.multiply(dots, (1-tf.cast(self_mask, tf.float32))) + tf.cast(self_mask, tf.float32) * (- 1e5)
-        dots += tf.cast(self_mask, tf.float32) * (-1e5)
+        self_mask = tf.cast(bq_t[:, :, :, None] == bkv_t[:, :, None, :], tf.float32)
+        dots = tf.math.multiply(dots, (1-self_mask)) + self_mask * (-1e5)
+        #dots += self_mask * (-1e5)
         del self_mask
-
-        # Mask out attention to other hash buckets.
-        if not self._attend_across_buckets:
-            bq_buckets = bkv_buckets = tf.reshape(sbuckets_and_t // seqlen, (-1, self.n_hashes * n_bins, self.bucket_size))
-            bkv_buckets = look_one_back(bkv_buckets)
-            bucket_mask = bq_buckets[:, :, :, None] != bkv_buckets[:, :, None, :]
-            debug_print('********** mask all other buckets: bucket_mask.shape', bucket_maskmask.shape)
-            dots = tf.math.multiply(dots, tf.cast(bucket_mask, tf.float32)) + (1-tf.cast(bucket_mask, tf.float32)) * (- 1e9)
-            del bucket_mask
-        debug_print('dots.shape (after all masks)', dots.shape)
 
         # Don't double-count query-key pairs across multiple rounds of hashing.
         # Here to count how many times a query-key pair is repeated,
@@ -323,7 +312,7 @@ class TFLSHAttention():
         return out
 
 class TFLSHSelfAttention(tf.keras.Model):
-    def __init__(self, emb, heads = 8, bucket_size = 64, n_hashes = 8, causal = False, attn_chunks = None, random_rotations_per_head = False, attend_across_buckets = True, allow_duplicate_attention = True, **kwargs):
+    def __init__(self, emb, heads = 8, bucket_size = 64, n_hashes = 8, causal = False, attn_chunks = None, random_rotations_per_head = False, allow_duplicate_attention = True, **kwargs):
         super(TFLSHSelfAttention, self).__init__()
         assert emb % heads == 0, 'dimensions must be divisible by number of heads'
 
@@ -336,7 +325,7 @@ class TFLSHSelfAttention(tf.keras.Model):
         self.to_out = Dense(emb)
 
         self.bucket_size = bucket_size
-        self.lsh_attn = TFLSHAttention(bucket_size=bucket_size, causal=causal, random_rotations_per_head=random_rotations_per_head, attend_across_buckets = attend_across_buckets,  allow_duplicate_attention = allow_duplicate_attention, **kwargs)
+        self.lsh_attn = TFLSHAttention(bucket_size=bucket_size, causal=causal, random_rotations_per_head=random_rotations_per_head, allow_duplicate_attention = allow_duplicate_attention, **kwargs)
 
     def call(self, inputs):
         b, t, e, h = *inputs.shape, self.heads
