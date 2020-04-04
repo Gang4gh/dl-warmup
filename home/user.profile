@@ -29,3 +29,6 @@ fi
 if [ -f /pod.env ]; then
     . /pod.env
 fi
+if [ -f /dlts-runtime/env/pod.env ]; then
+    . /dlts-runtime/env/pod.env
+fi

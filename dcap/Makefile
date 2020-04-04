@@ -70,7 +70,7 @@ else
 endif
 
 eval: $(DATA_FILES)
-	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=16 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer $(ARGS)
+	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer $(ARGS)
 
 predict:
 	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 $(ARGS)
