@@ -8,5 +8,9 @@ RUN pip install tensorflow_datasets git+https://github.com/tagucci/pythonrouge.g
 ENV PYTHONPATH=/dsum/tensorflow/models
 RUN git clone --depth 1 https://github.com/tensorflow/models.git /dsum/tensorflow/models && cd /dsum/tensorflow/models && rm -rf .git* research samples tutorials
 
+RUN sed -i 's,^path-exclude=/usr/share/man/,#path-exclude=/usr/share/man/,' /etc/dpkg/dpkg.cfg.d/excludes
+RUN apt update && apt install -y man manpages-posix sudo git screen vim p7zip-full libxml-parser-perl
+# RUN pip install --upgrade pip && pip install tensorflow_datasets git+https://github.com/tagucci/pythonrouge.git
+
 RUN useradd -m -G sudo dsumuser && echo dsumuser:gg | chpasswd
 USER dsumuser
