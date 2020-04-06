@@ -10,7 +10,7 @@ RUN git clone --depth 1 https://github.com/tensorflow/models.git /dsum/tensorflo
 
 RUN sed -i 's,^path-exclude=/usr/share/man/,#path-exclude=/usr/share/man/,' /etc/dpkg/dpkg.cfg.d/excludes
 RUN apt update && apt install -y --reinstall man manpages-posix sudo screen gzip git-man
-# RUN pip install --upgrade pip && pip install tensorflow_datasets git+https://github.com/tagucci/pythonrouge.git
+RUN pip install --upgrade pip && pip install flake8==2.5.4
 
 RUN useradd -m -G sudo dsumuser && echo dsumuser:gg | chpasswd
 USER dsumuser
