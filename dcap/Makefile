@@ -98,9 +98,9 @@ else
 	$(error PREDICTION is not specified)
 endif
 	mkdir -p $(PRED_ABSPATH)
-	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--for_inference'
+	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--for_inference --doc_length_limit=10240'
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--check_enoughtokens --check_exactmatch'
-	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=32 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --test_num_hashes=8 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
 DLTS_DIRS=$(wildcard running_center/dlts*)
 sync-all:

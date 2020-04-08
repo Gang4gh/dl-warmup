@@ -231,13 +231,16 @@ class Seq2SeqTask():
     params = self.params
     flags_obj = self.flags_obj
 
-    model = self.create_model(mode='predict')
-    model.summary()
-    self._load_model_weights(model)
+    with distribution_utils.get_strategy_scope(self.distribution_strategy):
+      model = self.create_model(mode='predict')
+      model.summary()
+      self._load_model_weights(model)
 
     #numpy.set_printoptions(threshold=sys.maxsize)
 
     ds = self._create_dataset(params['data_dir'], repeat=1, batch_size=1)
+    if flags_obj.dev_mode:
+      ds = ds.cache(params['data_dir'] + '.cache')
     logging.info('max prediction limit = {}'.format(flags_obj.max_predict_count))
     if flags_obj.max_predict_count:
       ds = ds.take(flags_obj.max_predict_count)
@@ -253,7 +256,7 @@ class Seq2SeqTask():
     Y = np.ones([len(inputs), 1], np.int32)
 
     correct, total = 0, 0
-    mpred = model.predict([X, Y], batch_size=params['batch_size'])
+    mpred = model.predict([X, Y], batch_size=params['batch_size'], verbose=1 if flags_obj.dev_mode else 0)
     for ind, (pred_ids, score, logits) in enumerate(zip(*mpred)):
       preds.append(pred_ids)
       pred_scores.append(score)

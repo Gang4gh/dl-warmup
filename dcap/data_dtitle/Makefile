@@ -60,6 +60,19 @@ $(TAG)-meta.log: $(TAG)-training.dtitle.gz $(TAG)-test.dtitle $(TAG)-test.dtitle
 	@echo ---------- data files md5sum ---------- >> $@
 	md5sum $(TAG)-*.* >> $@
 
+data-v3-vocab-1gb-%.subwords:
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-1gb --target_vocab_size=$* --max_corpus_chars=1
+data-v3-vocab-4gb-%.subwords:
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-4gb --target_vocab_size=$* --max_corpus_chars=4
+data-v3-vocab-16gb-%.subwords:
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-16gb --target_vocab_size=$* --max_corpus_chars=16
+data-v3-vocab-24gb-%.subwords:
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-24gb --target_vocab_size=$* --max_corpus_chars=24
+data-v3-vocab-32gb-%.subwords:
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-32gb --target_vocab_size=$* --max_corpus_chars=32
+data-v3-vocab-256gb-%.subwords:
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-256gb --target_vocab_size=$* --max_corpus_chars=256
+
 TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
 TEST_DATA_SCHEMA = cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html
 preprocess-testdata: $(TEST_DATA)

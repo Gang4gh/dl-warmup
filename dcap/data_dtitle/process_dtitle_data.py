@@ -93,16 +93,37 @@ def preprocess_raw_input(FLAGS):
 
 
 def build_vocab(FLAGS):
+	def _get_vocab_corpus():
+		from pathlib import Path
+		columns = [col.split(':') for col in FLAGS.vocab_corpus_columns.split(',')]
+		column_with_limits = [(col[0], int(col[1]) if len(col) > 1 else 128) for col in columns]
+
+		quota = int(FLAGS.max_corpus_chars*(2**30))
+		for fp in sorted(Path('.').glob(FLAGS.input_file)):
+			print(f'read from {fp} with quota={quota//(1024*1024)}MB, at {time.asctime()}')
+			for row in dtitle_reader(str(fp), FLAGS.input_schema, 100*1024):
+				for col in column_with_limits:
+					text = getattr(row, col[0])[:col[1]]
+					if text:
+						#print(f'col={col}, len={len(text)}, text={text[:100]}')
+						btext = _normalize_string(text).encode()
+						yield btext
+						quota -= len(btext)
+						if quota < 0:
+							print(f'reach limit and stop.')
+							return
+
 	import tensorflow_datasets as tfds
 	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
-	corpus = (s.encode() for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema, 100*1024) for s in [row.url, row.hostname, row.html, row.title])
-	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(corpus,
+
+	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(_get_vocab_corpus(),
 			target_vocab_size = FLAGS.target_vocab_size,
 			max_subword_length = FLAGS.max_subword_length,
 			max_corpus_chars = int(FLAGS.max_corpus_chars*(2**30)),
-			reserved_tokens = ['<EOS>', '<BOS#0>', '<BOS#1>', '<BOS#2>', '<BOS#3>'])
+			reserved_tokens = ['<EOS>'] + [f'<BOS#{i}>' for i in range(10)] + [f'<EOS#{i}>' for i in range(10)])
 	tokenizer.save_to_file(target_vocab_file)
+	_save_FLAGS_and_code(FLAGS, target_vocab_file + '.log')
 	print('{}: the subwords tokenizer({}) is ready.'.format(time.asctime(), target_vocab_file))
 
 
@@ -146,10 +167,10 @@ def tokenize_dtitle(FLAGS):
 	print(f'complete tokenization with token limit {FLAGS.token_count_limit}. write {len(stats)} outputs to {tfrecord_file}.')
 
 
-def print_flags(FLAGS):
-	print('FLAGS:')
+def print_flags(FLAGS, file=None):
+	print('FLAGS:', file=file)
 	for f in FLAGS.get_key_flags_for_module(__file__):
-		print('    {}: {}'.format(f.name, f.value))
+		print('    {}: {}'.format(f.name, f.value), file=file)
 
 
 def check_stats(FLAGS):
@@ -164,6 +185,19 @@ def check_stats(FLAGS):
 	for i in range(100):
 		print('%d\t%d' % (bin_edges[i], hist[i]))
 	print('%d\t-' % bin_edges[100])
+
+
+def _normalize_string(s):
+	return re.sub(r'\s+', ' ', s).strip().lower()
+
+
+def _save_FLAGS_and_code(FLAGS, filename):
+	with open(filename, 'w') as logfile:
+		logfile.write('-- FLAGS --\n')
+		print_flags(FLAGS, logfile)
+		logfile.write('-- source code --\n')
+		with open(__file__) as fi:
+			for line in fi: logfile.write(line)
 
 
 def main(_):
@@ -185,7 +219,7 @@ if __name__ == '__main__':
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
-	flags.DEFINE_string('input_schema', 'url,doc_url,visual_title,hostname,title,html', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AnnotationDesc,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
 	flags.DEFINE_string('dtitle_schema', 'url,title,hostname,html', 'dtitle file schema, used by build_vocab() and model training')
 	# params for pre-process
 	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
@@ -201,6 +235,8 @@ if __name__ == '__main__':
 	flags.DEFINE_integer('doc_length_limit', 200*1024, 'max allowed html length')
 	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
 	# params for build-vocab
+	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CleanedHtmlBody:40960',
+			'list of column_name:length_limit to build vocab, default length_limit is 128')
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')

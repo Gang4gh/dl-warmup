@@ -20,15 +20,9 @@ from __future__ import print_function
 
 # pylint: disable=g-bad-import-order
 from absl import flags
-import tensorflow as tf
-
-# TODO(tianlin) Import internal library. Remove this when some functions for
-# different TF versions are fixed.
-from tensorflow.python import tf2 as tf2_internal
 
 from official.nlp.transformer import model_params
 from official.utils.flags import core as flags_core
-from official.utils.misc import keras_utils
 
 FLAGS = flags.FLAGS
 
@@ -51,7 +45,7 @@ PARAMS_MAP = {
     'big': model_params.BIG_PARAMS,
     'big-multigpu': model_params.BIG_MULTI_GPU_PARAMS,
     'trial': TRIAL_PARAMS,
-    'trial-multigpu':TRIAL_MULTI_GPU_PARAMS,
+    'trial-multigpu': TRIAL_MULTI_GPU_PARAMS,
 }
 
 
@@ -90,7 +84,7 @@ def define_transformer_flags():
            'convolutions and batch normalizations, and this flag allows to '
            'disable it.'
   )
-    
+
   flags_core.define_benchmark()
   flags_core.define_device(tpu=True)
 
@@ -223,7 +217,8 @@ def define_transformer_flags():
 
   flags.DEFINE_string(
       name='input_concat_schema', default='v2',
-      help=flags_core.help_wrap('input_concat_schema: [v0, v1, v2, v3]. v0: html only; '
+      help=flags_core.help_wrap(
+          'input_concat_schema: [v0, v1, v2, v3]. v0: html only; '
           'v1: concatenated (url, hostname, html); '
           'v2: concatenated and padded (url, hostname, html); '
           'v3: padded (url, hostname, html)'))
@@ -239,8 +234,9 @@ def define_transformer_flags():
 
   flags.DEFINE_string(
       name='prediction_details_file', default=None,
-      help=flags_core.help_wrap('output prediction details to the specified file. '
-           'disabled when None; output to the model folder when #model_dir.'))
+      help=flags_core.help_wrap(
+          'output prediction details to the specified file. '
+          'disabled when None; output to the model folder when #model_dir.'))
 
   flags.DEFINE_string(
       name='prediction_reference_file', default=None,
@@ -248,8 +244,9 @@ def define_transformer_flags():
 
   flags.DEFINE_string(
       name='prediction_compact_file', default='#model_dir',
-      help=flags_core.help_wrap('output prediction compact result to the specified file, '
-           'disabled when None; output to the model folder when #model_dir.'))
+      help=flags_core.help_wrap(
+          'output prediction compact result to the specified file, '
+          'disabled when None; output to the model folder when #model_dir.'))
 
   flags.DEFINE_bool(
       name='calc_rouge_scores', default=True,
@@ -293,6 +290,10 @@ def define_transformer_flags():
   flags.DEFINE_float(
       name='lsh_attention_dropout', default=0.0,
       help=flags_core.help_wrap('dropout rate for lsh_attention layers'))
+
+  flags.DEFINE_bool(
+      name='dev_mode', default=False,
+      help=flags_core.help_wrap('if dev_mode is True, output more details'))
 
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',

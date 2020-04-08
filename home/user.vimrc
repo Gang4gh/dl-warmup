@@ -6,16 +6,10 @@ set backspace=2
 set mouse=a
 set ttymouse=xterm2
 
-" tab step and overwrite tabstop=4 for python files
-set tabstop=4
-augroup tabstopFour
-    autocmd!
-    autocmd FileType python set tabstop=4
-augroup END
-
 " search options: highlight search, incremental search, case insensitive search, and smart search
 set hlsearch
 set incsearch
+set ignorecase
 set smartcase
 
 " enable syntax highlighting, set 256 color and colorscheme
@@ -103,3 +97,11 @@ let g:syntastic_quiet_messages = { 'regex': ['\[E111\]', '\[E114\]', '\[E265\]',
 " E501: line too long
 
 call plug#end()
+
+" tab step and overwrite tabstop=4 for python files
+set tabstop=4
+augroup tabstopFour
+    autocmd!
+    "autocmd FileType python set tabstop=4
+    autocmd BufNewFile,BufRead data_dtitle/*.py set tabstop=4 noexpandtab
+augroup END
