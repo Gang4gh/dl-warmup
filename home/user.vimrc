@@ -102,6 +102,6 @@ call plug#end()
 set tabstop=4
 augroup tabstopFour
     autocmd!
-    "autocmd FileType python set tabstop=4
-    autocmd BufNewFile,BufRead data_dtitle/*.py set tabstop=4 noexpandtab
+    autocmd FileType python set tabstop=4
+    autocmd BufNewFile,BufRead ~/dl/dcap/data_dtitle/*.py set noexpandtab
 augroup END
