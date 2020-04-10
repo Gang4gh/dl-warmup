@@ -67,7 +67,7 @@ unset color_prompt force_color_prompt
 # If this is an xterm set the title to user@host:dir
 case "$TERM" in
 xterm*|rxvt*|screen*)
-    PS1="\[\e]0;${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
+    PS1="\[\e]0;${TITLE_PREFIX}${debian_chroot:+($debian_chroot)}\u@\h: \w\a\]$PS1"
     ;;
 *)
     ;;
@@ -118,9 +118,8 @@ if ! shopt -oq posix; then
 fi
 
 # show 'current' command line in title
-trap 'echo -ne "\033]2;$PWD\$ $(history 1 | cut -c8-)\007"' DEBUG
-
-export LD_LIBRARY_PATH=$CUDA_HOME/extras/CUPTI/lib64:$CUDA_HOME/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+#trap 'echo -ne "\033]2;$TITLE_PREFIX$(date +%H:%M:%S):${PWD/${HOME//\//\\\/}/\~}\$ $(history 1 | cut -c8-)\007"' DEBUG
+trap 'echo -ne "\033]2;$TITLE_PREFIX${PWD/${HOME//\//\\\/}/\~}\$ $(history 1 | cut -c8-)\007"' DEBUG
 
 # disable xon/xoff to repurpos Ctrl-S/Ctrl-Q
 stty -ixon
