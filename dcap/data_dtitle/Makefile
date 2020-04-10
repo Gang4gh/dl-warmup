@@ -1,14 +1,19 @@
 SHELL = /bin/bash
 CPUS = $(shell nproc)
 
-DTITLE_RAW = raw-data.7z
+-include Makefile.local.config
+DTITLE_RAW ?= snapshot-0403-small.7z
+SHUF_RANDOM_SOURCE ?= snapshot-0403-small.7z
 SPLIT_DIR = split_raw/
 TAG =
 ARGS =
 DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
+VOCAB_FILE = data-v3-vocab-16gb
 
 all: $(SPLIT_DIR)all-data.md5
 	$(MAKE) -j$(CPUS) $(TAG)-meta.log
+
+split-data: $(SPLIT_DIR)all-data.md5
 
 clean:
 	rm -rf $(SPLIT_DIR)
@@ -33,7 +38,7 @@ endif
 
 %.$(TAG).dtitle: %.raw.gz
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) \
-		| shuf --random-source=$(DTITLE_RAW) > $@
+		| shuf --random-source=$(SHUF_RANDOM_SOURCE) > $@
 
 $(TAG)-training.dtitle.gz: $(DTITLE_FILES)
 	tail -q -n +101 $^ | gzip > $@
@@ -45,15 +50,13 @@ $(TAG)-test.dtitle: $(DTITLE_FILES)
 	gzip -fk $<
 
 $(TAG)-vocab-%.subwords: $(TAG)-training.dtitle.gz
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=$* $(ARGS)
-
-%-vocab-8192-64gb.subwords: %-training.dtitle.gz
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$*-vocab-64gb --target_vocab_size=8192 --max_corpus_chars=64 $(ARGS)
+	#python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=$* $(ARGS)
+	cp -lp $(VOCAB_FILE)-$*.subwords $@
 
 %.tokenized-tfrecord.gz: %.dtitle.gz
-	python3 process_dtitle_data.py --cmd=tokenize-dtitle --input_file=$< --vocab_file_prefix=$(subst -test.dtitle.gz,-vocab,$(subst -training.dtitle.gz,-vocab,$<)) --target_vocab_size=8192 $(ARGS)
+	python3 process_dtitle_data.py --cmd=tokenize-dtitle-mp --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) --target_vocab_size=8192 $(ARGS)
 
-$(TAG)-meta.log: $(TAG)-training.dtitle.gz $(TAG)-test.dtitle $(TAG)-test.dtitle.gz $(TAG)-vocab-8192.subwords
+$(TAG)-meta.log: $(TAG)-training.tokenized-tfrecord.gz $(TAG)-test.dtitle $(TAG)-test.tokenized-tfrecord.gz $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
 	@echo ---------- source code  ---------- >> $@
 	cat process_dtitle_data.py >> $@

@@ -8,10 +8,10 @@ PORT ?= 2345
 ROOT ?= .
 MDIR ?= $(subst //,/,$(ROOT)/model)
 DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
-DTAG ?= 0225-noTH2s-r0.1-max3k
+DTAG ?= 0409-datasetv3
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
-DATA_FILES = $(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-test.dtitle.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
+DATA_FILES = $(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
 CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py $(DATA_DIR)/Makefile $(DATA_DIR)/*.py))
 
 all: check-params

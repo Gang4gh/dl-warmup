@@ -127,7 +127,7 @@ class Seq2SeqTask():
         enable_xla=flags_obj.enable_xla)
 
     train_ds = self._create_dataset(params['data_dir'], repeat=None)
-    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle.gz', params['data_dir']), repeat=1)
+    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.tokenized-tfrecord.gz', params['data_dir']), repeat=1)
     val_ds = val_ds.take(flags_obj.validation_example_count // params["batch_size"]).cache()
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
@@ -517,10 +517,10 @@ def test_read_and_dump_datasets(task):
 
   np.set_printoptions(threshold=2048)
   repeat_times = 1
-  for idx, bc in enumerate([100, 1000, 10000]):
+  for idx, bc in enumerate([100, 1000, 10000][1:2]):
     #_dump_to_file(f'out-random-{idx}.batch{bc}', '__random_input__', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    _dump_to_file(f'out-dtitle-gz-{idx}.batch{bc}', task.params['data_dir'] + '.gz', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    _dump_to_file(f'out-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    #_dump_to_file(f'out-dtitle-gz-{idx}.batch{bc}', task.params['data_dir'] + '.gz', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    #_dump_to_file(f'out-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     _dump_to_file(f'out-tokenized-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
 
 

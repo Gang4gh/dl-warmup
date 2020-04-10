@@ -5,9 +5,13 @@ import re
 import time
 import gzip
 import collections
+from multiprocessing import Pool
 
 from absl import app
 from absl import flags
+
+import tensorflow as tf
+import tensorflow_datasets as tfds
 
 def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 	column_names = input_schema.split(',')
@@ -35,61 +39,71 @@ def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 
 
 def preprocess_raw_input(FLAGS):
-	DTitle_Row = collections.namedtuple('DTitle_Row', FLAGS.dtitle_schema)
+	dtitle_schema_columns = FLAGS.dtitle_schema.split(',')
 
 	total, valid, suppressed = 0, 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
-		url, title, hostname, html = row.url, row.title, row.hostname, row.html
-		if FLAGS.for_inference:
-			if not url or not html: continue
-		else:
-			if not url or not title or not html: continue
+		url, title, html = row.Url, row.AHtmlTitle, row.CleanedHtmlBody
+		if not url or not html: continue
 
-		#title = re.sub(r'#N#|#R#|#TAB#', ' ', title)
-		#hostname = re.sub(r'#N#|#R#|#TAB#', ' ', hostname)
 		#html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
 
-		if len(html) > FLAGS.doc_length_limit:
-			m = re.match(f'.{{,{FLAGS.doc_length_limit}}}(?=[^\\w&</])', html)
-			if m:
-				html = m.group(0)
-			else:
-				print('invalid input, no-match, {}'.format(url), file=sys.stderr)
-				continue
-
-		if FLAGS.remove_title:
+		# apply html modification (mask) options to modify content
+		if FLAGS.mask_html_title:
 			html = re.sub(r'<title.*?</title>', ' ', html, flags=re.I)
-
-		if FLAGS.remove_head:
-			html = re.sub(r'<head.*?</head>', ' ', html, flags=re.I)
-
-		url, title, hostname, html = (re.sub(r'\s+', ' ', s).strip().lower() for s in [url, title, hostname, html])
-		title_tokens = [w for w in re.split(r'\W+', title) if w]
-
-		if FLAGS.check_enoughtokens and len(title_tokens) <= 1:
+		if FLAGS.mask_title_fields:
+			html = re.sub(r'<meta[^>]*=["\'](?:og:|og&#x3a;)?title["\'][^>]*>', '', html, flags=re.I)
+		if FLAGS.mask_description_fields:
+			html = re.sub(r'<meta[^>]*=["\'](?:og:|og&#x3a;)?description["\'][^>]*>', '', html, flags=re.I)
+		if FLAGS.mask_og_sitename:
+			html = re.sub(r'<meta[^>]*=["\'](?:og:|og&#x3a;)?site_name["\'][^>]*>', '', html, flags=re.I)
+		if False:
+			m = re.search(r'<meta[^>]*=["\']description["\'][^>]*>', html, flags=re.I)
+			mstring = m.group(0) if m else None
+			print(f'url = {url}\nhtml = {html[:1000]}\ntmstring = {mstring}')
+			if mstring: input("Press Enter to continue...")
 			continue
 
-		if FLAGS.check_exactmatch and title not in html:
-			continue
+		# split and truncate head and body
+		head_regex = r'<head\W.*?</head>'
+		htmlhead = ' '.join(re.findall(head_regex, html, flags=re.I))
+		htmlbody = re.sub(head_regex, '', html, flags=re.I)
 
-		if FLAGS.check_fuzzymatch and any(token not in html for token in title_tokens):
+		htmlhead = htmlhead[:FLAGS.htmlhead_length_limit]
+		htmlbody = htmlbody[:FLAGS.htmlbody_length_limit]
+
+		# apply filtering options
+		title_normalized, htmlbody_normalized = (_normalize_string(s) for s in [title, htmlbody])
+		title_tokens = [w for w in re.split(r'\W+', title_normalized) if w]
+		if FLAGS.filter_short_title and len(title_tokens) <= 1:
 			continue
 
 		if not FLAGS.for_inference and (FLAGS.suppress_enoughtokens and len(title_tokens) <= 1
-			or FLAGS.suppress_exactmatch and title not in html
-			or FLAGS.suppress_fuzzymatch and any(token not in html for token in title_tokens)):
+			or FLAGS.suppress_exactmatch and title_normalized not in htmlbody_normalized
+			or FLAGS.suppress_fuzzymatch and any(token not in htmlbody_normalized for token in title_tokens)):
 			if  FLAGS.max_suppress_ratio * (valid + suppressed) >= suppressed:
 				suppressed += 1
 				title = ''
 			else:
 				continue
 
+		# output by the order defined in dtitle_schema
+		res = []
+		for col in dtitle_schema_columns:
+			if col == 'TargetTitle':
+				res.append(title)
+			elif col == 'HtmlBody':
+				res.append(htmlbody)
+			elif col == 'HtmlHead':
+				res.append(htmlhead)
+			else:
+				res.append(getattr(row, col))
+		print('\t'.join([_normalize_string(s, toLower=False) for s in res]))
 		valid += 1 if title else 0
-		if FLAGS.output_raw_html: html = row.html.strip().lower()
-		print('\t'.join(DTitle_Row(url=url, title=title, hostname=hostname, html=html)))
-	no_title = total - valid - suppressed
-	print(f'processed {total} example(s), including {valid} ({valid/total*100:.2f}%) valid, {suppressed} ({suppressed/total*100:.2f}%) suppressed and {no_title} ({no_title/total*100:.2f}) examples without target_title, from {FLAGS.input_file}', file=sys.stderr)
+
+	ignored = total - valid - suppressed
+	print(f'processed {total} example(s), including {valid} ({valid/total*100:.2f}%) valid, {suppressed} ({suppressed/total*100:.2f}%) suppressed and {ignored} ({ignored/total*100:.2f}) ignored examples, from {FLAGS.input_file}', file=sys.stderr)
 
 
 def build_vocab(FLAGS):
@@ -113,7 +127,6 @@ def build_vocab(FLAGS):
 							print(f'reach limit and stop.')
 							return
 
-	import tensorflow_datasets as tfds
 	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
 
@@ -128,8 +141,6 @@ def build_vocab(FLAGS):
 
 
 def tokenize_dtitle(FLAGS):
-	import tensorflow as tf
-	import tensorflow_datasets as tfds
 	vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
 	tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
 	print(f'initilize tokenizer by vocab file [{vocab_file}].')
@@ -167,6 +178,42 @@ def tokenize_dtitle(FLAGS):
 	print(f'complete tokenization with token limit {FLAGS.token_count_limit}. write {len(stats)} outputs to {tfrecord_file}.')
 
 
+tokenizer = None
+def _create_example(row):
+	def _create_int64List_feature(text, limit):
+		arr = tokenizer.encode(_normalize_string(text))
+		if limit: arr = arr[:limit]
+		return tf.train.Feature(int64_list=tf.train.Int64List(value=arr))
+
+	url, title, hostname, html = row
+	example = {
+		'url': _create_int64List_feature(url, 0),
+		'title': _create_int64List_feature(title, 0),
+		'hostname': _create_int64List_feature(hostname, 0),
+		'html': _create_int64List_feature(html, flags.FLAGS.token_count_limit),
+	}
+	return tf.train.Example(features=tf.train.Features(feature=example)).SerializeToString()
+
+
+def tokenize_dtitle_mp(FLAGS):
+	global tokenizer
+	vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+	tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
+	print(f'initilize tokenizer by vocab file [{vocab_file}].')
+
+	assert FLAGS.input_file.endswith('.dtitle.gz')
+	tfrecord_file = FLAGS.input_file[:-10] + '.tokenized-tfrecord'
+	if FLAGS.compression_type == 'GZIP':
+		tfrecord_file += '.gz'
+
+	count = 0
+	with tf.io.TFRecordWriter(tfrecord_file, FLAGS.compression_type) as tfwriter, Pool() as pool:
+		for proto in pool.imap(_create_example, ((row.Url, row.TargetTitle, row.InjHdr_CDG_H, row.HtmlBody) for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema))):
+			count += 1
+			tfwriter.write(proto)
+	print(f'complete tokenization of {FLAGS.input_file}, token limit = {FLAGS.token_count_limit}. write {count} records to {tfrecord_file}.')
+
+
 def print_flags(FLAGS, file=None):
 	print('FLAGS:', file=file)
 	for f in FLAGS.get_key_flags_for_module(__file__):
@@ -187,8 +234,9 @@ def check_stats(FLAGS):
 	print('%d\t-' % bin_edges[100])
 
 
-def _normalize_string(s):
-	return re.sub(r'\s+', ' ', s).strip().lower()
+def _normalize_string(s, toLower=True):
+	s = re.sub(r'\s+', ' ', s).strip()
+	return s.lower() if toLower else s
 
 
 def _save_FLAGS_and_code(FLAGS, filename):
@@ -208,6 +256,8 @@ def main(_):
 		build_vocab(FLAGS)
 	elif FLAGS.cmd == 'tokenize-dtitle':
 		tokenize_dtitle(FLAGS)
+	elif FLAGS.cmd == 'tokenize-dtitle-mp':
+		tokenize_dtitle_mp(FLAGS)
 	elif FLAGS.cmd == 'check-stats':
 		check_stats(FLAGS)
 	elif FLAGS.cmd == 'print-flags':
@@ -215,24 +265,25 @@ def main(_):
 
 
 if __name__ == '__main__':
-	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags', 'tokenize-dtitle'], 'the command to execute')
+	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags', 'tokenize-dtitle', 'tokenize-dtitle-mp'], 'the command to execute')
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
 	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AnnotationDesc,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
-	flags.DEFINE_string('dtitle_schema', 'url,title,hostname,html', 'dtitle file schema, used by build_vocab() and model training')
+	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody', 'input file schema, used fields: url,title,hostname,html')
 	# params for pre-process
-	flags.DEFINE_boolean('remove_title', True, 'filter out content in <title> tag')
-	flags.DEFINE_boolean('remove_head', True, 'only keep content in <body> tag')
-	flags.DEFINE_boolean('check_enoughtokens', False, 'filter out examples whose title doesn''t have enough tokens')
-	flags.DEFINE_boolean('check_exactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
-	flags.DEFINE_boolean('check_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
+	flags.DEFINE_boolean('mask_html_title', True, 'remove content in <title> tag (html_title) from html')
+	flags.DEFINE_boolean('mask_title_fields', False, 'remove meta-title, og-title from html')
+	flags.DEFINE_boolean('mask_description_fields', False, 'remove meta-description, og-description from html')
+	flags.DEFINE_boolean('mask_og_sitename', False, 'remove og_sitename from html')
+	flags.DEFINE_boolean('filter_short_title', False, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_float('max_suppress_ratio', 0.1, 'the max percentage of suppressed examples (title is empty) to generate')
 	flags.DEFINE_boolean('suppress_enoughtokens', True, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('suppress_exactmatch', True, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_fuzzymatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
-	flags.DEFINE_boolean('output_raw_html', False, 'output unmodified html body')
-	flags.DEFINE_integer('doc_length_limit', 200*1024, 'max allowed html length')
+	flags.DEFINE_integer('htmlhead_length_limit', 10*1024, 'max allowed html head length')
+	flags.DEFINE_integer('htmlbody_length_limit', 100*1024, 'max allowed html body length')
+	flags.DEFINE_integer('default_length_limit', 1*1024, 'max allowed length other than htmlhead/body')
 	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CleanedHtmlBody:40960',
