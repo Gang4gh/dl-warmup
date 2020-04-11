@@ -416,21 +416,26 @@ class Seq2SeqTask():
     ds = ds.unbatch().batch(batch_size, drop_remainder=True)
     return ds
 
-  def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
-    ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
-    description = {
-      'url': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-      'title': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-      'hostname': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-      'html': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+  def _select_parse_function(self, training_schema = None):
+    def _tf_parse_and_truncate_v2(proto):
+      description = {
+        'url': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+        'title': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+        'hostname': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+        'html': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
       }
-    def _tf_parse_and_truncate(proto):
       ex = tf.io.parse_single_example(proto, description)
       return [ tf.concat([[eos+1], tf.cast(ex['url'][:url_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([[eos+2], tf.cast(ex['hostname'][:hostname_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([[eos+3], tf.cast(ex['html'][:html_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([tf.cast(ex['title'], tf.int32), [eos]], axis=0) ]
-    ds = ds.map(_tf_parse_and_truncate, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+    if training_schema is None:
+      return _tf_parse_and_truncate_v2;
+
+  def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+    ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
+    ds = ds.map(self._select_parse_function(), num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds = ds.filter(lambda _a, _b, _c, target: tf.size(target) <= max_target_length)
     ds = ds.padded_batch(batch_size, padded_shapes=([url_segment_limit], [hostname_segment_limit], [html_segment_limit], [max_target_length]), drop_remainder=True)
     ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))

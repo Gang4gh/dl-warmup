@@ -1,5 +1,6 @@
 SHELL = /bin/bash
 CPUS = $(shell nproc)
+export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.local.config
 DTITLE_RAW ?= snapshot-0403-small.7z
@@ -8,7 +9,7 @@ SPLIT_DIR = split_raw/
 TAG =
 ARGS =
 DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
-VOCAB_FILE = data-v3-vocab-16gb
+VOCAB_FILE = data-v3-vocab-24gb
 
 all: $(SPLIT_DIR)all-data.md5
 	$(MAKE) -j$(CPUS) $(TAG)-meta.log

@@ -1,6 +1,7 @@
 SHELL = /bin/bash
 CPUS = $(shell nproc)
 TIMESTAMP := $(shell date +'%Y%m%d-%H%M%S')
+export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 TAG ?= notag
@@ -8,7 +9,7 @@ PORT ?= 2345
 ROOT ?= .
 MDIR ?= $(subst //,/,$(ROOT)/model)
 DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
-DTAG ?= 0409-datasetv3
+DTAG ?= 0411-datasetv3
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
 DATA_FILES = $(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
