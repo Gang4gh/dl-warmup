@@ -8,7 +8,7 @@ SHUF_RANDOM_SOURCE ?= snapshot-0403-small.7z
 SPLIT_DIR = split_raw/
 TAG =
 ARGS =
-DTITLE_FILES = $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
+DTITLE_FILES = $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
 VOCAB_FILE = data-v3-vocab-24gb
 
 all: $(SPLIT_DIR)all-data.md5
@@ -29,8 +29,8 @@ ifeq (, $(shell which 7z))
 else
 	mkdir -p $(SPLIT_DIR)
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
-	7z e -so $< | split -d -nr/100 --additional-suffix=.raw - $(SPLIT_DIR)data-
-	$(MAKE) -j$(CPUS) $(shell for i in {100..199}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
+	7z e -so $< | split -d -nr/96 --additional-suffix=.raw - $(SPLIT_DIR)data-
+	$(MAKE) -j$(CPUS) $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
 	md5sum $(SPLIT_DIR)*.raw.gz > $@
 endif
 
@@ -42,10 +42,10 @@ endif
 		| shuf --random-source=$(SHUF_RANDOM_SOURCE) > $@
 
 $(TAG)-training.dtitle.gz: $(DTITLE_FILES)
-	tail -q -n +101 $^ | gzip > $@
+	tail -q -n +1001 $^ | gzip > $@
 
 $(TAG)-test.dtitle: $(DTITLE_FILES)
-	head -q -n 100 $^ > $@
+	head -q -n 1000 $^ > $@
 
 %.dtitle.gz: %.dtitle
 	gzip -fk $<

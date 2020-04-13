@@ -118,8 +118,8 @@ if ! shopt -oq posix; then
 fi
 
 # show 'current' command line in title
-#trap 'echo -ne "\033]2;$TITLE_PREFIX$(date +%H:%M:%S):${PWD/${HOME//\//\\\/}/\~}\$ $(history 1 | cut -c8-)\007"' DEBUG
-trap 'echo -ne "\033]2;$TITLE_PREFIX${PWD/${HOME//\//\\\/}/\~}\$ $(history 1 | cut -c8-)\007"' DEBUG
+trap 'echo -ne "\033]2;$TITLE_PREFIX$(date +%H:%M:%S):${PWD/${HOME//\//\\\/}/\~}\$ $(history 1 | cut -c8-)\007"' DEBUG
+#trap 'echo -ne "\033]2;$TITLE_PREFIX${PWD/${HOME//\//\\\/}/\~}\$ $(history 1 | cut -c8-)\007"' DEBUG
 
 # disable xon/xoff to repurpos Ctrl-S/Ctrl-Q
 stty -ixon
