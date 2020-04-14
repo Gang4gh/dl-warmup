@@ -6,6 +6,7 @@ import time
 import gzip
 import collections
 from multiprocessing import Pool
+from functools import partial
 
 from absl import app
 from absl import flags
@@ -236,6 +237,40 @@ def tokenize_dtitle_mp(FLAGS):
 	print(f'complete tokenization of {FLAGS.input_file}, token limit = {FLAGS.html_token_limit}. write {count} records to {tfrecord_file}.')
 
 
+def _create_example_v2(row, col_names_and_limits):
+	def _create_int64List_feature(text, limit):
+		arr = _tokenizer.encode(text.lower())
+		if limit: arr = arr[:limit]
+		return tf.train.Feature(int64_list=tf.train.Int64List(value=arr))
+
+	example = {col: _create_int64List_feature(text, limit) for (col, limit), text in zip(col_names_and_limits, row)}
+	return tf.train.Example(features=tf.train.Features(feature=example)).SerializeToString()
+
+
+def tokenize_dtitle_v2(FLAGS):
+	_initialize_tokenizer(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+
+	assert FLAGS.input_file.endswith('.dtitle.gz')
+	tfrecord_file = FLAGS.input_file[:-10] + '.dtitle.tokenized.gz'
+
+	def _get_column_limit(col):
+		if col == 'HtmlHead':
+			return FLAGS.head_token_limit
+		elif col == 'HtmlBody':
+			return FLAGS.html_token_limit
+		else:
+			return FLAGS.default_token_limit
+	col_names_and_limits = [(col, _get_column_limit(col)) for idx, col in enumerate(FLAGS.dtitle_schema.split(','))]
+	_create_example_v2_wrapper = partial(_create_example_v2, col_names_and_limits=col_names_and_limits)
+
+	count = 0
+	with tf.io.TFRecordWriter(tfrecord_file, 'GZIP') as tfwriter, Pool() as pool:
+		for proto in pool.imap(_create_example_v2_wrapper, (tuple(row) for row in dtitle_reader(FLAGS.input_file, FLAGS.dtitle_schema))):
+			tfwriter.write(proto)
+			count += 1
+	print(f'complete tokenization of {FLAGS.input_file}, token limit = {FLAGS.html_token_limit}. write {count} records to {tfrecord_file}.')
+
+
 def print_flags(FLAGS, file=None):
 	print('FLAGS:', file=file)
 	for f in FLAGS.get_key_flags_for_module(__file__):
@@ -275,6 +310,8 @@ def main(_):
 		tokenize_dtitle(FLAGS)
 	elif FLAGS.cmd == 'tokenize-dtitle-mp':
 		tokenize_dtitle_mp(FLAGS)
+	elif FLAGS.cmd == 'tokenize-dtitle-v2':
+		tokenize_dtitle_v2(FLAGS)
 	elif FLAGS.cmd == 'check-stats':
 		check_stats(FLAGS)
 	elif FLAGS.cmd == 'print-flags':
@@ -282,7 +319,7 @@ def main(_):
 
 
 if __name__ == '__main__':
-	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags', 'tokenize-dtitle', 'tokenize-dtitle-mp'], 'the command to execute')
+	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags', 'tokenize-dtitle', 'tokenize-dtitle-mp', 'tokenize-dtitle-v2'], 'the command to execute')
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
@@ -302,7 +339,6 @@ if __name__ == '__main__':
 	flags.DEFINE_integer('htmlhead_length_limit', 10*1024, 'max allowed html head length')
 	flags.DEFINE_float('htmlbody_token_length_ratio', 3.2, 'max allowed html body length is html_token_limit * this ratio')
 	flags.DEFINE_boolean('truncate_by_token', False, 'truncate by html_token_limit tokens after truncate by characters')
-	flags.DEFINE_integer('default_length_limit', 1*1024, 'max allowed length other than htmlhead/body')
 	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CleanedHtmlBody:40960',
@@ -312,7 +348,9 @@ if __name__ == '__main__':
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')
 	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
 	# params for tokenize-dtitle
-	flags.DEFINE_integer('html_token_limit', 10*1024, 'max allowed token count, 0 means no limit')
+	flags.DEFINE_integer('html_token_limit', 10*1024, 'max allowed token count for htmlbody, 0 means no limit')
+	flags.DEFINE_integer('head_token_limit', 2*1024, 'max allowed token count for htmlhead, 0 means no limit')
+	flags.DEFINE_integer('default_token_limit', 256, 'max allowed token count for fields other than htmlhead/body')
 	flags.DEFINE_enum('compression_type', 'GZIP', ['', 'GZIP'], 'compression type used for tfrecord files')
 
 	app.run(main)

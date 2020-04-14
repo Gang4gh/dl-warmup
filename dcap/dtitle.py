@@ -430,12 +430,31 @@ class Seq2SeqTask():
              tf.concat([[eos+3], tf.cast(ex['html'][:html_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([tf.cast(ex['title'], tf.int32), [eos]], axis=0) ]
 
+    v3_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'.split(',')
+    def _tf_parse_and_truncate_v3(proto):
+      description = {col: tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True) for col in v3_schema}
+      ex = tf.io.parse_single_example(proto, description)
+      return [ tf.concat([[eos+1], tf.cast(ex['Url'][:url_segment_limit-2], tf.int32), [eos]], axis=0),
+             tf.concat([[eos+2], tf.cast(ex['InjHdr_CDG_H'][:hostname_segment_limit-2], tf.int32), [eos]], axis=0),
+             tf.concat([[eos+3], tf.cast(ex['HtmlBody'][:html_segment_limit-2], tf.int32), [eos]], axis=0),
+             tf.concat([tf.cast(ex['TargetTitle'], tf.int32), [eos]], axis=0) ]
+
     if training_schema is None:
       return _tf_parse_and_truncate_v2;
+    elif training_schema == 'v3':
+      return _tf_parse_and_truncate_v3;
 
   def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
     ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
     ds = ds.map(self._select_parse_function(), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.filter(lambda _a, _b, _c, target: tf.size(target) <= max_target_length)
+    ds = ds.padded_batch(batch_size, padded_shapes=([url_segment_limit], [hostname_segment_limit], [html_segment_limit], [max_target_length]), drop_remainder=True)
+    ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
+    return ds
+
+  def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+    ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
+    ds = ds.map(self._select_parse_function('v3'), num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds = ds.filter(lambda _a, _b, _c, target: tf.size(target) <= max_target_length)
     ds = ds.padded_batch(batch_size, padded_shapes=([url_segment_limit], [hostname_segment_limit], [html_segment_limit], [max_target_length]), drop_remainder=True)
     ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
@@ -458,9 +477,12 @@ class Seq2SeqTask():
     elif data_file.endswith('.tfrecord') or data_file.endswith('.tfrecord.gz'):
       logging.info(f'open one tfrecord dataset from "{data_file}".')
       ds = self._create_tfrecord_dataset(data_file, batch_size, max_input_length, max_target_length)
-    elif data_file.endswith('.tokenized-tfrecord') or data_file.endswith('tokenized-tfrecord.gz'):
+    elif data_file.endswith('.tokenized-tfrecord') or data_file.endswith('.tokenized-tfrecord.gz'):
       logging.info(f'open one tokenized-tfrecord dataset from "{data_file}".')
       ds = self._create_tokenized_tfrecord_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id)
+    elif data_file.endswith('.dtitle.tokenized') or data_file.endswith('.dtitle.tokenized.gz'):
+      logging.info(f'open one dtitle-tokenized dataset from "{data_file}".')
+      ds = self._create_dtitle_tokenized_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id)
     else:
       raise ValueError(f'invalid input file format: {data_file}')
 

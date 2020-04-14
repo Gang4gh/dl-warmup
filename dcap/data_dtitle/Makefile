@@ -50,12 +50,14 @@ $(TAG)-test.dtitle: $(DTITLE_FILES)
 %.dtitle.gz: %.dtitle
 	gzip -fk $<
 
-$(TAG)-vocab-%.subwords: $(TAG)-training.dtitle.gz
-	#python3 process_dtitle_data.py --cmd=build-vocab --input_file=$< --vocab_file_prefix=$(TAG)-vocab --target_vocab_size=$* $(ARGS)
-	cp -lp $(VOCAB_FILE)-$*.subwords $@
+$(TAG)-vocab-%.subwords:
+	cp $(VOCAB_FILE)-$*.subwords $@
 
 %.tokenized-tfrecord.gz: %.dtitle.gz
-	python3 process_dtitle_data.py --cmd=tokenize-dtitle-mp --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) --target_vocab_size=8192 $(ARGS)
+	python3 process_dtitle_data.py --cmd=tokenize-dtitle-mp --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) $(ARGS)
+
+%.dtitle.tokenized.gz: %.dtitle.gz
+	python3 process_dtitle_data.py --cmd=tokenize-dtitle-v2 --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) $(ARGS)
 
 $(TAG)-meta.log: $(TAG)-training.tokenized-tfrecord.gz $(TAG)-test.dtitle $(TAG)-test.tokenized-tfrecord.gz $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
@@ -74,15 +76,13 @@ data-v3-vocab-24gb-%.subwords:
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-24gb --target_vocab_size=$* --max_corpus_chars=24
 data-v3-vocab-32gb-%.subwords:
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-32gb --target_vocab_size=$* --max_corpus_chars=32
-data-v3-vocab-256gb-%.subwords:
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-256gb --target_vocab_size=$* --max_corpus_chars=256
 
 TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
 TEST_DATA_SCHEMA = cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html
-preprocess-testdata: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $(notdir $(TEST_DATA)).test.dtitle
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $(notdir $(TEST_DATA))-2s.test.dtitle
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --check_enoughtokens --check_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $(notdir $(TEST_DATA))-2c.test.dtitle
 
 %.test.dtitle: $(TEST_DATA)
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $@
+
+batch:
+	$(MAKE) TAG=0413-exact-1k ARGS='--suppress_title_notexactmatch --html_token_limit=1024'
+	$(MAKE) TAG=0413-segment-1k ARGS='--suppress_title_notsegmentmatch --html_token_limit=1024'
