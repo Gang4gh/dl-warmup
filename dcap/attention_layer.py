@@ -22,8 +22,8 @@ from absl import flags
 import tensorflow as tf
 from official.nlp import bert_modeling as common_layer
 
-flags.DEFINE_enum('attention_padding_strategy', 'classic', ['classic', 'last-segment', 'no-padding'],
-    help='padding strategy in attention calculation')
+flags.DEFINE_enum('attention_padding_strategy', 'no-padding', ['classic', 'last-segment', 'no-padding'],
+    help='padding strategy in LSH attention computation')
 flags.DEFINE_bool('allow_duplicated_attention', True,
     help='allow duplicated attention in LSH attention')
 
