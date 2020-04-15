@@ -295,6 +295,10 @@ def define_transformer_flags():
       name='dev_mode', default=False,
       help=flags_core.help_wrap('if dev_mode is True, output more details'))
 
+  flags.DEFINE_string(
+      name='training_schema', default=None,
+      help=flags_core.help_wrap('format: input1:limit1,input2:limit2...=>target'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=16)

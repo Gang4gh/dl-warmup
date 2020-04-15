@@ -9,11 +9,13 @@ PORT ?= 2345
 ROOT ?= .
 MDIR ?= $(subst //,/,$(ROOT)/model)
 DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
-DTAG ?= 0411-datasetv3
+DTAG ?= 0414-segment-1k
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
-DATA_FILES = $(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
+DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
 CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py $(DATA_DIR)/Makefile $(DATA_DIR)/*.py))
+
+TRAINING_SCHEMA ?= "Url:64,InjHdr_CDG_H:64,HtmlBody=>TargetTitle"
 
 all: check-params
 
@@ -44,11 +46,11 @@ ktb kill-tensorboard:
 tbr tensorboard_root: kill-tensorboard
 	@MDIR=. $(MAKE) --no-print-directory tb
 
-%-training.tfrecord.gz: %-training.dtitle.gz %-$(VOCAB).subwords
-	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=train-prep --data_dir=$< --vocab_file=$(subst -training.dtitle.gz,,$<)-$(VOCAB) --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=0 $(ARGS)
+#%-training.tfrecord.gz: %-training.dtitle.gz %-$(VOCAB).subwords
+#	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=train-prep --data_dir=$< --vocab_file=$(subst -training.dtitle.gz,,$<)-$(VOCAB) --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=0 $(ARGS)
 
 tm train-model: $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer $(ARGS)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer --training_schema=$(TRAINING_SCHEMA) $(ARGS)
 
 clean-training-env: kill-tensorboard
 	rm -rf $(MDIR); sleep 1
@@ -71,10 +73,10 @@ else
 endif
 
 eval: $(DATA_FILES)
-	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.tokenized-tfrecord.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer $(ARGS)
+	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer --training_schema=$(TRAINING_SCHEMA) $(ARGS)
 
 predict:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --training_schema=$(TRAINING_SCHEMA) $(ARGS)
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict
@@ -101,7 +103,7 @@ endif
 	mkdir -p $(PRED_ABSPATH)
 	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--for_inference --doc_length_limit=10240'
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--check_enoughtokens --check_exactmatch'
-	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=32 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --test_num_hashes=8 --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=32 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --test_num_hashes=8 --training_schema=$(TRAINING_SCHEMA) --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
 DLTS_DIRS=$(wildcard running_center/dlts*)
 sync-all:

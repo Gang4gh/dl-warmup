@@ -59,7 +59,7 @@ $(TAG)-vocab-%.subwords:
 %.dtitle.tokenized.gz: %.dtitle.gz
 	python3 process_dtitle_data.py --cmd=tokenize-dtitle-v2 --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) $(ARGS)
 
-$(TAG)-meta.log: $(TAG)-training.tokenized-tfrecord.gz $(TAG)-test.dtitle $(TAG)-test.tokenized-tfrecord.gz $(TAG)-vocab-8192.subwords
+$(TAG)-meta.log: $(TAG)-training.dtitle.tokenized.gz $(TAG)-test.dtitle $(TAG)-test.dtitle.tokenized.gz $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
 	@echo ---------- source code  ---------- >> $@
 	cat process_dtitle_data.py >> $@

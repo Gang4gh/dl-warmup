@@ -85,6 +85,7 @@ class Seq2SeqTask():
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]
     params["vocab_size"] = self.tokenizer.vocab_size
     logging.info('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
+    logging.info(f'training_schema = [{self.flags_obj.training_schema}]')
 
     if params["dtype"] == tf.float16:
       # TODO(reedwm): It's pretty ugly to set the global policy in a constructor
@@ -127,7 +128,7 @@ class Seq2SeqTask():
         enable_xla=flags_obj.enable_xla)
 
     train_ds = self._create_dataset(params['data_dir'], repeat=None)
-    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.tokenized-tfrecord.gz', params['data_dir']), repeat=1)
+    val_ds = self._create_dataset(params['val_data_dir'] or re.sub(r'-training.*', '-test.dtitle.tokenized.gz', params['data_dir']), repeat=1)
     val_ds = val_ds.take(flags_obj.validation_example_count // params["batch_size"]).cache()
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
@@ -416,48 +417,45 @@ class Seq2SeqTask():
     ds = ds.unbatch().batch(batch_size, drop_remainder=True)
     return ds
 
-  def _select_parse_function(self, training_schema = None):
+  def _create_description_from_names(self, names):
+      return {col: tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True) for col in names}
+
+  def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+    description = self._create_description_from_names(['url', 'title', 'hostname', 'html'])
     def _tf_parse_and_truncate_v2(proto):
-      description = {
-        'url': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-        'title': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-        'hostname': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-        'html': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
-      }
       ex = tf.io.parse_single_example(proto, description)
       return [ tf.concat([[eos+1], tf.cast(ex['url'][:url_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([[eos+2], tf.cast(ex['hostname'][:hostname_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([[eos+3], tf.cast(ex['html'][:html_segment_limit-2], tf.int32), [eos]], axis=0),
              tf.concat([tf.cast(ex['title'], tf.int32), [eos]], axis=0) ]
 
-    v3_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'.split(',')
-    def _tf_parse_and_truncate_v3(proto):
-      description = {col: tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True) for col in v3_schema}
-      ex = tf.io.parse_single_example(proto, description)
-      return [ tf.concat([[eos+1], tf.cast(ex['Url'][:url_segment_limit-2], tf.int32), [eos]], axis=0),
-             tf.concat([[eos+2], tf.cast(ex['InjHdr_CDG_H'][:hostname_segment_limit-2], tf.int32), [eos]], axis=0),
-             tf.concat([[eos+3], tf.cast(ex['HtmlBody'][:html_segment_limit-2], tf.int32), [eos]], axis=0),
-             tf.concat([tf.cast(ex['TargetTitle'], tf.int32), [eos]], axis=0) ]
-
-    if training_schema is None:
-      return _tf_parse_and_truncate_v2;
-    elif training_schema == 'v3':
-      return _tf_parse_and_truncate_v3;
-
-  def _create_tokenized_tfrecord_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
     ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
-    ds = ds.map(self._select_parse_function(), num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.map(_tf_parse_and_truncate_v2, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds = ds.filter(lambda _a, _b, _c, target: tf.size(target) <= max_target_length)
     ds = ds.padded_batch(batch_size, padded_shapes=([url_segment_limit], [hostname_segment_limit], [html_segment_limit], [max_target_length]), drop_remainder=True)
     ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
     return ds
 
   def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+    datasetv3_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'.split(',')
+    description = self._create_description_from_names(datasetv3_schema)
+
+    input_schema, target_schema = (s.strip() for s in self.flags_obj.training_schema.split('=>'))
+    names_limits = [(v[0], int(v[1]) if len(v) > 2 else max_input_length) for v in [col.split(':') for col in input_schema.split(',')]]
+
+    def _tf_parse_and_truncate_v3(proto):
+      def _cast_and_concat(*values):
+        return tf.concat([tf.cast(t, tf.int32) for t in values], axis=0)
+
+      ex = tf.io.parse_single_example(proto, description)
+      inputs = tf.concat([_cast_and_concat([eos+idx+1], ex[name][:limit-2], [eos+idx+11]) for idx, (name, limit) in enumerate(names_limits)], axis=0)
+      target = _cast_and_concat(ex[target_schema], [eos])
+      return inputs[:max_input_length], target
+
     ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
-    ds = ds.map(self._select_parse_function('v3'), num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds = ds.filter(lambda _a, _b, _c, target: tf.size(target) <= max_target_length)
-    ds = ds.padded_batch(batch_size, padded_shapes=([url_segment_limit], [hostname_segment_limit], [html_segment_limit], [max_target_length]), drop_remainder=True)
-    ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
+    ds = ds.map(_tf_parse_and_truncate_v3, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    ds = ds.filter(lambda _, target: tf.size(target) <= max_target_length)
+    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
     return ds
 
   def _create_dataset(self, data_file, repeat, batch_size=None, shuffle_size=None, create_cache=False):
@@ -537,9 +535,9 @@ def test_read_and_dump_datasets(task):
         for batch, ((inp, tar), _) in enumerate(ds):
           if batch == batch_count: break
           for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
-            htmlbody = decode_fn(inp1.numpy(), 3, concatenate_segments=False)
+            htmlbody = decode_fn(inp1.numpy(), 1, concatenate_segments=False)
             title = decode_fn(tar1.numpy(), concatenate_segments=False)
-            ow.write('{}.{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}'.format(batch, index, inp1, tar1, htmlbody, title))
+            ow.write('{}.{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}\n'.format(batch, index, inp1, tar1, htmlbody, title))
       logging.info(f'end of round {r}, --- {int(time.time() - start_time)} seconds ---')
 
   np.set_printoptions(threshold=2048)
@@ -548,7 +546,8 @@ def test_read_and_dump_datasets(task):
     #_dump_to_file(f'out-random-{idx}.batch{bc}', '__random_input__', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     #_dump_to_file(f'out-dtitle-gz-{idx}.batch{bc}', task.params['data_dir'] + '.gz', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     #_dump_to_file(f'out-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    _dump_to_file(f'out-tokenized-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    #_dump_to_file(f'out-tokenized-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
+    _dump_to_file(f'out-dtitle-tokenized-gz-{idx}.batch{bc}', task.params['data_dir'], batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
 
 
 def test(task):
