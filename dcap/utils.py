@@ -19,8 +19,8 @@ from __future__ import division
 from __future__ import print_function
 
 import math
-
 import numpy as np
+from absl import logging
 import tensorflow as tf
 
 # Very low numbers to represent -infinity. We do not actually use -Inf, since we
@@ -29,8 +29,10 @@ _NEG_INF_FP32 = -1e9
 _NEG_INF_FP16 = np.finfo(np.float16).min
 
 
-def get_position_encoding(
-    length, hidden_size, min_timescale=1.0, max_timescale=1.0e4):
+def get_position_encoding(length,
+                          hidden_size,
+                          min_timescale=1.0,
+                          max_timescale=1.0e4):
   """Return positional encoding.
 
   Calculates the position encoding as a mix of sine and cosine functions with
@@ -121,3 +123,42 @@ def get_padding_bias(x, padding_value=0, dtype=tf.float32):
     attention_bias = tf.expand_dims(
         tf.expand_dims(attention_bias, axis=1), axis=1)
   return attention_bias
+
+
+class TensorBoardFix(tf.keras.callbacks.TensorBoard):
+    """Build-in TensorBoard can't resume training_step, so fix it"""
+    def __init__(self, start_step=0, *args, **kwargs):
+        super(TensorBoardFix, self).__init__(*args, **kwargs)
+        self.start_step = start_step
+        self.buffer = []
+
+    def on_train_begin(self, logs=None):
+        super(TensorBoardFix, self).on_train_begin(logs)
+        self._total_batches_seen[self._train_run_name] = self.start_step
+        del self.start_step
+
+    def on_train_batch_end(self, batch, logs=None):
+        super(TensorBoardFix, self).on_train_batch_end(batch+1, logs)
+
+    def _log_metrics(self, logs, prefix, step):
+        self.buffer.extend([logs, prefix, step])
+        try:
+            while self.buffer:
+                super(TensorBoardFix, self)._log_metrics(*self.buffer[:3])
+                self.buffer = self.buffer[3:]
+        except:
+            logging.warning(f'write buffer to tensorboard failed, logs={logs}, prefix={prefix}, step={step}\n')
+
+class CSVLoggerFix(tf.keras.callbacks.CSVLogger):
+    def __init__(self, *args, **kwargs):
+        super(CSVLoggerFix, self).__init__(*args, **kwargs)
+        self.buffer = []
+
+    def on_epoch_end(self, epoch, logs=None):
+        self.buffer.extend([epoch, logs])
+        try:
+            while self.buffer:
+                super(CSVLoggerFix, self).on_epoch_end(*self.buffer[:2])
+                self.buffer = self.buffer[2:]
+        except:
+            logging.warning(f'write buffer to csv failed, epoch={epoch}, logs={logs}\n')

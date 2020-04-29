@@ -58,7 +58,7 @@ class TFLSHAttention():
         self._allow_duplicate_attention = allow_duplicate_attention
         self._random_rotations_per_head = random_rotations_per_head
 
-    def hash_vectors(self, n_buckets, vecs):
+    def hash_vectors(self, n_buckets, vecs, padding_mask=None):
         batch_size = tf.shape(vecs)[0]
 
         # See https://arxiv.org/pdf/1509.02897.pdf
@@ -80,6 +80,9 @@ class TFLSHAttention():
         rotated_vecs = tf.einsum('btf,bfhi->bhti', vecs, random_rotations)
 
         rotated_vecs = tf.concat([rotated_vecs, -rotated_vecs], axis=-1)
+        if padding_mask is not None:
+          lastbucket = rotated_vecs[:,:,:,-1:] + tf.cast(padding_mask[:,None,:,None], tf.float32) * 1e9
+          rotated_vecs = tf.concat([rotated_vecs[:,:,:,:-1], lastbucket], axis=-1)
         buckets = tf.math.argmax(rotated_vecs, axis=-1)
         # buckets is now (batch_size, self.n_hashes, seqlen). Next we add offsets so that
         # bucket numbers from different hashing rounds don't overlap.
@@ -103,7 +106,7 @@ class TFLSHAttention():
         n_buckets = seqlen // self.bucket_size
         n_bins = n_buckets
 
-        buckets = self.hash_vectors(n_buckets, qk)
+        buckets = self.hash_vectors(n_buckets, qk, padding_mask)
         debug_print('buckets: ', buckets.shape)
         #buckets_0 = tf.reshape(buckets[0], (self.n_hashes, seqlen))
         #debug_print('buckets[0]: ', buckets_0[:,0:2])

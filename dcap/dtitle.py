@@ -29,6 +29,7 @@ from official.utils.flags import core as flags_core
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
 import metrics
+import utils
 
 from data_dtitle.process_dtitle_data import dtitle_reader
 
@@ -140,7 +141,7 @@ class Seq2SeqTask():
 
     current_step = 0
     checkpoint = tf.train.Checkpoint(model=model)
-    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=12)
+    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=18)
     if ckpt_mgr.latest_checkpoint:
       #self._print_variables_and_exit(flags_obj.model_dir)
       model.fit([tf.ones([params["batch_size"], params['max_input_length']], tf.int32), tf.ones([params["batch_size"], params['max_target_length']], tf.int32)],
@@ -162,7 +163,7 @@ class Seq2SeqTask():
         initial_epoch=current_step // flags_obj.steps_between_evals,
         epochs=(flags_obj.train_steps-1) // flags_obj.steps_between_evals + 1,
         steps_per_epoch=min(flags_obj.steps_between_evals, flags_obj.train_steps - current_step),
-        callbacks=self._create_callbacks(flags_obj.model_dir, current_step, params, ckpt_mgr),
+        callbacks=self._create_callbacks(flags_obj.model_dir, current_step, flags_obj.steps_between_evals, params, ckpt_mgr),
         validation_data=val_ds,
         validation_steps=flags_obj.validation_example_count // params["batch_size"], # redundant but suppress one warining
         verbose=1)
@@ -191,7 +192,7 @@ class Seq2SeqTask():
     return self.tokenizer.decode(ids).replace(self._UNDERSCORE_REPLACEMENT, '_')
 
   def _trim_and_decode(self, ids, segment_count = 1, concatenate_segments = True):
-    """Trim EOS and PAD tokens from ids, and decode to return a string."""
+    """Trim EOS and PAD tokens from ids, and decode to a string."""
     ids = [id for id in list(ids) if id]
     indexes = [0]
     try:
@@ -202,8 +203,8 @@ class Seq2SeqTask():
       else:
         return [self._decode_and_fix(ids[indexes[i]:indexes[i+1]-1]) for i in range(len(indexes)-1)]
     except ValueError:  # No enough EOS found in input
-      return self._decode_and_fix(ids)
-
+      res = self._decode_and_fix(ids)
+      return res if concatenate_segments else [res]
 
   def _calculate_rouge_scores(self, summaries, references, max_length=None):
     # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
@@ -237,7 +238,7 @@ class Seq2SeqTask():
       model.summary()
       self._load_model_weights(model)
 
-    #numpy.set_printoptions(threshold=sys.maxsize)
+    np.set_printoptions(threshold=sys.maxsize)
 
     ds = self._create_dataset(params['data_dir'], repeat=1, batch_size=1)
     if flags_obj.dev_mode:
@@ -249,7 +250,7 @@ class Seq2SeqTask():
     inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores, null_probs = [], [], [], [], [], [], [], []
     for ((inp, tar), _) in ds.unbatch():
       inputs.append(inp.numpy())
-      input_strings.append([re.sub(r'^<BOS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], 3, concatenate_segments=False)])
+      input_strings.append([re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], concatenate_segments=False)])
       targets.append(tar.numpy())
       target_strings.append([self._trim_and_decode(targets[-1])])
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
@@ -306,25 +307,40 @@ class Seq2SeqTask():
         out_path = os.path.join(self.flags_obj.model_dir, 'prediction-compact-{}.txt'.format(timestamp))
       with open(out_path, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\tNullProb\n')
-        for inp, pred, null_prob in zip(input_strings, pred_strings, null_probs):
-          f.write('{}\t{}\t{}\n'.format(inp[0], re.sub(r'[\t\r\n]+', ' ', html.unescape(pred)), null_prob)) # pred may contains '\n' after unescape
+        for inp, pred, tar, null_prob in zip(input_strings, pred_strings, target_strings, null_probs):
+          pred = re.sub(r'[\t\r\n]+', ' ', html.unescape(pred)) # pred may contains '\n' after unescape
+          if flags_obj.dev_mode:
+            f.write('{}\t{}\t{}\t{}\n'.format(inp[0], pred, tar[0], null_prob))
+          else:
+            f.write('{}\t{}\t{}\n'.format(inp[0], pred, null_prob))
+
       logging.info('write compact prediction to {}'.format(out_path))
 
 
-  def _create_callbacks(self, log_dir, init_steps, params, ckpt_mgr):
+  def _create_callbacks(self, log_dir, init_steps, steps_per_epoch, params, ckpt_mgr):
     """Creates a list of callbacks."""
     sfunc = optimizer.LearningRateFn(params["learning_rate"],
                                      params["hidden_size"],
                                      params["learning_rate_warmup_steps"])
+
+    def _save_checkpoint(epoch, logs):
+      if logs['steps'] % steps_per_epoch == 0:
+        try:
+          ckpt_mgr.save(checkpoint_number=epoch)
+        except:
+          logging.warning(f'save model failed due to an exception. continue without saving\n')
+      else:
+        logging.warning(f'not save model when training is interrupted. logs = {logs}\n')
+
     callbacks = []
     callbacks.append(optimizer.LearningRateScheduler(sfunc, init_steps))
-    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: ckpt_mgr.save()))
+    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=_save_checkpoint))
     if self.flags_obj.enable_tensorboard:
-      tensorboard_callback = tf.keras.callbacks.TensorBoard(
+      tensorboard_callback = utils.TensorBoardFix(start_step=init_steps,
           log_dir=log_dir, profile_batch=0, write_graph=False,
-          update_freq=self.flags_obj.steps_between_tensorboard_log * params['batch_size'])
+          update_freq=self.flags_obj.batches_between_tensorboard_log)
       callbacks.append(tensorboard_callback)
-    callbacks.append(tf.keras.callbacks.CSVLogger('{}/history.step-{}.log'.format(log_dir, init_steps)))
+    callbacks.append(utils.CSVLoggerFix(f'{log_dir}/history.step-{init_steps}.log'))
     return callbacks
 
   def _load_model_weights(self, model):
@@ -441,7 +457,7 @@ class Seq2SeqTask():
     description = self._create_description_from_names(datasetv3_schema)
 
     input_schema, target_schema = (s.strip() for s in self.flags_obj.training_schema.split('=>'))
-    names_limits = [(v[0], int(v[1]) if len(v) > 2 else max_input_length) for v in [col.split(':') for col in input_schema.split(',')]]
+    names_limits = [(v[0], int(v[1]) if len(v) > 1 else max_input_length) for v in [col.split(':') for col in input_schema.split(',')]]
 
     def _tf_parse_and_truncate_v3(proto):
       def _cast_and_concat(*values):
@@ -452,9 +468,26 @@ class Seq2SeqTask():
       target = _cast_and_concat(ex[target_schema], [eos])
       return inputs[:max_input_length], target
 
+    def _filter_fn(inp, tar):
+      return tf.size(tar) <= max_target_length
+
+    #r = tf.random.uniform(shape=[])
+    #positive, negative = tf.Variable(0, dtype=tf.int64), tf.Variable(0, dtype=tf.int64)
+    #def _filter_fn_v2(inp, tar):
+    #  if tf.size(tar) > max_target_length: return False
+    #  if tf.size(tar) > 1:
+    #    positive.assign_add(1)
+    #    return True
+    #  else:
+    #    if negative / (positive + negative) < 0.05:
+    #      negative.assign_add(1)
+    #      return True
+    #    else:
+    #      return False
+
     ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
     ds = ds.map(_tf_parse_and_truncate_v3, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds = ds.filter(lambda _, target: tf.size(target) <= max_target_length)
+    ds = ds.filter(_filter_fn)
     ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
     return ds
 
@@ -535,8 +568,10 @@ def test_read_and_dump_datasets(task):
         for batch, ((inp, tar), _) in enumerate(ds):
           if batch == batch_count: break
           for (index, (inp1, tar1)) in enumerate(zip(inp, tar)):
-            htmlbody = decode_fn(inp1.numpy(), 1, concatenate_segments=False)
+            htmlbody = decode_fn(inp1.numpy(), concatenate_segments=False)
             title = decode_fn(tar1.numpy(), concatenate_segments=False)
+            inp1 = [i for i in inp1.numpy() if i]
+            tar1 = [i for i in tar1.numpy() if i]
             ow.write('{}.{}:\ninp = {}\ntar = {}\ninp_str = {}\ntar_str = {}\n'.format(batch, index, inp1, tar1, htmlbody, title))
       logging.info(f'end of round {r}, --- {int(time.time() - start_time)} seconds ---')
 
@@ -550,8 +585,25 @@ def test_read_and_dump_datasets(task):
     _dump_to_file(f'out-dtitle-tokenized-gz-{idx}.batch{bc}', task.params['data_dir'], batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
 
 
+def count_token_id_freq(task):
+  from collections import Counter
+  ds = task._create_dataset(task.params['data_dir'], repeat=1)
+  freq = Counter()
+  for batch, ((inp, tar), _) in enumerate(ds):
+    if batch % (1024) == 0:
+      print(f'batch = {batch//1024}K')
+    for inp1, tar1 in zip(inp, tar):
+      #freq.update(inp1.numpy())
+      freq.update(tar1.numpy())
+  print(f'batch = {batch}')
+  with open('token_id_freq.txt', 'w') as ow:
+    for key, value in freq.items():
+      ow.write(f'{key}\t{value}\n')
+
+
 def test(task):
-  test_read_and_dump_datasets(task)
+  #test_read_and_dump_datasets(task)
+  count_token_id_freq(task)
 
 def main(_):
   flags_obj = flags.FLAGS

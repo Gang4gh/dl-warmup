@@ -22,7 +22,7 @@ from absl import flags
 import tensorflow as tf
 from official.nlp import bert_modeling as common_layer
 
-flags.DEFINE_enum('attention_padding_strategy', 'no-padding', ['classic', 'last-segment', 'no-padding'],
+flags.DEFINE_enum('attention_padding_strategy', 'default', ['default', 'nopadding'],
     help='padding strategy in LSH attention computation')
 flags.DEFINE_bool('allow_duplicated_attention', True,
     help='allow duplicated attention in LSH attention')
@@ -241,13 +241,8 @@ class LshSelfAttention(tf.keras.layers.Layer):
     #query *= depth ** -0.5
     #attention_output = calculate_full_attention(key, query, value, bias, training, self.attention_dropout)
 
-    if FLAGS.attention_padding_strategy == 'last-segment':
-      last_segment_start_pos = 128
-      padding_mask = tf.concat([tf.zeros([padding_mask.shape[0], last_segment_start_pos], tf.bool), padding_mask[:, last_segment_start_pos:]], axis=-1)
-    elif FLAGS.attention_padding_strategy == 'no-padding':
+    if FLAGS.attention_padding_strategy == 'nopadding':
       padding_mask = None
-    else:
-      pass # use input padding mask
 
     if self.use_full_attention_in_reformer:
       key = tf.math.l2_normalize(query, -1)

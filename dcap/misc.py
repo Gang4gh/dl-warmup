@@ -103,7 +103,7 @@ def define_transformer_flags():
       name='enable_tensorboard', default=False,
       help='Whether to enable Tensorboard callback.')
   flags.DEFINE_integer(
-      name='steps_between_tensorboard_log', default=10,
+      name='batches_between_tensorboard_log', default=100,
       help=flags_core.help_wrap('The number of steps to write tensorboard log.'))
   flags.DEFINE_boolean(
       name='enable_metrics_in_training', default=False,

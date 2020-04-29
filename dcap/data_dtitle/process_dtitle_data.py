@@ -256,7 +256,7 @@ def tokenize_dtitle_v2(FLAGS):
 	def _get_column_limit(col):
 		if col == 'HtmlHead':
 			return FLAGS.head_token_limit
-		elif col == 'HtmlBody':
+		elif col == 'HtmlBody' or col == 'CleanedHtmlBody':
 			return FLAGS.html_token_limit
 		else:
 			return FLAGS.default_token_limit
@@ -334,7 +334,7 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('suppress_notenoughttokens', True, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('suppress_title_notexactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_title_nottokenmatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
-	flags.DEFINE_boolean('suppress_title_notsegmentmatch', False, 'filter out examples whose title doesn''t fuzzy-match_v2 in html body')
+	flags.DEFINE_boolean('suppress_title_notsegmentmatch', True, 'filter out examples whose title doesn''t fuzzy-match_v2 in html body')
 	flags.DEFINE_string('title_segmentmatch_schema', 'DocumentUrl,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription', 'additional fields to match')
 	flags.DEFINE_integer('htmlhead_length_limit', 10*1024, 'max allowed html head length')
 	flags.DEFINE_float('htmlbody_token_length_ratio', 3.2, 'max allowed html body length is html_token_limit * this ratio')

@@ -5,7 +5,7 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 TAG ?= notag
-PORT ?= 2345
+PORT ?= 45678
 ROOT ?= .
 MDIR ?= $(subst //,/,$(ROOT)/model)
 DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
@@ -25,25 +25,26 @@ clean:
 .DELETE_ON_ERROR:
 
 check-params:
-	@echo TAG ?= $(TAG)
-	@echo PORT ?= $(PORT)
-	@echo ROOT ?= $(ROOT)
-	@echo MDIR ?= $(MDIR)
-	@echo DATA_DIR ?= $(DATA_DIR)
-	@echo DTAG ?= $(DTAG)
-	@echo VOCAB ?= $(VOCAB)
-	@echo MODEL_SIZE ?= $(MODEL_SIZE)
+	@echo TAG = $(TAG)
+	@echo PORT = $(PORT)
+	@echo ROOT = $(ROOT)
+	@echo MDIR = $(MDIR)
+	@echo DATA_DIR = $(DATA_DIR)
+	@echo DTAG = $(DTAG)
+	@echo VOCAB = $(VOCAB)
+	@echo MODEL_SIZE = $(MODEL_SIZE)
 	@echo DATA_FILES = $(DATA_FILES)
 	@echo CODE_FILES = $(CODE_FILES)
-	@echo ARGS ?= $(ARGS)
+	@echo ARGS = $(ARGS)
+	@echo TRAINING_SCHEMA = "$(TRAINING_SCHEMA)"
 
-tb:
+tb: kill-tensorboard
 	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --bind_all --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
 
 ktb kill-tensorboard:
 	pkill -f tensorboard\ --port\ $(PORT); sleep 1
 
-tbr tensorboard_root: kill-tensorboard
+tbr tensorboard_root:
 	@MDIR=. $(MAKE) --no-print-directory tb
 
 #%-training.tfrecord.gz: %-training.dtitle.gz %-$(VOCAB).subwords
@@ -52,7 +53,8 @@ tbr tensorboard_root: kill-tensorboard
 tm train-model: $(DATA_FILES)
 	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
-clean-training-env: kill-tensorboard
+clean-training-env:
+	@pkill -f tensorboard\ --port\ $(PORT); sleep 1
 	rm -rf $(MDIR); sleep 1
 	@$(MAKE) --no-print-directory tb
 
@@ -76,7 +78,7 @@ eval: $(DATA_FILES)
 	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict

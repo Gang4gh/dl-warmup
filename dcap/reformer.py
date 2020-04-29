@@ -4,15 +4,21 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from absl import flags
 import tensorflow as tf
 
 import utils as model_utils
-from official.transformer.utils.tokenizer import EOS_ID
 import attention_layer
 from official.transformer.v2 import beam_search
 from official.transformer.v2 import embedding_layer
 from official.transformer.v2 import ffn_layer
 import metrics
+
+
+flags.DEFINE_enum('positional_encoding_strategy', 'default',
+                  ['default', 'concat-4', 'concat-8', 'concat-16'],
+                  help='different strategy for positional encoding')
+FLAGS = flags.FLAGS
 
 
 def create_model(params, mode):
@@ -42,9 +48,10 @@ def create_model(params, mode):
       outputs, scores = ret["outputs"], ret["scores"]
       return tf.keras.Model([inputs, targets], [outputs, scores, logits])
 
-#IMPORTANT: THIS IS NOT A COMPLETE AND WORKING REFORMER implementation
+
 class Reformer(tf.keras.Model):
   """Reformer model with Keras.
+  IMPORTANT: THIS IS NOT A COMPLETE AND WORKING REFORMER implementation
 
   The Reformer model consists of an encoder and decoder. The input is an int
   sequence (or a batch of sequences). The encoder produces a continuous
@@ -61,8 +68,11 @@ class Reformer(tf.keras.Model):
     """
     super(Reformer, self).__init__(name=name)
     self.params = params
+    self.positional_encoding_strategy = pes = FLAGS.positional_encoding_strategy
+    self.positional_encoding_concat_dimension = int(pes[7:]) if pes.startswith('concat-') else 0
     self.embedding_softmax_layer = embedding_layer.EmbeddingSharedWeights(
-        params["vocab_size"], params["hidden_size"])
+        params["vocab_size"], params["hidden_size"] - self.positional_encoding_concat_dimension)
+
     self.encoder_stack = EncoderStack(params)
     self.decoder_stack = DecoderStack(params)
 
@@ -118,6 +128,21 @@ class Reformer(tf.keras.Model):
         logits = self.decode(targets, encoder_outputs, attention_bias, training)
         return logits
 
+  def _apply_positional_encoding(self, inputs):
+    with tf.name_scope("pos_encoding"):
+      inputs_shape = tf.shape(inputs)
+      batch_size, length = inputs_shape[0], inputs_shape[1]
+      if self.positional_encoding_strategy == 'default':
+        pos_encoding = model_utils.get_position_encoding(length, self.params["hidden_size"])
+        pos_encoding = tf.cast(pos_encoding, self.params["dtype"])
+        pos_encoded_inputs = inputs + pos_encoding
+      else:  # concat-n
+        pos_dim = self.positional_encoding_concat_dimension
+        pos_encoding = model_utils.get_position_encoding(length, pos_dim)
+        pos_encoding = tf.broadcast_to(pos_encoding, [batch_size, length, pos_dim])
+        pos_encoded_inputs = tf.concat([inputs, pos_encoding], axis=-1)
+    return pos_encoded_inputs
+
   def encode(self, inputs, training):
     """Generate continuous representation for inputs.
 
@@ -133,14 +158,9 @@ class Reformer(tf.keras.Model):
       # applying dropout.
       embedded_inputs = self.embedding_softmax_layer(inputs)
       embedded_inputs = tf.cast(embedded_inputs, self.params["dtype"])
-      padding_mask = tf.cast(tf.equal(inputs, 0), tf.bool) # assume inputs is padded by '0'
+      padding_mask = tf.cast(tf.equal(inputs, 0), tf.bool)  # assume inputs is padded by '0'
 
-      with tf.name_scope("add_pos_encoding"):
-        length = tf.shape(embedded_inputs)[1]
-        pos_encoding = model_utils.get_position_encoding(
-            length, self.params["hidden_size"])
-        pos_encoding = tf.cast(pos_encoding, self.params["dtype"])
-        encoder_inputs = embedded_inputs + pos_encoding
+      encoder_inputs = self._apply_positional_encoding(embedded_inputs)
 
       if training:
         encoder_inputs = tf.nn.dropout(
@@ -173,17 +193,15 @@ class Reformer(tf.keras.Model):
         # Shift targets to the right, and remove the last element
         decoder_inputs = tf.pad(decoder_inputs,
                                 [[0, 0], [1, 0], [0, 0]])[:, :-1, :]
-      with tf.name_scope("add_pos_encoding"):
-        length = tf.shape(decoder_inputs)[1]
-        pos_encoding = model_utils.get_position_encoding(
-            length, self.params["hidden_size"])
-        pos_encoding = tf.cast(pos_encoding, self.params["dtype"])
-        decoder_inputs += pos_encoding
+
+      decoder_inputs = self._apply_positional_encoding(decoder_inputs)
+
       if training:
         decoder_inputs = tf.nn.dropout(
             decoder_inputs, rate=self.params["layer_postprocess_dropout"])
 
       # Run values
+      length = tf.shape(decoder_inputs)[1]
       decoder_self_attention_bias = model_utils.get_decoder_self_attention_bias(
           length, dtype=self.params["dtype"])
       outputs = self.decoder_stack(
@@ -192,6 +210,8 @@ class Reformer(tf.keras.Model):
           decoder_self_attention_bias,
           attention_bias,
           training=training)
+      if self.positional_encoding_concat_dimension > 0:
+        outputs = outputs[:, :, :-self.positional_encoding_concat_dimension]
       logits = self.embedding_softmax_layer(outputs, mode="linear")
       logits = tf.cast(logits, tf.float32)
       return logits
@@ -200,7 +220,7 @@ class Reformer(tf.keras.Model):
     """Returns a decoding function that calculates logits of the next tokens."""
 
     timing_signal = model_utils.get_position_encoding(
-        max_decode_length + 1, self.params["hidden_size"])
+        max_decode_length, self.params["hidden_size"])
     timing_signal = tf.cast(timing_signal, self.params["dtype"])
     decoder_self_attention_bias = model_utils.get_decoder_self_attention_bias(
         max_decode_length, dtype=self.params["dtype"])
@@ -259,11 +279,11 @@ class Reformer(tf.keras.Model):
     """Return predicted sequence."""
     if self.params["padded_decode"]:
       batch_size = encoder_outputs.shape.as_list()[0]
-      input_length = encoder_outputs.shape.as_list()[1]
+      #input_length = encoder_outputs.shape.as_list()[1]
     else:
       batch_size = tf.shape(encoder_outputs)[0]
-      input_length = tf.shape(encoder_outputs)[1]
-    max_decode_length = 48#input_length + self.params["extra_decode_length"]
+      #input_length = tf.shape(encoder_outputs)[1]
+    max_decode_length = 48  # input_length + self.params["extra_decode_length"]
     encoder_decoder_attention_bias = tf.cast(encoder_decoder_attention_bias,
                                              self.params["dtype"])
 
@@ -308,7 +328,7 @@ class Reformer(tf.keras.Model):
         beam_size=self.params["beam_size"],
         alpha=self.params["alpha"],
         max_decode_length=max_decode_length,
-        eos_id=self.params["vocab_size"] + 1, #EOS_ID,
+        eos_id=self.params["vocab_size"] + 1,  # EOS_ID,
         padded_decode=self.params["padded_decode"],
         dtype=self.params["dtype"])
 
