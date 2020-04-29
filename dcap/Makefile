@@ -5,17 +5,21 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 TAG ?= notag
+DTAG ?= 0414-segment-1k
+VOCAB ?= vocab-8192
+MODEL_SIZE ?= trial
 PORT ?= 45678
 ROOT ?= .
 MDIR ?= $(subst //,/,$(ROOT)/model)
 DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
-DTAG ?= 0414-segment-1k
-VOCAB ?= vocab-8192
-MODEL_SIZE ?= trial
-DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
-CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py $(DATA_DIR)/Makefile $(DATA_DIR)/*.py))
+TRAINING_ROOT ?= .
 
-TRAINING_SCHEMA ?= Url:64,InjHdr_CDG_H:64,HtmlBody=>TargetTitle
+CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py data_dtitle/Makefile data_dtitle/*.py))
+DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
+DATA_CACHE_DIR = $(subst //,/,$(TRAINING_ROOT)/data_dtitle)
+DATA_CACHE_FILES = $(subst $(DATA_DIR),$(DATA_CACHE_DIR),$(DATA_FILES))
+
+TRAINING_SCHEMA ?= Url:64,InjHdr_CDG_H:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle#Url:64,InjHdr_CDG_H:64,HtmlBody=>TargetTitle
 
 all: check-params
 
@@ -26,17 +30,25 @@ clean:
 
 check-params:
 	@echo TAG = $(TAG)
+	@echo DTAG = $(DTAG)
+	@echo VOCAB = $(VOCAB)
+	@echo MODEL_SIZE = $(MODEL_SIZE)
 	@echo PORT = $(PORT)
 	@echo ROOT = $(ROOT)
 	@echo MDIR = $(MDIR)
 	@echo DATA_DIR = $(DATA_DIR)
-	@echo DTAG = $(DTAG)
-	@echo VOCAB = $(VOCAB)
-	@echo MODEL_SIZE = $(MODEL_SIZE)
-	@echo DATA_FILES = $(DATA_FILES)
+	@echo TRAINING_ROOT = $(TRAINING_ROOT)
+	@echo DATA_CACHE_DIR = $(DATA_CACHE_DIR)
 	@echo CODE_FILES = $(CODE_FILES)
-	@echo ARGS = $(ARGS)
+	@echo DATA_FILES = $(DATA_FILES)
+	@echo DATA_CACHE_FILES = $(DATA_CACHE_FILES)
 	@echo TRAINING_SCHEMA = "$(TRAINING_SCHEMA)"
+	@echo ARGS = $(ARGS)
+
+ifneq ($(DATA_CACHE_DIR),$(DATA_DIR))
+$(DATA_CACHE_DIR)/%: $(DATA_DIR)/%
+	mkdir -p $(DATA_CACHE_DIR); cp -p $< $@
+endif
 
 tb: kill-tensorboard
 	CUDA_VISIBLE_DEVICES= tensorboard --port $(PORT) --bind_all --window_title $(lastword $(subst /, ,$(CURDIR))) --logdir $(MDIR) 2>/dev/null &
@@ -61,17 +73,17 @@ clean-training-env:
 train: clean-training-env
 	$(MAKE) train-model
 
-TRAINING_ROOT = running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/
+TRAINING_DIR = $(subst //,/,$(TRAINING_ROOT)/running_center/$(TAG)-$(DTAG)-$(TIMESTAMP)/)
 
-tc trainingcenter: $(DATA_FILES)
-ifeq (,$(wildcard $(TRAINING_ROOT)Makefile.config))
-	mkdir -p $(TRAINING_ROOT)
-	cp -p --parents $(CODE_FILES) $(TRAINING_ROOT)
-	cp -lp --parents $(DATA_FILES) $(TRAINING_ROOT)
-	$(MAKE) --no-print-directory check-params > $(TRAINING_ROOT)Makefile.config
-	$(MAKE) -C $(TRAINING_ROOT) train
+tc trainingcenter: $(DATA_CACHE_FILES)
+ifeq (,$(wildcard $(TRAINING_DIR)Makefile.config))
+	mkdir -p $(TRAINING_DIR)
+	cp -p --parents $(CODE_FILES) $(TRAINING_DIR)
+	cp -lp $(DATA_CACHE_FILES) $(TRAINING_DIR)data_dtitle
+	$(MAKE) --no-print-directory check-params > $(TRAINING_DIR)Makefile.config
+	$(MAKE) -C $(TRAINING_DIR) train
 else
-	$(MAKE) -C $(TRAINING_ROOT) train-model
+	$(MAKE) -C $(TRAINING_DIR) train-model
 endif
 
 eval: $(DATA_FILES)

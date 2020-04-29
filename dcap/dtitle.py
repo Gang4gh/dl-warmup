@@ -12,6 +12,7 @@ import sys
 import time
 import re
 import html
+import collections
 import numpy as np
 
 from absl import app
@@ -191,20 +192,21 @@ class Seq2SeqTask():
   def _decode_and_fix(self, ids):
     return self.tokenizer.decode(ids).replace(self._UNDERSCORE_REPLACEMENT, '_')
 
-  def _trim_and_decode(self, ids, segment_count = 1, concatenate_segments = True):
+  def _trim_and_decode(self, ids, split_ids = None, concatenate_segments = True):
     """Trim EOS and PAD tokens from ids, and decode to a string."""
     ids = [id for id in list(ids) if id]
+    split_ids = split_ids or [self.EOS_id]
     indexes = [0]
     try:
-      for _ in range(segment_count):
-        indexes.append(indexes[-1] + ids[indexes[-1]:].index(self.EOS_id) + 1)
-      if concatenate_segments:
-        return self._decode_and_fix(ids[:indexes[-1]-1])
-      else:
-        return [self._decode_and_fix(ids[indexes[i]:indexes[i+1]-1]) for i in range(len(indexes)-1)]
+      for cur_id in split_ids:
+        indexes.append(indexes[-1] + ids[indexes[-1]:].index(cur_id) + 1)
     except ValueError:  # No enough EOS found in input
-      res = self._decode_and_fix(ids)
-      return res if concatenate_segments else [res]
+      indexes.append(len(ids))
+
+    if concatenate_segments:
+      return self._decode_and_fix(ids[:indexes[-1]-1])
+    else:
+      return [self._decode_and_fix(ids[indexes[i]:indexes[i+1]-1]) for i in range(len(indexes)-1)]
 
   def _calculate_rouge_scores(self, summaries, references, max_length=None):
     # command to install pythonrouge: pip install git+https://github.com/tagucci/pythonrouge.git
@@ -247,10 +249,12 @@ class Seq2SeqTask():
     if flags_obj.max_predict_count:
       ds = ds.take(flags_obj.max_predict_count)
 
+    names_limits, target_schema = self._get_training_schema()
+
     inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores, null_probs = [], [], [], [], [], [], [], []
     for ((inp, tar), _) in ds.unbatch():
       inputs.append(inp.numpy())
-      input_strings.append([re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], concatenate_segments=False)])
+      input_strings.append([re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], [idx+12 for idx in range(len(names_limits))], concatenate_segments=False)])
       targets.append(tar.numpy())
       target_strings.append([self._trim_and_decode(targets[-1])])
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
@@ -271,35 +275,6 @@ class Seq2SeqTask():
     scores = self._calculate_rouge_scores(pred_strings, target_strings) if flags_obj.calc_rouge_scores else None
 
     timestamp = int(time.time())
-    if flags_obj.prediction_details_file:
-      out_path = flags_obj.prediction_details_file
-      if flags_obj.prediction_details_file == '#model_dir':
-        out_path = os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(timestamp))
-      with open(out_path, 'w', encoding='utf8') as f:
-        f.write('# Example Count = {}\n'.format(len(pred_strings)))
-        f.write('# Accuracy = {}\n'.format(correct/total))
-        f.write('# ROUGE scores = {}\n'.format(scores))
-        ref_rows = {}
-        if flags_obj.prediction_reference_file:
-          ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
-        for ind, (inp, tar, pred, score, null_prob) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores, null_probs)):
-          row = ref_rows[inp[0]] if inp[0] in ref_rows else None
-          cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
-          f.write('\n# [{}]\n'.format(ind))
-          f.write('Url       = {}\n'.format(inp[0]))
-          f.write('NullProb  = {}\n'.format(null_prob))
-          f.write('Predict   = {}\n'.format(html.unescape(pred)))
-          #f.write('PredScore = {}\n'.format(score))
-          f.write('ProdTitle = {}\n'.format(cap_title_normalized))
-          f.write('HtmlTitle = {}\n'.format(html.unescape(tar[0])))
-          f.write('HostName  = {}\n'.format(inp[1]))
-          f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
-          f.write('Cap_Query = {}\n'.format(row.cap_query if row else None))
-          f.write('Cap_Url   = {}\n'.format(row.cap_url if row else None))
-          f.write('Cap_Title = {}\n'.format(row.cap_title if row else None))
-          f.write('Cap_Snipt = {}\n'.format(row.cap_snippet if row else None))
-          f.write('HtmlBody  = {}\n'.format(inp[2]))
-      logging.info('write prediction details to {}'.format(out_path))
 
     if flags_obj.prediction_compact_file:
       out_path = flags_obj.prediction_compact_file
@@ -309,13 +284,57 @@ class Seq2SeqTask():
         f.write('NormalizedUrl\tPredict\tNullProb\n')
         for inp, pred, tar, null_prob in zip(input_strings, pred_strings, target_strings, null_probs):
           pred = re.sub(r'[\t\r\n]+', ' ', html.unescape(pred)) # pred may contains '\n' after unescape
-          if flags_obj.dev_mode:
-            f.write('{}\t{}\t{}\t{}\n'.format(inp[0], pred, tar[0], null_prob))
-          else:
-            f.write('{}\t{}\t{}\n'.format(inp[0], pred, null_prob))
+          f.write('{}\t{}\t{}\n'.format(inp[0], pred, null_prob))
 
       logging.info('write compact prediction to {}'.format(out_path))
 
+    if flags_obj.prediction_details_file:
+      out_path = flags_obj.prediction_details_file
+      if flags_obj.prediction_details_file == '#model_dir':
+        out_path = os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(timestamp))
+
+      debug_key = 'Url'
+      ref_dtitle_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'
+      debug_fields = 'VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,HtmlHead'
+      Inputs = collections.namedtuple('Inputs', [name for name, limit in names_limits])
+
+      with open(out_path, 'w', encoding='utf8') as f:
+        f.write('# Example Count = {}\n'.format(len(pred_strings)))
+        f.write('# Accuracy = {}\n'.format(correct/total))
+        f.write('# ROUGE scores = {}\n'.format(scores))
+        ref_rows = {}
+        if flags_obj.prediction_reference_file:
+          #ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
+          ref_rows = {getattr(row, debug_key):row for row in dtitle_reader(flags_obj.prediction_reference_file, ref_dtitle_schema)}
+        for ind, (inp, tar, pred, score, null_prob) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores, null_probs)):
+          inp = Inputs(*inp)
+          key = getattr(inp, debug_key)
+          row = ref_rows[key] if key in ref_rows else None
+          pred = html.unescape(pred)
+          tar = html.unescape(tar[0])
+          #cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
+          f.write(f'\n# [{ind}]\n')
+          f.write(f'Url       = {key}\n')  # key
+          f.write(f'IsCorrect = {pred == tar}\n')
+          f.write(f'Predict   = {pred}\n')
+          f.write(f'HtmlTitle = {tar}\n')
+          f.write(f'NullProb  = {null_prob}\n')
+          #f.write('PredScore = {}\n'.format(score))
+          for name, limit in names_limits:
+            if name in [debug_key, 'HtmlBody']: continue
+            f.write(f'_{name:10} = {getattr(inp, name)}\n')
+          if row is not None:
+            for field in debug_fields.split(','):
+              f.write(f'*{field:10} = {getattr(row, field)}\n')
+          #f.write('ProdTitle = {}\n'.format(cap_title_normalized))
+          #f.write('HostName  = {}\n'.format(inp[1]))
+          #f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
+          #f.write('Cap_Query = {}\n'.format(row.cap_query if row else None))
+          #f.write('Cap_Url   = {}\n'.format(row.cap_url if row else None))
+          #f.write('Cap_Title = {}\n'.format(row.cap_title if row else None))
+          #f.write('Cap_Snipt = {}\n'.format(row.cap_snippet if row else None))
+          f.write(f'HtmlBody    = {getattr(inp, "HtmlBody")}\n')
+      logging.info('write prediction details to {}'.format(out_path))
 
   def _create_callbacks(self, log_dir, init_steps, steps_per_epoch, params, ckpt_mgr):
     """Creates a list of callbacks."""
@@ -452,12 +471,16 @@ class Seq2SeqTask():
     ds = ds.map(lambda url, hostname, html, title: (tf.concat([url, hostname, html], axis=-1), title))
     return ds
 
+  def _get_training_schema(self):
+    input_schema, target_schema = (s.strip() for s in self.flags_obj.training_schema.split('=>'))
+    names_limits = [(v[0], int(v[1]) if len(v) > 1 else self.params['max_input_length']) for v in [col.split(':') for col in input_schema.split(',')]]
+    return names_limits, target_schema
+
   def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
     datasetv3_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'.split(',')
     description = self._create_description_from_names(datasetv3_schema)
 
-    input_schema, target_schema = (s.strip() for s in self.flags_obj.training_schema.split('=>'))
-    names_limits = [(v[0], int(v[1]) if len(v) > 1 else max_input_length) for v in [col.split(':') for col in input_schema.split(',')]]
+    names_limits, target_schema = self._get_training_schema()
 
     def _tf_parse_and_truncate_v3(proto):
       def _cast_and_concat(*values):
@@ -578,10 +601,6 @@ def test_read_and_dump_datasets(task):
   np.set_printoptions(threshold=2048)
   repeat_times = 1
   for idx, bc in enumerate([100, 1000, 10000][1:2]):
-    #_dump_to_file(f'out-random-{idx}.batch{bc}', '__random_input__', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    #_dump_to_file(f'out-dtitle-gz-{idx}.batch{bc}', task.params['data_dir'] + '.gz', batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    #_dump_to_file(f'out-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
-    #_dump_to_file(f'out-tokenized-tfrecord-gz-{idx}.batch{bc}', task.params['data_dir'].replace('.dtitle', '.tokenized-tfrecord.gz'), batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
     _dump_to_file(f'out-dtitle-tokenized-gz-{idx}.batch{bc}', task.params['data_dir'], batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
 
 

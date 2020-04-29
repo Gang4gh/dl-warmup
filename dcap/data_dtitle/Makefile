@@ -2,10 +2,10 @@ SHELL = /bin/bash
 CPUS = $(shell nproc)
 export TF_CPP_MIN_LOG_LEVEL=1
 
--include Makefile.local.config
+-include Makefile.config
 DTITLE_RAW ?= snapshot-0403-small.7z
 SHUF_RANDOM_SOURCE ?= snapshot-0403-small.7z
-SPLIT_DIR = split_raw/
+SPLIT_DIR ?= split_raw/
 TAG =
 ARGS =
 DTITLE_FILES = $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
@@ -82,7 +82,3 @@ TEST_DATA_SCHEMA = cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_t
 
 %.test.dtitle: $(TEST_DATA)
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $@
-
-batch:
-	$(MAKE) TAG=0413-exact-1k ARGS='--suppress_title_notexactmatch --html_token_limit=1024'
-	$(MAKE) TAG=0413-segment-1k ARGS='--suppress_title_notsegmentmatch --html_token_limit=1024'
