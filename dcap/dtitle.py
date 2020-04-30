@@ -303,6 +303,18 @@ class Seq2SeqTask():
 
         htmlhead, htmlbody = row.HtmlHead, row.HtmlBody
 
+        # filter when not fuzzy match
+        fuzzymatch = True
+        for tkn in re.split('\W+', pred):
+          if not tkn: continue
+          if tkn not in htmlbody.lower() and tkn not in htmlhead.lower():
+            fuzzymatch = False
+            logging.info(f'not fuzzymatch, filter "{pred}"')
+            break
+        if not fuzzymatch:
+          cased_pred_strings.append('')
+          continue
+
         # method 1, segment-based search
         pred_segs = re.split(r'\s[-\|]\s', pred)
         segs = []
