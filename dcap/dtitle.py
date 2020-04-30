@@ -243,8 +243,6 @@ class Seq2SeqTask():
     np.set_printoptions(threshold=sys.maxsize)
 
     ds = self._create_dataset(params['data_dir'], repeat=1, batch_size=1)
-    if flags_obj.dev_mode:
-      ds = ds.cache(params['data_dir'] + '.cache')
     logging.info('max prediction limit = {}'.format(flags_obj.max_predict_count))
     if flags_obj.max_predict_count:
       ds = ds.take(flags_obj.max_predict_count)
@@ -257,9 +255,9 @@ class Seq2SeqTask():
       input_strings.append([re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], [idx+12 for idx in range(len(names_limits))], concatenate_segments=False)])
       targets.append(tar.numpy())
       target_strings.append([self._trim_and_decode(targets[-1])])
-    logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
     X = np.vstack(inputs)
     Y = np.ones([len(inputs), 1], np.int32)
+    logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
 
     correct, total = 0, 0
     mpred = model.predict([X, Y], batch_size=params['batch_size'], verbose=1 if flags_obj.dev_mode else 0)
@@ -275,6 +273,73 @@ class Seq2SeqTask():
     scores = self._calculate_rouge_scores(pred_strings, target_strings) if flags_obj.calc_rouge_scores else None
 
     timestamp = int(time.time())
+
+    example_key = 'Url'
+    reference = {}
+    Inputs = collections.namedtuple('Inputs', [name for name, limit in names_limits])
+    if flags_obj.prediction_reference_file:
+      ref_dtitle_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'
+      for row in dtitle_reader(flags_obj.prediction_reference_file, ref_dtitle_schema):
+        key = getattr(row, example_key).lower()
+        reference[key] = row
+      logging.info(f'load {len(reference)} records to reference from {flags_obj.prediction_reference_file}')
+
+    # recover predictions' case information from reference if possible
+    if reference:
+      cased_pred_strings = []
+      for inp, pred in zip(input_strings, pred_strings):
+        key = getattr(Inputs(*inp), example_key)
+        if key in reference:
+          row = reference[key]
+        else:
+          for rkey in reference:
+            if rkey.startswith(key):
+              row = reference[rkey]
+              break
+        if row is None:
+          cased_pred_strings.append(pred)
+          logging.warning(f'failed to lookup key = {key} from reference.')
+          continue
+
+        htmlhead, htmlbody = row.HtmlHead, row.HtmlBody
+
+        # method 1, segment-based search
+        pred_segs = re.split(r'\s[-\|]\s', pred)
+        segs = []
+        for seg in pred_segs:
+          best_seg = None
+          uppercase = 0
+          for m in re.findall(re.escape(seg), ' '.join([htmlbody, htmlhead]), re.I):
+            count = sum(c.isupper() for c in m)
+            if uppercase < count:
+              uppercase = count
+              best_seg = m
+          if best_seg is None: break
+          segs.append(best_seg)
+        if len(segs) == len(pred_segs):
+          res = []
+          pos = 0
+          for seg in segs:
+            res.append(seg)
+            pos += len(seg)
+            if pos + 3 <= len(pred):
+              res.append(pred[pos:pos+3])
+              pos += 3
+          cased_pred_strings.append(''.join(res))
+          continue
+
+        # method 2, greedy search
+        cased = []
+        for tkn in pred.split(' '):
+          cased.append(tkn)
+          uppercase = 0
+          for m in re.findall(re.escape(tkn), ' '.join([htmlbody, htmlhead]), re.I):
+            count = sum(c.isupper() for c in m)
+            if uppercase < count:
+              uppercase = count
+              cased[-1] = m
+        cased_pred_strings.append(' '.join(cased))
+      pred_strings = cased_pred_strings
 
     if flags_obj.prediction_compact_file:
       out_path = flags_obj.prediction_compact_file
@@ -293,39 +358,32 @@ class Seq2SeqTask():
       if flags_obj.prediction_details_file == '#model_dir':
         out_path = os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(timestamp))
 
-      debug_key = 'Url'
-      ref_dtitle_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'
-      debug_fields = 'VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,HtmlHead'
-      Inputs = collections.namedtuple('Inputs', [name for name, limit in names_limits])
+      debug_fields = 'TargetTitle,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,HtmlHead'
 
       with open(out_path, 'w', encoding='utf8') as f:
         f.write('# Example Count = {}\n'.format(len(pred_strings)))
         f.write('# Accuracy = {}\n'.format(correct/total))
         f.write('# ROUGE scores = {}\n'.format(scores))
-        ref_rows = {}
-        if flags_obj.prediction_reference_file:
-          #ref_rows = {row.url:row for row in dtitle_reader(flags_obj.prediction_reference_file, 'cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html')}
-          ref_rows = {getattr(row, debug_key):row for row in dtitle_reader(flags_obj.prediction_reference_file, ref_dtitle_schema)}
         for ind, (inp, tar, pred, score, null_prob) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores, null_probs)):
           inp = Inputs(*inp)
-          key = getattr(inp, debug_key)
-          row = ref_rows[key] if key in ref_rows else None
+          key = getattr(inp, example_key)
+          row = reference[key] if key in reference else None
           pred = html.unescape(pred)
           tar = html.unescape(tar[0])
           #cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
           f.write(f'\n# [{ind}]\n')
-          f.write(f'Url       = {key}\n')  # key
-          f.write(f'IsCorrect = {pred == tar}\n')
-          f.write(f'Predict   = {pred}\n')
-          f.write(f'HtmlTitle = {tar}\n')
-          f.write(f'NullProb  = {null_prob}\n')
+          f.write(f'Url           = {key}\n')  # key
+          f.write(f'IsExactMatch  = {pred.lower() == tar.lower()}\n')
+          f.write(f'Predict       = {pred}\n')
+          f.write(f'Target        = {tar}\n')
+          f.write(f'NullProb      = {null_prob}\n')
           #f.write('PredScore = {}\n'.format(score))
           for name, limit in names_limits:
-            if name in [debug_key, 'HtmlBody']: continue
-            f.write(f'_{name:10} = {getattr(inp, name)}\n')
+            if name in [example_key, 'HtmlBody']: continue
+            f.write(f'_{name:12} = {getattr(inp, name)}\n')
           if row is not None:
             for field in debug_fields.split(','):
-              f.write(f'*{field:10} = {getattr(row, field)}\n')
+              f.write(f'*{field:12} = {getattr(row, field)}\n')
           #f.write('ProdTitle = {}\n'.format(cap_title_normalized))
           #f.write('HostName  = {}\n'.format(inp[1]))
           #f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
@@ -333,7 +391,7 @@ class Seq2SeqTask():
           #f.write('Cap_Url   = {}\n'.format(row.cap_url if row else None))
           #f.write('Cap_Title = {}\n'.format(row.cap_title if row else None))
           #f.write('Cap_Snipt = {}\n'.format(row.cap_snippet if row else None))
-          f.write(f'HtmlBody    = {getattr(inp, "HtmlBody")}\n')
+          f.write(f'_HtmlBody    = {getattr(inp, "HtmlBody")}\n')
       logging.info('write prediction details to {}'.format(out_path))
 
   def _create_callbacks(self, log_dir, init_steps, steps_per_epoch, params, ckpt_mgr):

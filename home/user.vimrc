@@ -40,6 +40,9 @@ imap <F6> <ESC><F6>
 map <F9> [c
 map <F10> ]c
 
+" search next match and move matching line to top
+map <C-N> nz<CR>
+
 " fold code by indent
 set foldmethod=indent
 set foldnestmax=1

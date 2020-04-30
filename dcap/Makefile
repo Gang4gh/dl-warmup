@@ -19,7 +19,7 @@ DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG
 DATA_CACHE_DIR = $(subst //,/,$(TRAINING_ROOT)/data_dtitle)
 DATA_CACHE_FILES = $(subst $(DATA_DIR),$(DATA_CACHE_DIR),$(DATA_FILES))
 
-TRAINING_SCHEMA ?= Url:64,InjHdr_CDG_H:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle#Url:64,InjHdr_CDG_H:64,HtmlBody=>TargetTitle
+TRAINING_SCHEMA ?= Url:64,InjHdr_CDG_H:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle
 
 all: check-params
 
