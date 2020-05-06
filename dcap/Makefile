@@ -19,7 +19,7 @@ DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG
 DATA_CACHE_DIR = $(subst //,/,$(TRAINING_ROOT)/data_dtitle)
 DATA_CACHE_FILES = $(subst $(DATA_DIR),$(DATA_CACHE_DIR),$(DATA_FILES))
 
-TRAINING_SCHEMA ?= Url:64,InjHdr_CDG_H:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle
+TRAINING_SCHEMA ?= Url:96,InjHdr_CDG_H:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle
 
 all: check-params
 
@@ -98,8 +98,7 @@ predict-cpu:
 #cdecode:
 #	watch -n 3600 $(MAKE) decode
 
-#INPUT_DATA = $(HOME)/CaptionData/October_Scraping_joinedData-1204.tsv
-INPUT_DATA = /data/aether/gluo/63a274d4-33be-4b54-b52d-28487a80465a
+INPUT_DATA = /data/aether/gluo/19ca8a83-5361-4c13-9546-5156bf8076e9
 PREDICTION = ./pred-unittest/
 PRED_ABSPATH = $(abspath $(PREDICTION))
 #usage: make predict-test INPUT_DATA=<input_file> PREDICTION=<output_dir>
@@ -115,20 +114,8 @@ else
 	$(error PREDICTION is not specified)
 endif
 	mkdir -p $(PRED_ABSPATH)
-	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--for_inference --doc_length_limit=10240'
-	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--check_enoughtokens --check_exactmatch'
-	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=32 --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --test_num_hashes=8 --training_schema="$(TRAINING_SCHEMA)" --prediction_reference_file=$(INPUT_DATA) --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
-
-DLTS_DIRS=$(wildcard running_center/dlts*)
-sync-all:
-	for fd in $(DLTS_DIRS); do cp -p --parents $(CODE_FILES) $$fd; done
-
-pred-all: $(patsubst running_center%,running_center/pred-$(TIMESTAMP)%, $(DLTS_DIRS))
-
-running_center/pred-$(TIMESTAMP)/%: running_center/%
-	@echo ===== start of '$<' =====
-	$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)-1k ARGS='--max_predict_count=1024'
-	#$(MAKE) -C $< prediction INPUT_DATA=$(abspath $(INPUT_DATA)) PREDICTION=$(abspath $@)
+	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz $(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--html_token_limit=6144' TAG=$(DTAG)
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_reference_file=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
 batch0:
 	CUDA_VISIBLE_DEVICES=0 $(MAKE) batch
@@ -140,8 +127,6 @@ batch3:
 	CUDA_VISIBLE_DEVICES=3 $(MAKE) batch
 
 batch:
-	#MDIR=running_center/iter9-oldmodelnewdata-0225-noTH2s-r0.1-max3k-20200226-082518/model $(MAKE) eval ARGS='--use_reformer=0 $(ARGS)'
-	#MDIR=running_center/iter9-oldmodelnewdata-0225-noT2s-r0.1-max3k-20200226-085623/model $(MAKE) eval ARGS='--use_reformer=0 $(ARGS)'
 	$(MAKE) eval ARGS='--use_full_attention_in_reformer $(ARGS)'
 	$(MAKE) eval ARGS='--test_num_hashes=1 $(ARGS)'
 	$(MAKE) eval ARGS='--test_num_hashes=2 $(ARGS)'

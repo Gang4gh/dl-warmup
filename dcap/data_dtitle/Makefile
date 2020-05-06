@@ -56,8 +56,8 @@ $(TAG)-vocab-%.subwords:
 %.tokenized-tfrecord.gz: %.dtitle.gz
 	python3 process_dtitle_data.py --cmd=tokenize-dtitle-mp --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) $(ARGS)
 
-%.dtitle.tokenized.gz: %.dtitle.gz
-	python3 process_dtitle_data.py --cmd=tokenize-dtitle-v2 --input_file=$< --vocab_file_prefix=$(VOCAB_FILE) $(ARGS)
+%.dtitle.tokenized.gz: %.dtitle.gz $(TAG)-vocab-8192.subwords
+	python3 process_dtitle_data.py --cmd=tokenize-dtitle-v2 --input_file=$< --vocab_file_prefix=$(TAG)-vocab $(ARGS)
 
 $(TAG)-meta.log: $(TAG)-training.dtitle.tokenized.gz $(TAG)-test.dtitle $(TAG)-test.dtitle.tokenized.gz $(TAG)-vocab-8192.subwords
 	python3 process_dtitle_data.py --cmd=print-flags --vocab_file_prefix=$(TAG)-vocab $(ARGS) > $@
@@ -66,8 +66,6 @@ $(TAG)-meta.log: $(TAG)-training.dtitle.tokenized.gz $(TAG)-test.dtitle $(TAG)-t
 	@echo ---------- data files md5sum ---------- >> $@
 	md5sum $(TAG)-*.* >> $@
 
-data-v3-vocab-1gb-%.subwords:
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-1gb --target_vocab_size=$* --max_corpus_chars=1
 data-v3-vocab-4gb-%.subwords:
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-4gb --target_vocab_size=$* --max_corpus_chars=4
 data-v3-vocab-16gb-%.subwords:
@@ -78,7 +76,6 @@ data-v3-vocab-32gb-%.subwords:
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-32gb --target_vocab_size=$* --max_corpus_chars=32
 
 TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
-TEST_DATA_SCHEMA = cap_query,cap_url,cap_title,cap_snippet,url,hostname,visual_title,title,html
 
 %.test.dtitle: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --nosuppress_enoughtokens --nosuppress_exactmatch --input_schema=$(TEST_DATA_SCHEMA) $(ARGS) | uniq > $@
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --for_inference $(ARGS) | uniq > $@

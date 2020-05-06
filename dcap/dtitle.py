@@ -142,7 +142,7 @@ class Seq2SeqTask():
 
     current_step = 0
     checkpoint = tf.train.Checkpoint(model=model)
-    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=18)
+    ckpt_mgr = tf.train.CheckpointManager(checkpoint, flags_obj.model_dir, max_to_keep=3, keep_checkpoint_every_n_hours=24)
     if ckpt_mgr.latest_checkpoint:
       #self._print_variables_and_exit(flags_obj.model_dir)
       model.fit([tf.ones([params["batch_size"], params['max_input_length']], tf.int32), tf.ones([params["batch_size"], params['max_target_length']], tf.int32)],
@@ -286,9 +286,19 @@ class Seq2SeqTask():
 
     # recover predictions' case information from reference if possible
     if reference:
+      def _pred_is_fuzzymatch(pred, data, key=None):
+        for tkn in re.split('\W+', pred):
+          if not tkn: continue
+          if all(tkn not in t.lower() for t in data):
+            if key is not None:
+              logging.info(f'not fuzzymatch @token "{tkn}", filter "{pred}", key={key}')
+            return False
+        return True
+
       cased_pred_strings = []
       for inp, pred in zip(input_strings, pred_strings):
-        key = getattr(Inputs(*inp), example_key)
+        inp = Inputs(*inp)
+        key = getattr(inp, example_key)
         if key in reference:
           row = reference[key]
         else:
@@ -304,14 +314,8 @@ class Seq2SeqTask():
         htmlhead, htmlbody = row.HtmlHead, row.HtmlBody
 
         # filter when not fuzzy match
-        fuzzymatch = True
-        for tkn in re.split('\W+', pred):
-          if not tkn: continue
-          if tkn not in htmlbody.lower() and tkn not in htmlhead.lower():
-            fuzzymatch = False
-            logging.info(f'not fuzzymatch, filter "{pred}"')
-            break
-        if not fuzzymatch:
+        matchdata = [t for t in inp] + [htmlhead]
+        if not _pred_is_fuzzymatch(html.unescape(pred), matchdata) and not _pred_is_fuzzymatch(pred, matchdata, key):
           cased_pred_strings.append('')
           continue
 
@@ -382,7 +386,6 @@ class Seq2SeqTask():
           row = reference[key] if key in reference else None
           pred = html.unescape(pred)
           tar = html.unescape(tar[0])
-          #cap_title_normalized = re.sub(r' +', ' ', re.sub(r'</?strong>', '', row.cap_title)).strip().lower() if row else None
           f.write(f'\n# [{ind}]\n')
           f.write(f'Url           = {key}\n')  # key
           f.write(f'IsExactMatch  = {pred.lower() == tar.lower()}\n')
@@ -397,12 +400,6 @@ class Seq2SeqTask():
             for field in debug_fields.split(','):
               f.write(f'*{field:12} = {getattr(row, field)}\n')
           #f.write('ProdTitle = {}\n'.format(cap_title_normalized))
-          #f.write('HostName  = {}\n'.format(inp[1]))
-          #f.write('Vis_Title = {}\n'.format(row.visual_title if row else None))
-          #f.write('Cap_Query = {}\n'.format(row.cap_query if row else None))
-          #f.write('Cap_Url   = {}\n'.format(row.cap_url if row else None))
-          #f.write('Cap_Title = {}\n'.format(row.cap_title if row else None))
-          #f.write('Cap_Snipt = {}\n'.format(row.cap_snippet if row else None))
           f.write(f'_HtmlBody    = {getattr(inp, "HtmlBody")}\n')
       logging.info('write prediction details to {}'.format(out_path))
 
