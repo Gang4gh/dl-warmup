@@ -19,7 +19,7 @@ DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG
 DATA_CACHE_DIR = $(subst //,/,$(TRAINING_ROOT)/data_dtitle)
 DATA_CACHE_FILES = $(subst $(DATA_DIR),$(DATA_CACHE_DIR),$(DATA_FILES))
 
-TRAINING_SCHEMA ?= Url:96,InjHdr_CDG_H:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle
+TRAINING_SCHEMA ?= Url:96,InjHdr_CDG_H:64,InjHdr_CDG_E:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody|6144=>AOGSiteName:16,TargetTitle:48
 
 all: check-params
 
@@ -58,9 +58,6 @@ ktb kill-tensorboard:
 
 tbr tensorboard_root:
 	@MDIR=. $(MAKE) --no-print-directory tb
-
-#%-training.tfrecord.gz: %-training.dtitle.gz %-$(VOCAB).subwords
-#	CUDA_VISIBLE_DEVICES= python3 dtitle.py --mode=train-prep --data_dir=$< --vocab_file=$(subst -training.dtitle.gz,,$<)-$(VOCAB) --batch_size=16 --max_input_length=1024 --max_target_length=48 --num_gpus=0 $(ARGS)
 
 tm train-model: $(DATA_FILES)
 	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer --training_schema="$(TRAINING_SCHEMA)" $(ARGS)

@@ -540,8 +540,9 @@ class Seq2SeqTask():
 
   def _get_training_schema(self):
     input_schema, target_schema = (s.strip() for s in self.flags_obj.training_schema.split('=>'))
-    names_limits = [(v[0], int(v[1]) if len(v) > 1 else self.params['max_input_length']) for v in [col.split(':') for col in input_schema.split(',')]]
-    return names_limits, target_schema
+    inputs_and_limits = [(v[0], int(v[1]) if len(v) > 1 else self.flags_obj.max_input_length) for v in [col.split(':') for col in input_schema.split(',')]]
+    #targets_and_limits = [(v[0], int(v[1])) for v in [col.split(':') for col in target_schema.split(',')]]
+    return inputs_and_limits, target_schema#targets_and_limits
 
   def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
     datasetv3_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'.split(',')
