@@ -4,12 +4,12 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 DTITLE_RAW ?= snapshot-0403-small.7z
-SHUF_RANDOM_SOURCE ?= snapshot-0403-small.7z
-SPLIT_DIR ?= split_raw/
+SPLIT_DIR ?= split_raw/$(notdir $(DTITLE_RAW))/
+SHUF_RANDOM_SOURCE ?= $(firstword $(DTITLE_RAW))
 TAG =
 ARGS =
 DTITLE_FILES = $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
-VOCAB_FILE = data-v3-vocab-24gb
+VOCAB_FILE ?= data-v3-vocab-24gb
 
 all: $(SPLIT_DIR)all-data.md5
 	$(MAKE) -j$(CPUS) $(TAG)-meta.log
@@ -25,11 +25,11 @@ clean:
 
 $(SPLIT_DIR)all-data.md5: $(DTITLE_RAW)
 ifeq (, $(shell which 7z))
-	$(error "No 7z in $(PATH), consider doing apt install p7zip-full")
+	$(error "No 7z in $(PATH), consider apt install p7zip-full")
 else
 	mkdir -p $(SPLIT_DIR)
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
-	7z e -so $< | split -d -nr/96 --additional-suffix=.raw - $(SPLIT_DIR)data-
+	(for fi in $^; do 7z e -so $$fi; done) | split -d -nr/96 --additional-suffix=.raw - $(SPLIT_DIR)data-
 	$(MAKE) -j$(CPUS) $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
 	md5sum $(SPLIT_DIR)*.raw.gz > $@
 endif
@@ -66,14 +66,14 @@ $(TAG)-meta.log: $(TAG)-training.dtitle.tokenized.gz $(TAG)-test.dtitle $(TAG)-t
 	@echo ---------- data files md5sum ---------- >> $@
 	md5sum $(TAG)-*.* >> $@
 
-data-v3-vocab-4gb-%.subwords:
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-4gb --target_vocab_size=$* --max_corpus_chars=4
-data-v3-vocab-16gb-%.subwords:
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-16gb --target_vocab_size=$* --max_corpus_chars=16
-data-v3-vocab-24gb-%.subwords:
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-24gb --target_vocab_size=$* --max_corpus_chars=24
-data-v3-vocab-32gb-%.subwords:
-	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-32gb --target_vocab_size=$* --max_corpus_chars=32
+data-v3-vocab-4gb-%.subwords: $(SPLIT_DIR)all-data.md5
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-4gb --target_vocab_size=$* --max_corpus_chars=4 $(ARGS)
+data-v3-vocab-24gb-%.subwords: $(SPLIT_DIR)all-data.md5
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-vocab-24gb --target_vocab_size=$* --max_corpus_chars=24 $(ARGS)
+data-v3-cs-vocab-4gb-%.subwords: $(SPLIT_DIR)all-data.md5
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-cs-vocab-4gb --target_vocab_size=$* --max_corpus_chars=4 --use_lower_case=0 $(ARGS)
+data-v3-cs-vocab-24gb-%.subwords: $(SPLIT_DIR)all-data.md5
+	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file_prefix=data-v3-cs-vocab-24gb --target_vocab_size=$* --max_corpus_chars=24 --use_lower_case=0 $(ARGS)
 
 TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
 

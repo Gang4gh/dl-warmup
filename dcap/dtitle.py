@@ -278,8 +278,7 @@ class Seq2SeqTask():
     reference = {}
     Inputs = collections.namedtuple('Inputs', [name for name, limit in names_limits])
     if flags_obj.prediction_reference_file:
-      ref_dtitle_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'
-      for row in dtitle_reader(flags_obj.prediction_reference_file, ref_dtitle_schema):
+      for row in dtitle_reader(flags_obj.prediction_reference_file, self.flags_obj.dtitle_data_schema):
         key = getattr(row, example_key).lower()
         reference[key] = row
       logging.info(f'load {len(reference)} records to reference from {flags_obj.prediction_reference_file}')
@@ -374,8 +373,6 @@ class Seq2SeqTask():
       if flags_obj.prediction_details_file == '#model_dir':
         out_path = os.path.join(self.flags_obj.model_dir, 'prediction-details-{}.txt'.format(timestamp))
 
-      debug_fields = 'TargetTitle,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,HtmlHead'
-
       with open(out_path, 'w', encoding='utf8') as f:
         f.write('# Example Count = {}\n'.format(len(pred_strings)))
         f.write('# Accuracy = {}\n'.format(correct/total))
@@ -397,9 +394,9 @@ class Seq2SeqTask():
             if name in [example_key, 'HtmlBody']: continue
             f.write(f'_{name:12} = {getattr(inp, name)}\n')
           if row is not None:
-            for field in debug_fields.split(','):
+            for field in self.flags_obj.dtitle_data_schema.split(','):
+              if field in ['Url', 'DocumentUrl', 'HostName', 'IsSiteHomepage', 'TargetTitle', 'HtmlBody']: continue
               f.write(f'*{field:12} = {getattr(row, field)}\n')
-          #f.write('ProdTitle = {}\n'.format(cap_title_normalized))
           f.write(f'_HtmlBody    = {getattr(inp, "HtmlBody")}\n')
       logging.info('write prediction details to {}'.format(out_path))
 
@@ -545,8 +542,7 @@ class Seq2SeqTask():
     return inputs_and_limits, target_schema#targets_and_limits
 
   def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
-    datasetv3_schema = 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody'.split(',')
-    description = self._create_description_from_names(datasetv3_schema)
+    description = self._create_description_from_names(self.flags_obj.dtitle_data_schema.split(','))
 
     names_limits, target_schema = self._get_training_schema()
 

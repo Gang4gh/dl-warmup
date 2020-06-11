@@ -111,7 +111,7 @@ def preprocess_raw_input(FLAGS):
 			or FLAGS.suppress_title_nottokenmatch and not _title_is_tokenmatched(title_tokens, htmlbody_lowered)
 			or FLAGS.suppress_title_notsegmentmatch and not _title_is_segmentmatched(title_lowered, htmlbody_lowered, row, fuzzy_match_columns)
 			):
-			if FLAGS.max_suppress_ratio * (valid + suppressed) >= suppressed:
+			if FLAGS.max_suppress_ratio * (valid + suppressed) > suppressed:
 				suppressed += 1
 				title = ''
 			else:
@@ -126,6 +126,8 @@ def preprocess_raw_input(FLAGS):
 				res.append(htmlbody)
 			elif col == 'HtmlHead':
 				res.append(htmlhead)
+			elif col == 'CaptionAnchorText':
+				res.append(re.sub(r'#TAB#', '#', getattr(row, col)))
 			else:
 				res.append(getattr(row, col))
 		print('\t'.join(res))
@@ -149,7 +151,8 @@ def build_vocab(FLAGS):
 					text = getattr(row, col[0])[:col[1]]
 					if text:
 						#print(f'col={col}, len={len(text)}, text={text[:100]}')
-						btext = text.lower().encode()
+						if FLAGS.use_lower_case: text = text.lower()
+						btext = text.encode()
 						yield btext
 						quota -= len(btext)
 						if quota < 0:
@@ -237,9 +240,10 @@ def tokenize_dtitle_mp(FLAGS):
 	print(f'complete tokenization of {FLAGS.input_file}, token limit = {FLAGS.html_token_limit}. write {count} records to {tfrecord_file}.')
 
 
-def _create_example_v2(row, col_names_and_limits):
+def _create_example_v2(row, col_names_and_limits, to_lower):
 	def _create_int64List_feature(text, limit):
-		arr = _tokenizer.encode(text.lower())
+		if to_lower: text = text.lower()
+		arr = _tokenizer.encode(text)
 		if limit: arr = arr[:limit]
 		return tf.train.Feature(int64_list=tf.train.Int64List(value=arr))
 
@@ -255,13 +259,13 @@ def tokenize_dtitle_v2(FLAGS):
 
 	def _get_column_limit(col):
 		if col == 'HtmlHead':
-			return FLAGS.head_token_limit
+			return FLAGS.head_token_limit or 1024000
 		elif col == 'HtmlBody' or col == 'CleanedHtmlBody':
-			return FLAGS.html_token_limit
+			return FLAGS.html_token_limit or 1024000
 		else:
 			return FLAGS.default_token_limit
 	col_names_and_limits = [(col, _get_column_limit(col)) for idx, col in enumerate(FLAGS.dtitle_schema.split(','))]
-	_create_example_v2_wrapper = partial(_create_example_v2, col_names_and_limits=col_names_and_limits)
+	_create_example_v2_wrapper = partial(_create_example_v2, col_names_and_limits=col_names_and_limits, to_lower=FLAGS.use_lower_case)
 
 	count = 0
 	with tf.io.TFRecordWriter(tfrecord_file, 'GZIP') as tfwriter, Pool() as pool:
@@ -323,8 +327,8 @@ if __name__ == '__main__':
 	flags.mark_flag_as_required('cmd')
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
-	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AnnotationDesc,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
-	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,TargetTitle,HtmlHead,HtmlBody', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AnnotationDesc,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle,HtmlHead,HtmlBody', 'input file schema, used fields: url,title,hostname,html')
 	# params for pre-process
 	flags.DEFINE_boolean('mask_html_title', True, 'remove content in <title> tag (html_title) from html')
 	flags.DEFINE_boolean('mask_title_fields', False, 'remove meta-title, og-title from html')
@@ -334,22 +338,23 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('suppress_notenoughttokens', True, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('suppress_title_notexactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_title_nottokenmatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
-	flags.DEFINE_boolean('suppress_title_notsegmentmatch', True, 'filter out examples whose title doesn''t fuzzy-match_v2 in html body')
+	flags.DEFINE_boolean('suppress_title_notsegmentmatch', False, 'filter out examples whose title doesn''t fuzzy-match_v2 in html body')
 	flags.DEFINE_string('title_segmentmatch_schema', 'DocumentUrl,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription', 'additional fields to match')
 	flags.DEFINE_integer('htmlhead_length_limit', 10*1024, 'max allowed html head length')
 	flags.DEFINE_float('htmlbody_token_length_ratio', 3.2, 'max allowed html body length is html_token_limit * this ratio')
 	flags.DEFINE_boolean('truncate_by_token', False, 'truncate by html_token_limit tokens after truncate by characters')
 	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
 	# params for build-vocab
-	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CleanedHtmlBody:40960',
+	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CaptionAnchorText:256,CleanedHtmlBody:40960',
 			'list of column_name:length_limit to build vocab, default length_limit is 128')
 	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')
 	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
+	flags.DEFINE_boolean('use_lower_case', True, 'convert text to lower case in build-vocab and tokenize-dtitle')
 	# params for tokenize-dtitle
-	flags.DEFINE_integer('html_token_limit', 10*1024, 'max allowed token count for htmlbody, 0 means no limit')
-	flags.DEFINE_integer('head_token_limit', 2*1024, 'max allowed token count for htmlhead, 0 means no limit')
+	flags.DEFINE_integer('html_token_limit', 1024, 'max allowed token count for htmlbody, 0 means no limit (1M tokens)')
+	flags.DEFINE_integer('head_token_limit', 256, 'max allowed token count for htmlhead, 0 means no limit (1M tokens)')
 	flags.DEFINE_integer('default_token_limit', 256, 'max allowed token count for fields other than htmlhead/body')
 	flags.DEFINE_enum('compression_type', 'GZIP', ['', 'GZIP'], 'compression type used for tfrecord files')
 
