@@ -303,6 +303,14 @@ def define_transformer_flags():
       name='dtitle_data_schema', default='Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle,HtmlHead,HtmlBody',
       help=flags_core.help_wrap('format: field1,field2,field3...'))
 
+  flags.DEFINE_bool(
+      name='must_fuzzy_match', default=False,
+      help=flags_core.help_wrap('predict result have to fuzzy match in input, otherwise output is abandoned.t'))
+
+  flags.DEFINE_bool(
+      name='restore_case_info', default=False,
+      help=flags_core.help_wrap('predict result have to fuzzy match in input, otherwise output is abandoned.t'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=16)

@@ -255,6 +255,10 @@ class Seq2SeqTask():
       input_strings.append([re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], [idx+12 for idx in range(len(names_limits))], concatenate_segments=False)])
       targets.append(tar.numpy())
       target_strings.append([self._trim_and_decode(targets[-1])])
+    original_inputs_len = len(inputs)
+    if len(inputs) < 128 and params['num_gpus'] > 1:
+      inputs += [inputs[0]] * (128 - original_inputs_len)
+      logging.info(f'len(inputs)={original_inputs_len}, append inputs to {len(inputs)}')
     X = np.vstack(inputs)
     Y = np.ones([len(inputs), 1], np.int32)
     logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
@@ -262,6 +266,7 @@ class Seq2SeqTask():
     correct, total = 0, 0
     mpred = model.predict([X, Y], batch_size=params['batch_size'], verbose=1 if flags_obj.dev_mode else 0)
     for ind, (pred_ids, score, logits) in enumerate(zip(*mpred)):
+      if original_inputs_len and original_inputs_len == ind: break
       preds.append(pred_ids)
       pred_scores.append(score)
       null_probs.append(tf.nn.softmax(logits[0])[1])
@@ -296,6 +301,8 @@ class Seq2SeqTask():
 
       cased_pred_strings = []
       for inp, pred in zip(input_strings, pred_strings):
+        if len(inp) < len(names_limits):
+          inp += ['' for i in range(len(names_limits)-len(inp))]
         inp = Inputs(*inp)
         key = getattr(inp, example_key)
         if key in reference:
@@ -314,46 +321,49 @@ class Seq2SeqTask():
 
         # filter when not fuzzy match
         matchdata = [t for t in inp] + [htmlhead]
-        if not _pred_is_fuzzymatch(html.unescape(pred), matchdata) and not _pred_is_fuzzymatch(pred, matchdata, key):
+        if self.flags_obj.must_fuzzy_match and not _pred_is_fuzzymatch(html.unescape(pred), matchdata) and not _pred_is_fuzzymatch(pred, matchdata, key):
           cased_pred_strings.append('')
           continue
 
-        # method 1, segment-based search
-        pred_segs = re.split(r'\s[-\|]\s', pred)
-        segs = []
-        for seg in pred_segs:
-          best_seg = None
-          uppercase = 0
-          for m in re.findall(re.escape(seg), ' '.join([htmlbody, htmlhead]), re.I):
-            count = sum(c.isupper() for c in m)
-            if uppercase < count:
-              uppercase = count
-              best_seg = m
-          if best_seg is None: break
-          segs.append(best_seg)
-        if len(segs) == len(pred_segs):
-          res = []
-          pos = 0
-          for seg in segs:
-            res.append(seg)
-            pos += len(seg)
-            if pos + 3 <= len(pred):
-              res.append(pred[pos:pos+3])
-              pos += 3
-          cased_pred_strings.append(''.join(res))
-          continue
+        if self.flags_obj.restore_case_info:
+          # method 1, segment-based search
+          pred_segs = re.split(r'\s[-\|]\s', pred)
+          segs = []
+          for seg in pred_segs:
+            best_seg = None
+            uppercase = 0
+            for m in re.findall(re.escape(seg), ' '.join([htmlbody, htmlhead]), re.I):
+              count = sum(c.isupper() for c in m)
+              if uppercase < count:
+                uppercase = count
+                best_seg = m
+            if best_seg is None: break
+            segs.append(best_seg)
+          if len(segs) == len(pred_segs):
+            res = []
+            pos = 0
+            for seg in segs:
+              res.append(seg)
+              pos += len(seg)
+              if pos + 3 <= len(pred):
+                res.append(pred[pos:pos+3])
+                pos += 3
+            cased_pred_strings.append(''.join(res))
+            continue
 
-        # method 2, greedy search
-        cased = []
-        for tkn in pred.split(' '):
-          cased.append(tkn)
-          uppercase = 0
-          for m in re.findall(re.escape(tkn), ' '.join([htmlbody, htmlhead]), re.I):
-            count = sum(c.isupper() for c in m)
-            if uppercase < count:
-              uppercase = count
-              cased[-1] = m
-        cased_pred_strings.append(' '.join(cased))
+          # method 2, greedy search
+          cased = []
+          for tkn in pred.split(' '):
+            cased.append(tkn)
+            uppercase = 0
+            for m in re.findall(re.escape(tkn), ' '.join([htmlbody, htmlhead]), re.I):
+              count = sum(c.isupper() for c in m)
+              if uppercase < count:
+                uppercase = count
+                cased[-1] = m
+          cased_pred_strings.append(' '.join(cased))
+        else:
+          cased_pred_strings.append(pred)
       pred_strings = cased_pred_strings
 
     if flags_obj.prediction_compact_file:
@@ -362,7 +372,7 @@ class Seq2SeqTask():
         out_path = os.path.join(self.flags_obj.model_dir, 'prediction-compact-{}.txt'.format(timestamp))
       with open(out_path, 'w', encoding='utf8') as f:
         f.write('NormalizedUrl\tPredict\tNullProb\n')
-        for inp, pred, tar, null_prob in zip(input_strings, pred_strings, target_strings, null_probs):
+        for inp, pred, null_prob in zip(input_strings, pred_strings, null_probs):
           pred = re.sub(r'[\t\r\n]+', ' ', html.unescape(pred)) # pred may contains '\n' after unescape
           f.write('{}\t{}\t{}\n'.format(inp[0], pred, null_prob))
 
@@ -379,7 +389,7 @@ class Seq2SeqTask():
         f.write('# ROUGE scores = {}\n'.format(scores))
         for ind, (inp, tar, pred, score, null_prob) in enumerate(zip(input_strings, target_strings, pred_strings, pred_scores, null_probs)):
           inp = Inputs(*inp)
-          key = getattr(inp, example_key)
+          key = getattr(inp, example_key) if hasattr(inp, example_key) else 'Unknown'
           row = reference[key] if key in reference else None
           pred = html.unescape(pred)
           tar = html.unescape(tar[0])
@@ -390,14 +400,16 @@ class Seq2SeqTask():
           f.write(f'Target        = {tar}\n')
           f.write(f'NullProb      = {null_prob}\n')
           #f.write('PredScore = {}\n'.format(score))
-          for name, limit in names_limits:
+          for name, _ in names_limits:
             if name in [example_key, 'HtmlBody']: continue
             f.write(f'_{name:12} = {getattr(inp, name)}\n')
           if row is not None:
             for field in self.flags_obj.dtitle_data_schema.split(','):
               if field in ['Url', 'DocumentUrl', 'HostName', 'IsSiteHomepage', 'TargetTitle', 'HtmlBody']: continue
+              if any(name == field for name, _ in names_limits): continue
               f.write(f'*{field:12} = {getattr(row, field)}\n')
-          f.write(f'_HtmlBody    = {getattr(inp, "HtmlBody")}\n')
+          if hasattr(inp, 'HtmlBody'):
+            f.write(f'_HtmlBody    = {getattr(inp, "HtmlBody")}\n')
       logging.info('write prediction details to {}'.format(out_path))
 
   def _create_callbacks(self, log_dir, init_steps, steps_per_epoch, params, ckpt_mgr):

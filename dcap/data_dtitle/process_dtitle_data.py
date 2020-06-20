@@ -68,8 +68,8 @@ def preprocess_raw_input(FLAGS):
 	total, valid, suppressed = 0, 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
-		url, title, html = row.Url, row.AHtmlTitle, row.CleanedHtmlBody
-		if not url or not html: continue
+		url, title, html = row.Url, row.AHtmlTitle, row.CleanedHtmlBody if hasattr(row, 'CleanedHtmlBody') else ''
+		if not url or not FLAGS.for_inference and not html: continue
 
 		#html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
 
@@ -122,12 +122,12 @@ def preprocess_raw_input(FLAGS):
 		for col in dtitle_schema_columns:
 			if col == 'TargetTitle':
 				res.append(title)
+			elif col == 'TargetTitle_lower':
+				res.append(title.lower())
 			elif col == 'HtmlBody':
 				res.append(htmlbody)
 			elif col == 'HtmlHead':
 				res.append(htmlhead)
-			elif col == 'CaptionAnchorText':
-				res.append(re.sub(r'#TAB#', '#', getattr(row, col)))
 			else:
 				res.append(getattr(row, col))
 		print('\t'.join(res))
@@ -328,7 +328,7 @@ if __name__ == '__main__':
 	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
 	# params for dtitle_reader
 	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AnnotationDesc,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
-	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle,HtmlHead,HtmlBody', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle', 'input file schema, used fields: url,title,hostname,html')
 	# params for pre-process
 	flags.DEFINE_boolean('mask_html_title', True, 'remove content in <title> tag (html_title) from html')
 	flags.DEFINE_boolean('mask_title_fields', False, 'remove meta-title, og-title from html')

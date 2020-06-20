@@ -4,7 +4,7 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 DTITLE_RAW ?= snapshot-0403-small.7z
-SPLIT_DIR ?= split_raw/$(notdir $(DTITLE_RAW))/
+SPLIT_DIR ?= split_raw/cache_$(shell echo -n "$(DTITLE_RAW)" | md5sum | cut -f1 -d' ')/
 SHUF_RANDOM_SOURCE ?= $(firstword $(DTITLE_RAW))
 TAG =
 ARGS =
@@ -31,7 +31,8 @@ else
 	rm -rf $(SPLIT_DIR)*.raw $(SPLIT_DIR)*.raw.gz
 	(for fi in $^; do 7z e -so $$fi; done) | split -d -nr/96 --additional-suffix=.raw - $(SPLIT_DIR)data-
 	$(MAKE) -j$(CPUS) $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.raw.gz; done)
-	md5sum $(SPLIT_DIR)*.raw.gz > $@
+	echo "#DTITLE_RAW = $(DTITLE_RAW)" > $@
+	md5sum $(SPLIT_DIR)*.raw.gz >> $@
 endif
 
 %.raw.gz: %.raw
@@ -78,4 +79,4 @@ data-v3-cs-vocab-24gb-%.subwords: $(SPLIT_DIR)all-data.md5
 TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
 
 %.test.dtitle: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --for_inference $(ARGS) | uniq > $@
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --for_inference $(ARGS) | sort | uniq > $@

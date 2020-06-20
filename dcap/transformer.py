@@ -283,7 +283,7 @@ class Transformer(tf.keras.Model):
     else:
       batch_size = tf.shape(encoder_outputs)[0]
       input_length = tf.shape(encoder_outputs)[1]
-    max_decode_length = 48#input_length + self.params["extra_decode_length"]
+    max_decode_length = self.params['max_target_length']
     encoder_decoder_attention_bias = tf.cast(encoder_decoder_attention_bias,
                                              self.params["dtype"])
 

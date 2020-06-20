@@ -5,7 +5,7 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 TAG ?= notag
-DTAG ?= 0610-urltitle-8m
+DTAG ?= 0611-urltitle-30m-1k
 VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
 PORT ?= 45678
@@ -87,7 +87,7 @@ eval: $(DATA_FILES)
 	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer=0 --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --prediction_details_file='#model_dir' --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict
@@ -99,7 +99,7 @@ INPUT_DATA = /data/aether/gluo/19ca8a83-5361-4c13-9546-5156bf8076e9
 PREDICTION = ./pred-unittest/
 PRED_ABSPATH = $(abspath $(PREDICTION))
 #usage: make prediction INPUT_DATA=<input_file> PREDICTION=<output_dir>
-prediction: $(INPUT_DATA) $(CODE_FILES)
+prediction: $(INPUT_DATA)
 ifdef INPUT_DATA
 	$(info INPUT_DATA: $(INPUT_DATA))
 else
@@ -113,6 +113,36 @@ endif
 	mkdir -p $(PRED_ABSPATH)
 	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz $(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--html_token_limit=1024' TAG=$(DTAG)
 	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_reference_file=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
+
+PRED_SCHEMA=Url,AHtmlTitle,InjHdr_CDG_H,InjHdr_CDG_E,Wiki_Name,ODPTitle,CaptionAnchorText
+express-prediction: $(INPUT_DATA)
+ifdef INPUT_DATA
+	$(info INPUT_DATA: $(INPUT_DATA))
+else
+	$(error INPUT_DATA is not specified)
+endif
+ifdef PREDICTION
+	$(info PREDICTION: $(PREDICTION))
+else
+	$(error PREDICTION is not specified)
+endif
+	mkdir -p $(PRED_ABSPATH)
+#	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz $(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
+#	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
+	$(MAKE) $(PRED_ABSPATH)/data.split.done
+	for fi in $(PRED_ABSPATH)/split-*.raw.gz; do $(MAKE) $${fi::-7}.predict; done
+	head -n 1 $(PRED_ABSPATH)/split-000.predict > $(PRED_ABSPATH)/prediction-compact.tsv
+	tail -q -n +2 $(PRED_ABSPATH)/split-*.predict >> $(PRED_ABSPATH)/prediction-compact.tsv
+	gzip $(PRED_ABSPATH)/split-*.predict
+
+$(PRED_ABSPATH)/data.split.done: $(INPUT_DATA)
+	split -d -l512000 -a3 --additional-suffix=.raw $< $(PRED_ABSPATH)/split-
+	wc $(PRED_ABSPATH)/split-*.raw | tee $@
+	gzip $(PRED_ABSPATH)/*.raw
+
+$(PRED_ABSPATH)/%.predict: $(PRED_ABSPATH)/%.raw.gz
+	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$@ --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
 
 batch0:
 	CUDA_VISIBLE_DEVICES=0 $(MAKE) batch
