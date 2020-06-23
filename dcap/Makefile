@@ -141,7 +141,8 @@ $(PRED_ABSPATH)/data.split.done: $(INPUT_DATA)
 	gzip $(PRED_ABSPATH)/*.raw
 
 $(PRED_ABSPATH)/%.predict: $(PRED_ABSPATH)/%.raw.gz
-	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
+	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
+	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
 	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$@ --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
 
 batch0:

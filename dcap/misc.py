@@ -300,7 +300,7 @@ def define_transformer_flags():
       help=flags_core.help_wrap('format: input1:limit1,input2:limit2...=>target'))
 
   flags.DEFINE_string(
-      name='dtitle_data_schema', default='Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle,HtmlHead,HtmlBody',
+      name='dtitle_data_schema', default='Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle',
       help=flags_core.help_wrap('format: field1,field2,field3...'))
 
   flags.DEFINE_bool(

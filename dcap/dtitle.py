@@ -317,7 +317,8 @@ class Seq2SeqTask():
           logging.warning(f'failed to lookup key = {key} from reference.')
           continue
 
-        htmlhead, htmlbody = row.HtmlHead, row.HtmlBody
+        htmlhead = row.HtmlHead if hasattr(row, 'HtmlHead') else ''
+        htmlbody = row.HtmlBody if hasattr(row, 'HtmlBody') else ''
 
         # filter when not fuzzy match
         matchdata = [t for t in inp] + [htmlhead]

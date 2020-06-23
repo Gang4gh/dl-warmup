@@ -4,11 +4,14 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 DTITLE_RAW ?= snapshot-0403-small.7z
+ifeq (1, $(words $(DTITLE_RAW)))
+SPLIT_DIR ?= split_raw/cache_$(notdir $(DTITLE_RAW))/
+else
 SPLIT_DIR ?= split_raw/cache_$(shell echo -n "$(DTITLE_RAW)" | md5sum | cut -f1 -d' ')/
-SHUF_RANDOM_SOURCE ?= $(firstword $(DTITLE_RAW))
-TAG =
-ARGS =
-DTITLE_FILES = $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
+endif
+DTITLE_FILES := $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
+TAG ?=
+ARGS ?=
 VOCAB_FILE ?= data-v3-vocab-24gb
 
 all: $(SPLIT_DIR)all-data.md5
@@ -18,6 +21,10 @@ split-data: $(SPLIT_DIR)all-data.md5
 
 clean:
 	rm -rf $(SPLIT_DIR)
+
+VARIABLES = DTITLE_RAW SPLIT_DIR TAG ARGS VOCAB_FILE
+check:
+	$(foreach var,$(VARIABLES),$(info $(var) = $($(var))))
 
 .DELETE_ON_ERROR:
 
@@ -40,7 +47,7 @@ endif
 
 %.$(TAG).dtitle: %.raw.gz
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) \
-		| shuf --random-source=$(SHUF_RANDOM_SOURCE) > $@
+		| shuf --random-source=$(firstword $(DTITLE_RAW)) > $@
 
 $(TAG)-training.dtitle.gz: $(DTITLE_FILES)
 	tail -q -n +1001 $^ | gzip > $@
@@ -79,4 +86,5 @@ data-v3-cs-vocab-24gb-%.subwords: $(SPLIT_DIR)all-data.md5
 TEST_DATA = ~/CaptionData/October_Scraping_joinedData-1204.tsv
 
 %.test.dtitle: $(TEST_DATA)
-	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --for_inference $(ARGS) | sort | uniq > $@
+	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< --for_inference $(ARGS) | sort | uniq > $@.tmp
+	mv $@.tmp $@
