@@ -6,7 +6,6 @@ export TF_CPP_MIN_LOG_LEVEL=1
 -include Makefile.config
 TAG ?= notag
 DTAG ?= 0611-urltitle-30m-1k
-VOCAB ?= vocab-8192
 MODEL_SIZE ?= trial
 PORT ?= 45678
 ROOT ?= .
@@ -15,7 +14,7 @@ DATA_DIR ?= $(subst //,/,$(ROOT)/data_dtitle)
 TRAINING_ROOT ?= .
 
 CODE_FILES = $(filter-out $(wildcard v1_*.py),$(wildcard Makefile *.py data_dtitle/Makefile data_dtitle/*.py))
-DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-$(VOCAB).subwords $(DATA_DIR)/$(DTAG)-meta.log
+DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG)-vocab.subwords $(DATA_DIR)/$(DTAG)-meta.log
 DATA_CACHE_DIR = $(subst //,/,$(TRAINING_ROOT)/data_dtitle)
 DATA_CACHE_FILES = $(subst $(DATA_DIR),$(DATA_CACHE_DIR),$(DATA_FILES))
 
@@ -23,15 +22,11 @@ TRAINING_SCHEMA ?= Url:96,InjHdr_CDG_H:64,InjHdr_CDG_E:64,Wiki_Name:64,Entity_Na
 
 all: check-params
 
-clean:
-	#rm -f */data.md5 *.articles *.vocab
-
 .DELETE_ON_ERROR:
 
 check-params:
 	@echo TAG = $(TAG)
 	@echo DTAG = $(DTAG)
-	@echo VOCAB = $(VOCAB)
 	@echo MODEL_SIZE = $(MODEL_SIZE)
 	@echo PORT = $(PORT)
 	@echo ROOT = $(ROOT)
@@ -60,7 +55,7 @@ tbr tensorboard_root:
 	@MDIR=. $(MAKE) --no-print-directory tb
 
 tm train-model: $(DATA_FILES)
-	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer=0 --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
+	python3 dtitle.py --data_dir=$(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --train_steps=1000000 --steps_between_evals=5000 --batch_size=16 --num_gpus=-1 --noenable_time_history --enable_metrics_in_training --enable_tensorboard --validation_example_count=2048 --use_reformer=0 --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 clean-training-env:
 	@pkill -f tensorboard\ --port\ $(PORT); sleep 1
@@ -84,10 +79,10 @@ else
 endif
 
 eval: $(DATA_FILES)
-	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer=0 --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
+	python3 dtitle.py --mode=eval --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --batch_size=64 --validation_example_count=8192 --num_gpus=-1 --enable_metrics_in_training --use_reformer=0 --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict:
-	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --prediction_details_file='#model_dir' --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --prediction_details_file='#model_dir' --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict
@@ -112,7 +107,7 @@ else
 endif
 	mkdir -p $(PRED_ABSPATH)
 	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz $(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--html_token_limit=1024' TAG=$(DTAG)
-	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_reference_file=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_reference_file=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz --prediction_details_file=$(PRED_ABSPATH)/prediction-details.txt --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv $(ARGS)
 
 PRED_SCHEMA=Url,AHtmlTitle,InjHdr_CDG_H,InjHdr_CDG_E,Wiki_Name,ODPTitle,CaptionAnchorText
 express-prediction: $(INPUT_DATA)
@@ -128,7 +123,7 @@ else
 endif
 	mkdir -p $(PRED_ABSPATH)
 #	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/input-preprocessed.test.dtitle.gz $(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz TEST_DATA=$(abspath $(INPUT_DATA)) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
-#	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
+#	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/input-preprocessed.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$(PRED_ABSPATH)/prediction-compact.tsv --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
 	$(MAKE) $(PRED_ABSPATH)/data.split.done
 	for fi in $(PRED_ABSPATH)/split-*.raw.gz; do $(MAKE) $${fi::-7}.predict; done
 	head -n 1 $(PRED_ABSPATH)/split-000.predict > $(PRED_ABSPATH)/prediction-compact.tsv
@@ -143,7 +138,7 @@ $(PRED_ABSPATH)/data.split.done: $(INPUT_DATA)
 $(PRED_ABSPATH)/%.predict: $(PRED_ABSPATH)/%.raw.gz
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
 	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--dtitle_schema=$(PRED_SCHEMA),TargetTitle' TAG=$(DTAG)
-	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-$(VOCAB) --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$@ --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
+	python3 dtitle.py --mode=predict --data_dir=$(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$@ --dtitle_data_schema=$(PRED_SCHEMA),TargetTitle $(ARGS) --batch_size=1024
 
 batch0:
 	CUDA_VISIBLE_DEVICES=0 $(MAKE) batch

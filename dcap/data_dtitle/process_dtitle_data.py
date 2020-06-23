@@ -19,9 +19,8 @@ def _normalize_string(s):
 	return re.sub(r'\s+', ' ', s).strip()
 
 _tokenizer = None
-def _initialize_tokenizer(vocab_file_prefix, target_vocab_size):
+def _initialize_tokenizer(vocab_file):
 	global _tokenizer
-	vocab_file = '{}-{}'.format(vocab_file_prefix, target_vocab_size)
 	_tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
 	print(f'initilize tokenizer from vocab file [{vocab_file}].')
 
@@ -61,7 +60,7 @@ def _title_is_segmentmatched(title, html, row, columns):
 
 def preprocess_raw_input(FLAGS):
 	if FLAGS.truncate_by_token:
-		_initialize_tokenizer(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+		_initialize_tokenizer(FLAGS.vocab_file)
 	dtitle_schema_columns = FLAGS.dtitle_schema.split(',')
 	fuzzy_match_columns = FLAGS.title_segmentmatch_schema.split(',')
 
@@ -159,7 +158,7 @@ def build_vocab(FLAGS):
 							print(f'reach limit and stop.')
 							return
 
-	target_vocab_file = '{}-{}'.format(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+	target_vocab_file = FLAGS.vocab_file
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
 
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(_get_vocab_corpus(),
@@ -173,7 +172,7 @@ def build_vocab(FLAGS):
 
 
 def tokenize_dtitle(FLAGS):
-	_initialize_tokenizer(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+	_initialize_tokenizer(FLAGS.vocab_file)
 
 	assert FLAGS.input_file.endswith('.dtitle.gz')
 	tfrecord_file = FLAGS.input_file[:-10] + '.tokenized-tfrecord'
@@ -225,7 +224,7 @@ def _create_example(row):
 
 
 def tokenize_dtitle_mp(FLAGS):
-	_initialize_tokenizer(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+	_initialize_tokenizer(FLAGS.vocab_file)
 
 	assert FLAGS.input_file.endswith('.dtitle.gz')
 	tfrecord_file = FLAGS.input_file[:-10] + '.tokenized-tfrecord'
@@ -252,7 +251,7 @@ def _create_example_v2(row, col_names_and_limits, to_lower):
 
 
 def tokenize_dtitle_v2(FLAGS):
-	_initialize_tokenizer(FLAGS.vocab_file_prefix, FLAGS.target_vocab_size)
+	_initialize_tokenizer(FLAGS.vocab_file)
 
 	assert FLAGS.input_file.endswith('.dtitle.gz')
 	tfrecord_file = FLAGS.input_file[:-10] + '.dtitle.tokenized.gz'
@@ -347,10 +346,10 @@ if __name__ == '__main__':
 	# params for build-vocab
 	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CaptionAnchorText:256,CleanedHtmlBody:40960',
 			'list of column_name:length_limit to build vocab, default length_limit is 128')
-	flags.DEFINE_string('vocab_file_prefix', None, 'the prefix of target vocab file for build-vocab')
+	flags.DEFINE_string('vocab_file', None, 'the target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')
-	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
+	flags.DEFINE_float('max_corpus_chars', 1, 'unit GB(2**30 bytes)')
 	flags.DEFINE_boolean('use_lower_case', True, 'convert text to lower case in build-vocab and tokenize-dtitle')
 	# params for tokenize-dtitle
 	flags.DEFINE_integer('html_token_limit', 1024, 'max allowed token count for htmlbody, 0 means no limit (1M tokens)')
