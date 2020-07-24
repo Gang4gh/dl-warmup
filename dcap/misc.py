@@ -311,6 +311,10 @@ def define_transformer_flags():
       name='restore_case_info', default=False,
       help=flags_core.help_wrap('predict result have to fuzzy match in input, otherwise output is abandoned.t'))
 
+  flags.DEFINE_bool(
+      name='dedup_predict_input', default=False,
+      help=flags_core.help_wrap('remove duplicated inputs in predict'))
+
   flags_core.set_defaults(data_dir='/tmp/translate_ende',
                           model_dir='/tmp/transformer_model',
                           batch_size=16)

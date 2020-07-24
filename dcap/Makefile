@@ -5,7 +5,7 @@ export TF_CPP_MIN_LOG_LEVEL=1
 
 -include Makefile.config
 TAG ?= notag
-DTAG ?= 0611-urltitle-30m-1k
+DTAG ?= 0722-docUrl2Title-cs
 MODEL_SIZE ?= trial
 PORT ?= 45678
 ROOT ?= .
@@ -18,7 +18,7 @@ DATA_FILES = $(DATA_DIR)/$(DTAG)-training.dtitle.tokenized.gz $(DATA_DIR)/$(DTAG
 DATA_CACHE_DIR = $(subst //,/,$(TRAINING_ROOT)/data_dtitle)
 DATA_CACHE_FILES = $(subst $(DATA_DIR),$(DATA_CACHE_DIR),$(DATA_FILES))
 
-TRAINING_SCHEMA ?= Url:96,InjHdr_CDG_H:64,InjHdr_CDG_E:64,Wiki_Name:64,Entity_Name:64,ODPTitle:64,HtmlBody=>TargetTitle
+TRAINING_SCHEMA ?= DocumentUrl:128=>TargetTitle
 
 all: check-params
 

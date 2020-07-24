@@ -250,18 +250,29 @@ class Seq2SeqTask():
     names_limits, target_schema = self._get_training_schema()
 
     inputs, input_strings, targets, target_strings, preds, pred_strings, pred_scores, null_probs = [], [], [], [], [], [], [], []
+    seen_inputs, ignored_count = {}, 0
     for ((inp, tar), _) in ds.unbatch():
       inputs.append(inp.numpy())
       input_strings.append([re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(inputs[-1], [idx+12 for idx in range(len(names_limits))], concatenate_segments=False)])
+      if self.flags_obj.dedup_predict_input:
+        input_key = ';'.join(input_strings[-1])
+        if input_key in seen_inputs:
+          inputs.pop()
+          input_strings.pop()
+          ignored_count += 1
+          continue
+        else:
+          seen_inputs[input_key] = True
       targets.append(tar.numpy())
       target_strings.append([self._trim_and_decode(targets[-1])])
     original_inputs_len = len(inputs)
+    del seen_inputs
     if len(inputs) < 128 and params['num_gpus'] > 1:
       inputs += [inputs[0]] * (128 - original_inputs_len)
       logging.info(f'len(inputs)={original_inputs_len}, append inputs to {len(inputs)}')
     X = np.vstack(inputs)
     Y = np.ones([len(inputs), 1], np.int32)
-    logging.info('load {} examples from {}'.format(len(targets), params['data_dir']))
+    logging.info(f'load {len(targets)} examples from {params["data_dir"]}, ignore {ignored_count} examples')
 
     correct, total = 0, 0
     mpred = model.predict([X, Y], batch_size=params['batch_size'], verbose=1 if flags_obj.dev_mode else 0)

@@ -1,3 +1,5 @@
+#!/bin/bash
+
 dtitle_raw_path=/relevance2-nfs/gluo/shared/deepsum-demo/smoketest-dataset-200k.tsv.7z
 test_data=/relevance2-nfs/gluo/shared/deepsum-demo/smoketest-dataset-val-10k.tsv
 tag=end2end-v20200623
@@ -46,3 +48,8 @@ rm -rf pred-unittest-express-prediction
 echo ----- inference / express-prediction -----
 make express-prediction INPUT_DATA=$test_data PREDICTION=pred-unittest-express-prediction
 if [ $? -ne 0 ]; then exit; fi
+
+echo ----- clean intermediate files in data_dtitle -----
+mv ../../data_dtitle/data-v3-for-$dtag.* data_dtitle
+mv ../../data_dtitle/$dtag-* data_dtitle
+rm -rf ../../data_dtitle/$dtag-*

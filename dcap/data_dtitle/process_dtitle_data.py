@@ -70,6 +70,19 @@ def preprocess_raw_input(FLAGS):
 		url, title, html = row.Url, row.AHtmlTitle, row.CleanedHtmlBody if hasattr(row, 'CleanedHtmlBody') else ''
 		if not url or not FLAGS.for_inference and not html: continue
 
+		# using wikipedia data for true casing model
+		if FLAGS.for_wikipedia:
+			tokens = re.split(r'\s+', title)
+			if (
+			len(tokens) <= 1        # filter title/sentence less than 2 tokens
+			or title[:1].islower()  # first char must not be lower case
+			#or title[1:].islower() # contains at least one upper case char since index 1
+			or len(title) >= 256    # ignore long sentence
+			or getattr(row, 'ParaID') == '0' and getattr(row, 'SentID') == '0'
+			or len([t for t in tokens[:7] if t and t[:1].isupper()]) > 4
+			):
+				continue
+
 		#html = re.sub(r'</html>.*', '</html>', html, flags=re.I)
 
 		# apply html modification (mask) options to modify content
@@ -343,6 +356,7 @@ if __name__ == '__main__':
 	flags.DEFINE_float('htmlbody_token_length_ratio', 3.2, 'max allowed html body length is html_token_limit * this ratio')
 	flags.DEFINE_boolean('truncate_by_token', False, 'truncate by html_token_limit tokens after truncate by characters')
 	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
+	flags.DEFINE_boolean('for_wikipedia', False, 'when its'' True, filter data by Sentence field.')
 	# params for build-vocab
 	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CaptionAnchorText:256,CleanedHtmlBody:40960',
 			'list of column_name:length_limit to build vocab, default length_limit is 128')
