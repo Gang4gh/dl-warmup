@@ -12,11 +12,12 @@ endif
 DTITLE_FILES := $(shell for i in {100..195}; do echo $(SPLIT_DIR)data-$${i:1}.$(TAG).dtitle; done)
 TAG ?=
 ARGS ?=
-VOCAB_FILE ?= data-v3-vocab-24gb
+VOCAB_FILE ?= vocab-v0307-cs-24gb-8192
 
-all: $(SPLIT_DIR)all-data.md5
+all: $(SPLIT_DIR)all-data-7z.md5
 	$(MAKE) -j$(CPUS) $(TAG)-meta.log
 
+#TODO: remove it
 split-data: $(SPLIT_DIR)all-data.md5
 
 clean:
@@ -30,6 +31,7 @@ check:
 
 .INTERMEDIATE: $(DTITLE_FILES)
 
+#TODO: to simplify the pipeline, change input to raw tsv and output to .7z
 $(SPLIT_DIR)all-data.md5: $(DTITLE_RAW)
 ifeq (, $(shell which 7z))
 	$(error "No 7z in $(PATH), consider apt install p7zip-full")
@@ -45,6 +47,10 @@ endif
 %.raw.gz: %.raw
 	gzip $<
 
+%.$(TAG).dtitle: %.raw.7z
+	7z e -so $< | python3 process_dtitle_data.py --cmd=pre-process $(ARGS) \
+		| shuf --random-source=$(firstword $(DTITLE_RAW)) > $@
+
 %.$(TAG).dtitle: %.raw.gz
 	python3 process_dtitle_data.py --cmd=pre-process --input_file=$< $(ARGS) \
 		| shuf --random-source=$(firstword $(DTITLE_RAW)) > $@
@@ -57,6 +63,9 @@ $(TAG)-test.dtitle: $(DTITLE_FILES)
 
 %.dtitle.gz: %.dtitle
 	gzip -fk $<
+
+%.subwords: $(SPLIT_DIR)all-data-7z.md5
+	(for fi in $(SPLIT_DIR)data-*.raw.7z; do 7z e -so $$fi; done) | python3 process_dtitle_data.py --cmd=build-vocab --vocab_file=$* $(ARGS)
 
 %.subwords: $(SPLIT_DIR)all-data.md5
 	python3 process_dtitle_data.py --cmd=build-vocab --input_file=$(SPLIT_DIR)data-*.raw.gz --vocab_file=$* $(ARGS)

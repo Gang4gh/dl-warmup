@@ -15,8 +15,11 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 
 
-def _normalize_string(s):
-	return re.sub(r'\s+', ' ', s).strip()
+def _normalize_string(s, replace_tab=False):
+	ret = re.sub(r'\s+', ' ', s).strip()
+	if replace_tab:
+		ret = re.sub(r'#TAB#', '#', ret, flags=re.IGNORECASE)
+	return ret
 
 _tokenizer = None
 def _initialize_tokenizer(vocab_file):
@@ -30,16 +33,19 @@ def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
 
 	lcount = 0
 
-	is_gz_file = dtitle_file.endswith('.gz')
-	fin = gzip.open(dtitle_file) if is_gz_file else open(dtitle_file, encoding='utf8')
+	if dtitle_file:
+		is_gz_file = dtitle_file.endswith('.gz')
+		fin = gzip.open(dtitle_file) if is_gz_file else open(dtitle_file, encoding='utf8')
+	else:
+		fin = sys.stdin
 
 	for l in fin:
-		inputs = l.decode('utf8') if is_gz_file else l
+		inputs = l.decode('utf8') if dtitle_file and is_gz_file else l
 		inputs = inputs.split('\t')
 		if len(inputs) != len(column_names):
 			print('invalid input, len(inputs)@{}!={}, {}'.format(len(inputs), len(column_names), inputs[0][:200]), file=sys.stderr)
 			continue
-		row = Row(*[_normalize_string(s) for s in inputs])
+		row = Row(*[_normalize_string(s, replace_tab=True) for s in inputs])
 		yield row
 		if log_per_n_step:
 			lcount += 1
@@ -68,7 +74,10 @@ def preprocess_raw_input(FLAGS):
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
 		url, title, html = row.Url, row.AHtmlTitle, row.CleanedHtmlBody if hasattr(row, 'CleanedHtmlBody') else ''
-		if not url or not FLAGS.for_inference and not html: continue
+
+		is_twitter_handle_url = FLAGS.include_twitter_in_training and re.match('^https://twitter.com/[^/]+$', url)
+		if not url: continue
+		if not html and not FLAGS.for_inference and not is_twitter_handle_url: continue;
 
 		# using wikipedia data for true casing model
 		if FLAGS.for_wikipedia:
@@ -117,7 +126,7 @@ def preprocess_raw_input(FLAGS):
 		title_lowered, htmlbody_lowered = (s.lower() for s in [title, htmlbody])
 		title_tokens = [w for w in re.split(r'\s+', title_lowered) if w]
 
-		if not FLAGS.for_inference and (
+		if not FLAGS.for_inference and not is_twitter_handle_url and (
 			FLAGS.suppress_notenoughttokens and len(title_tokens) <= 1
 			or FLAGS.suppress_title_notexactmatch and title_lowered not in htmlbody_lowered
 			or FLAGS.suppress_title_nottokenmatch and not _title_is_tokenmatched(title_tokens, htmlbody_lowered)
@@ -151,14 +160,29 @@ def preprocess_raw_input(FLAGS):
 
 def build_vocab(FLAGS):
 	def _get_vocab_corpus():
-		from pathlib import Path
+		import glob
 		columns = [col.split(':') for col in FLAGS.vocab_corpus_columns.split(',')]
 		column_with_limits = [(col[0], int(col[1]) if len(col) > 1 else 128) for col in columns]
 
 		quota = int(FLAGS.max_corpus_chars*(2**30))
-		for fp in sorted(Path('.').glob(FLAGS.input_file)):
-			print(f'read from {fp} with quota={quota//(1024*1024)}MB, at {time.asctime()}')
-			for row in dtitle_reader(str(fp), FLAGS.input_schema, 100*1024):
+		if FLAGS.input_file:
+			for fp in sorted(glob.glob(FLAGS.input_file)):
+				print(f'read from {fp} with quota={quota//(1024*1024)}MB, at {time.asctime()}')
+				for row in dtitle_reader(str(fp), FLAGS.input_schema, 100*1024):
+					for col in column_with_limits:
+						text = getattr(row, col[0])[:col[1]]
+						if text:
+							#print(f'col={col}, len={len(text)}, text={text[:100]}')
+							if FLAGS.use_lower_case: text = text.lower()
+							btext = text.encode()
+							yield btext
+							quota -= len(btext)
+							if quota < 0:
+								print(f'reach limit and stop.')
+								return
+		else:
+			print(f'read from stdin with quota={quota//(1024*1024)}MB, starts at {time.asctime()}')
+			for row in dtitle_reader(None, FLAGS.input_schema, 100*1024):
 				for col in column_with_limits:
 					text = getattr(row, col[0])[:col[1]]
 					if text:
@@ -172,7 +196,7 @@ def build_vocab(FLAGS):
 							return
 
 	target_vocab_file = FLAGS.vocab_file
-	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars))
+	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB and target_vocab_size={}.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars, FLAGS.target_vocab_size))
 
 	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(_get_vocab_corpus(),
 			target_vocab_size = FLAGS.target_vocab_size,
@@ -337,10 +361,10 @@ def main(_):
 if __name__ == '__main__':
 	flags.DEFINE_enum('cmd', None, ['pre-process', 'build-vocab', 'check-stats', 'print-flags', 'tokenize-dtitle', 'tokenize-dtitle-mp', 'tokenize-dtitle-v2'], 'the command to execute')
 	flags.mark_flag_as_required('cmd')
-	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab')
+	flags.DEFINE_string('input_file', None, 'input dtitle file name for pre-process and build-vocab, will read from sys.stdin when omitted.')
 	# params for dtitle_reader
-	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_1,InjHdr_CDG_2,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AnnotationDesc,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
-	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,HostName,IsSiteHomepage,VisualTitle,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1,BrokenUrl2,BrokenUrl3,AHtmlTitle,AOGTitle,AOGDesc,AOGSiteName,AMetaDesc,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription,CaptionAnchorText,TargetTitle', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('input_schema', 'Url,DocumentUrl,Language,LanguageAnchor,DocumentType,AHtmlTitle,AMetaDesc,AOGTitle,AOGDesc,InjHdr_CDG_H,InjHdr_CDG_E,Wiki_Name,ODPTitle,CaptionAnchorText,CleanedHtmlBody,RandomValue', 'input file schema, used fields: url,title,hostname,html')
+	flags.DEFINE_string('dtitle_schema', 'Url,DocumentUrl,Language,LanguageAnchor,DocumentType,AHtmlTitle,AMetaDesc,AOGTitle,AOGDesc,InjHdr_CDG_H,InjHdr_CDG_E,Wiki_Name,ODPTitle,CaptionAnchorText,TargetTitle', 'input file schema, used fields: url,title,hostname,html')
 	# params for pre-process
 	flags.DEFINE_boolean('mask_html_title', True, 'remove content in <title> tag (html_title) from html')
 	flags.DEFINE_boolean('mask_title_fields', False, 'remove meta-title, og-title from html')
@@ -350,20 +374,21 @@ if __name__ == '__main__':
 	flags.DEFINE_boolean('suppress_notenoughttokens', True, 'filter out examples whose title doesn''t have enough tokens')
 	flags.DEFINE_boolean('suppress_title_notexactmatch', False, 'filter out examples whose title doesn''t exact-match in html body')
 	flags.DEFINE_boolean('suppress_title_nottokenmatch', False, 'filter out examples whose title doesn''t fuzzy-match in html body')
-	flags.DEFINE_boolean('suppress_title_notsegmentmatch', False, 'filter out examples whose title doesn''t fuzzy-match_v2 in html body')
-	flags.DEFINE_string('title_segmentmatch_schema', 'DocumentUrl,Editorial_Name,Wiki_Name,Entity_Name,ODPTitle,ODPDescription', 'additional fields to match')
+	flags.DEFINE_boolean('suppress_title_notsegmentmatch', True, 'filter out examples whose title doesn''t fuzzy-match_v2 in html body')
+	flags.DEFINE_string('title_segmentmatch_schema', 'DocumentUrl,Wiki_Name,ODPTitle', 'additional fields to match')
 	flags.DEFINE_integer('htmlhead_length_limit', 10*1024, 'max allowed html head length')
 	flags.DEFINE_float('htmlbody_token_length_ratio', 3.2, 'max allowed html body length is html_token_limit * this ratio')
 	flags.DEFINE_boolean('truncate_by_token', False, 'truncate by html_token_limit tokens after truncate by characters')
 	flags.DEFINE_boolean('for_inference', False, 'when its'' True, by pass some filtering logic in data pre-process')
+	flags.DEFINE_boolean('include_twitter_in_training', True, 'inlucde twitter handle in training regardless the html-body is empty')
 	flags.DEFINE_boolean('for_wikipedia', False, 'when its'' True, filter data by Sentence field.')
 	# params for build-vocab
-	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,BrokenUrl1:256,AHtmlTitle,AOGSiteName,AMetaDesc:512,Editorial_Name,Wiki_Name,Entity_Name,CaptionAnchorText:256,CleanedHtmlBody:40960',
+	flags.DEFINE_string('vocab_corpus_columns', 'Url:256,InjHdr_CDG_H,InjHdr_CDG_E,AHtmlTitle,AMetaDesc:512,Wiki_Name,CaptionAnchorText:256,CleanedHtmlBody:4096',
 			'list of column_name:length_limit to build vocab, default length_limit is 128')
 	flags.DEFINE_string('vocab_file', None, 'the target vocab file for build-vocab')
 	flags.DEFINE_integer('target_vocab_size', 8192, 'target vocab size in build-vocab')
 	flags.DEFINE_integer('max_subword_length', 16, 'the max token length for building vocab')
-	flags.DEFINE_float('max_corpus_chars', 1, 'unit GB(2**30 bytes)')
+	flags.DEFINE_float('max_corpus_chars', 4, 'unit GB(2**30 bytes)')
 	flags.DEFINE_boolean('use_lower_case', True, 'convert text to lower case in build-vocab and tokenize-dtitle')
 	# params for tokenize-dtitle
 	flags.DEFINE_integer('html_token_limit', 1024, 'max allowed token count for htmlbody, 0 means no limit (1M tokens)')
