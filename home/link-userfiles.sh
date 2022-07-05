@@ -16,6 +16,7 @@ syn region pythonDocstring  start=+^\s*[uU]\?[rR]\?"""+ end=+"""+ keepend exclud
 syn region pythonDocstring  start=+^\s*[uU]\?[rR]\?'''+ end=+'''+ keepend excludenl contains=pythonEscape,@Spell,pythonDoctest,pythonDocTest2,pythonSpaceError
 hi def link pythonDocstring pythonComment
 EOL
+	curl -fLo ~/.vim/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
 	echo done.
 else
 	echo Invalid arguments.
