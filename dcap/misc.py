@@ -70,7 +70,7 @@ def define_transformer_flags():
       loss_scale=True,
       all_reduce_alg=True,
       enable_xla=True,
-      force_v2_in_keras_compile=True,
+      #force_v2_in_keras_compile=True,
       fp16_implementation=True
   )
 

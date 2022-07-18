@@ -4,5 +4,5 @@ docker build -t gang4dk/dsum .
 # push the local gang4dk/dsum image to docker hub
 docker push gang4dk/dsum
 
-# start a docker contain with given image
+# start a docker container with given image
 docker run --rm -it --gpus all -v $PWD:$PWD -w $PWD gang4dk/dsum

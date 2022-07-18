@@ -9,9 +9,9 @@ import tensorflow as tf
 
 import utils as model_utils
 import attention_layer
-from official.transformer.v2 import beam_search
-from official.transformer.v2 import embedding_layer
-from official.transformer.v2 import ffn_layer
+from official.nlp.modeling.ops import beam_search
+from official.nlp.transformer import embedding_layer
+from official.nlp.transformer import ffn_layer
 import metrics
 
 
@@ -45,8 +45,9 @@ def create_model(params, mode):
       internal_model = Reformer(params, name="reformer")
       ret = internal_model([inputs], training=False)
       logits = internal_model([inputs, targets], training=False)
+      null_logit = tf.nn.softmax(logits[0])[1]
       outputs, scores = ret["outputs"], ret["scores"]
-      return tf.keras.Model([inputs, targets], [outputs, scores, logits])
+      return tf.keras.Model([inputs, targets], [inputs, outputs, scores, null_logit])
 
 
 class Reformer(tf.keras.Model):

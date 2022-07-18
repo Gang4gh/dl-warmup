@@ -25,7 +25,7 @@ import tensorflow_datasets as tfds
 import misc
 import transformer
 import reformer
-from official.transformer.v2 import optimizer
+from official.nlp.transformer import optimizer
 from official.utils.flags import core as flags_core
 from official.utils.misc import keras_utils
 from official.utils.misc import distribution_utils
@@ -83,7 +83,7 @@ class Seq2SeqTask():
     logging.info(f'attention_padding_strategy = {flags_obj.attention_padding_strategy}')
 
     assert self.flags_obj.vocab_file, 'vocab file is None'
-    self.tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
+    self.tokenizer = tfds.deprecated.text.SubwordTextEncoder.load_from_file(self.flags_obj.vocab_file)
     self.EOS_id = self.tokenizer.encode('<EOS>')[0]
     params["vocab_size"] = self.tokenizer.vocab_size
     logging.info('loaded vocab from {}, vocab_size={} and EOS_id={}'.format(self.flags_obj.vocab_file, self.tokenizer.vocab_size, self.EOS_id))
@@ -135,7 +135,7 @@ class Seq2SeqTask():
 
     with distribution_utils.get_strategy_scope(self.distribution_strategy):
       model = self.create_model(mode='train')
-      model.compile(optimizer=self._create_optimizer(params), loss=self._create_loss_fn(params))
+      model.compile(optimizer=self._create_optimizer(), loss=self._create_loss_fn(params))
 
     if not os.path.exists(flags_obj.model_dir):
       os.mkdir(flags_obj.model_dir)
@@ -242,10 +242,10 @@ class Seq2SeqTask():
 
     np.set_printoptions(threshold=sys.maxsize)
 
-    ds = self._create_dataset(params['data_dir'], repeat=1, batch_size=1)
+    ds = self._create_dataset(params['data_dir'], repeat=1, training=False)
     logging.info('max prediction limit = {}'.format(flags_obj.max_predict_count))
     if flags_obj.max_predict_count:
-      ds = ds.take(flags_obj.max_predict_count)
+      ds = ds.take(flags_obj.max_predict_count//self.params['batch_size'])
 
     names_limits, target_schema = self._get_training_schema()
 
@@ -266,7 +266,8 @@ class Seq2SeqTask():
       targets.append(tar.numpy())
       target_strings.append([self._trim_and_decode(targets[-1])])
     original_inputs_len = len(inputs)
-    del seen_inputs
+    #del seen_inputs
+
     if len(inputs) < 128 and params['num_gpus'] > 1:
       inputs += [inputs[0]] * (128 - original_inputs_len)
       logging.info(f'len(inputs)={original_inputs_len}, append inputs to {len(inputs)}')
@@ -424,14 +425,44 @@ class Seq2SeqTask():
             f.write(f'_HtmlBody    = {getattr(inp, "HtmlBody")}\n')
       logging.info('write prediction details to {}'.format(out_path))
 
+
+  def predict_express(self):
+    """Predicts result from the model."""
+    params = self.params
+    flags_obj = self.flags_obj
+
+    with distribution_utils.get_strategy_scope(self.distribution_strategy):
+      model = self.create_model(mode='predict')
+      model.summary()
+      self._load_model_weights(model)
+
+    ds = self._create_dataset(params['data_dir'], repeat=1, training=False)
+    logging.info('max prediction limit = {}'.format(flags_obj.max_predict_count))
+    if flags_obj.max_predict_count:
+      ds = ds.take(flags_obj.max_predict_count//self.params['batch_size'])
+
+    ds = ds.map(lambda X, Y: (X,))
+    mpred = model.predict(ds, verbose=1 if flags_obj.dev_mode else 0)
+
+    if flags_obj.prediction_compact_file:
+      start_time = time.time()
+      out_path = flags_obj.prediction_compact_file
+      if flags_obj.prediction_compact_file == '#model_dir':
+        out_path = os.path.join(self.flags_obj.model_dir, 'prediction-compact-{}.txt'.format(int(time.time())))
+      with open(out_path, 'w', encoding='utf8') as f:
+        f.write('NormalizedUrl\tPredict\tNullProb\n')
+        for (input_ids, pred_ids, score, null_prob) in zip(*mpred):
+          url = [re.sub(r'<[EB]OS#\d>', '', s) for s in self._trim_and_decode(input_ids, [12], concatenate_segments=False)][0]
+          pred = self._trim_and_decode(pred_ids)
+          pred = re.sub(r'[\t\r\n]+', ' ', html.unescape(pred)) # pred may contains '\n' after unescape
+          f.write('{}\t{}\t{}\n'.format(url, pred, null_prob))
+      logging.info(f'write compact prediction to {out_path}, takes {int(time.time() - start_time)} seconds')
+
+
   def _create_callbacks(self, log_dir, init_steps, steps_per_epoch, params, ckpt_mgr):
     """Creates a list of callbacks."""
-    sfunc = optimizer.LearningRateFn(params["learning_rate"],
-                                     params["hidden_size"],
-                                     params["learning_rate_warmup_steps"])
-
     def _save_checkpoint(epoch, logs):
-      if logs['steps'] % steps_per_epoch == 0:
+      if True or logs['steps'] % steps_per_epoch == 0:
         try:
           ckpt_mgr.save(checkpoint_number=epoch)
         except:
@@ -440,10 +471,12 @@ class Seq2SeqTask():
         logging.warning(f'not save model when training is interrupted. logs = {logs}\n')
 
     callbacks = []
-    callbacks.append(optimizer.LearningRateScheduler(sfunc, init_steps))
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=_save_checkpoint))
     if self.flags_obj.enable_tensorboard:
-      tensorboard_callback = utils.TensorBoardFix(start_step=init_steps,
+      #tensorboard_callback = utils.TensorBoardFix(start_step=init_steps,
+      #    log_dir=log_dir, profile_batch=0, write_graph=False,
+      #    update_freq=self.flags_obj.batches_between_tensorboard_log)
+      tensorboard_callback = tf.keras.callbacks.TensorBoard(
           log_dir=log_dir, profile_batch=0, write_graph=False,
           update_freq=self.flags_obj.batches_between_tensorboard_log)
       callbacks.append(tensorboard_callback)
@@ -458,10 +491,14 @@ class Seq2SeqTask():
     checkpoint.restore(checkpoint_path).expect_partial()
     logging.info("load model weights from: {}".format(checkpoint_path))
 
-  def _create_optimizer(self, params):
+  def _create_optimizer(self):
     """Creates optimizer."""
+    params = self.params
+    lr_schedule = optimizer.LearningRateSchedule(
+        params["learning_rate"], params["hidden_size"],
+        params["learning_rate_warmup_steps"])
     return tf.keras.optimizers.Adam(
-        params["learning_rate"],
+        lr_schedule,
         params["optimizer_adam_beta1"],
         params["optimizer_adam_beta2"],
         epsilon=params["optimizer_adam_epsilon"])
@@ -565,7 +602,7 @@ class Seq2SeqTask():
     #targets_and_limits = [(v[0], int(v[1])) for v in [col.split(':') for col in target_schema.split(',')]]
     return inputs_and_limits, target_schema#targets_and_limits
 
-  def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos):
+  def _create_dtitle_tokenized_dataset(self, data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, eos, training):
     description = self._create_description_from_names(self.flags_obj.dtitle_data_schema.split(','))
 
     names_limits, target_schema = self._get_training_schema()
@@ -598,11 +635,14 @@ class Seq2SeqTask():
 
     ds = tf.data.TFRecordDataset(data_file, compression_type='GZIP' if data_file.endswith('.gz') else None)
     ds = ds.map(_tf_parse_and_truncate_v3, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds = ds.filter(_filter_fn)
-    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=True)
+    if training:
+      ds = ds.filter(_filter_fn)
+    else:
+      ds = ds.map(lambda inp, tar: (inp, tar[-1:]))
+    ds = ds.padded_batch(batch_size, padded_shapes=([max_input_length], [max_target_length]), drop_remainder=training)
     return ds
 
-  def _create_dataset(self, data_file, repeat, batch_size=None, shuffle_size=None, create_cache=False):
+  def _create_dataset(self, data_file, repeat, batch_size=None, shuffle_size=None, create_cache=False, training=True):
     batch_size = batch_size or self.params['batch_size']
     max_input_length = self.params['max_input_length']
     max_target_length = self.params['max_target_length']
@@ -624,7 +664,7 @@ class Seq2SeqTask():
       ds = self._create_tokenized_tfrecord_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id)
     elif data_file.endswith('.dtitle.tokenized') or data_file.endswith('.dtitle.tokenized.gz'):
       logging.info(f'open one dtitle-tokenized dataset from "{data_file}".')
-      ds = self._create_dtitle_tokenized_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id)
+      ds = self._create_dtitle_tokenized_dataset(data_file, batch_size, max_input_length, max_target_length, url_segment_limit, hostname_segment_limit, html_segment_limit, self.EOS_id, training=training)
     else:
       raise ValueError(f'invalid input file format: {data_file}')
 
@@ -688,7 +728,7 @@ def test_read_and_dump_datasets(task):
 
   np.set_printoptions(threshold=2048)
   repeat_times = 1
-  for idx, bc in enumerate([100, 1000, 10000][1:2]):
+  for idx, bc in enumerate([256, 100, 1000, 10000][:1]):
     _dump_to_file(f'out-dtitle-tokenized-gz-{idx}.batch{bc}', task.params['data_dir'], batch_count=bc, decode_fn=task._trim_and_decode, repeat=repeat_times)
 
 
@@ -709,8 +749,8 @@ def count_token_id_freq(task):
 
 
 def test(task):
-  #test_read_and_dump_datasets(task)
-  count_token_id_freq(task)
+  test_read_and_dump_datasets(task)
+  #count_token_id_freq(task)
 
 def main(_):
   flags_obj = flags.FLAGS
@@ -728,6 +768,8 @@ def main(_):
     task.convert_dtitle_to_tfrecord()
   elif flags_obj.mode == "predict":
     task.predict()
+  elif flags_obj.mode == "predict-express":
+    task.predict_express()
   elif flags_obj.mode == "eval":
     task.eval()
   elif flags_obj.mode == 'test':

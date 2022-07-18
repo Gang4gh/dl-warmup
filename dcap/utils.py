@@ -126,7 +126,11 @@ def get_padding_bias(x, padding_value=0, dtype=tf.float32):
 
 
 class TensorBoardFix(tf.keras.callbacks.TensorBoard):
-    """Build-in TensorBoard can't resume training_step, so fix it"""
+    """Build-in TensorBoard fixes: (doesn't work with tf2.4.1 anymore)
+        1. resume training_step
+        2, catch the exception when write log but disk is full
+        3, use batch+1 on_train_batch_end
+    """
     def __init__(self, start_step=0, *args, **kwargs):
         super(TensorBoardFix, self).__init__(*args, **kwargs)
         self.start_step = start_step

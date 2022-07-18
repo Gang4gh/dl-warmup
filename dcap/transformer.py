@@ -24,11 +24,10 @@ from __future__ import print_function
 import tensorflow as tf
 
 import utils as model_utils
-from official.transformer.utils.tokenizer import EOS_ID
 import attention_layer
-from official.transformer.v2 import beam_search
-from official.transformer.v2 import embedding_layer
-from official.transformer.v2 import ffn_layer
+from official.nlp.modeling.ops import beam_search
+from official.nlp.transformer import embedding_layer
+from official.nlp.transformer import ffn_layer
 # TODO: ffn_layer adds another duplicated dropout layer?
 import metrics
 
@@ -55,8 +54,9 @@ def create_model(params, mode):
       internal_model = Transformer(params, name="transformer_v2")
       ret = internal_model([inputs], training=False)
       logits = internal_model([inputs, targets], training=False)
+      null_logit = tf.nn.softmax(logits[0])[1]
       outputs, scores = ret["outputs"], ret["scores"]
-      return tf.keras.Model([inputs, targets], [outputs, scores, logits])
+      return tf.keras.Model([inputs, targets], [inputs, outputs, scores, null_logit])
 
 
 class Transformer(tf.keras.Model):
@@ -279,10 +279,10 @@ class Transformer(tf.keras.Model):
     """Return predicted sequence."""
     if self.params["padded_decode"]:
       batch_size = encoder_outputs.shape.as_list()[0]
-      input_length = encoder_outputs.shape.as_list()[1]
+      #input_length = encoder_outputs.shape.as_list()[1]
     else:
       batch_size = tf.shape(encoder_outputs)[0]
-      input_length = tf.shape(encoder_outputs)[1]
+      #input_length = tf.shape(encoder_outputs)[1]
     max_decode_length = self.params['max_target_length']
     encoder_decoder_attention_bias = tf.cast(encoder_decoder_attention_bias,
                                              self.params["dtype"])
@@ -328,7 +328,7 @@ class Transformer(tf.keras.Model):
         beam_size=self.params["beam_size"],
         alpha=self.params["alpha"],
         max_decode_length=max_decode_length,
-        eos_id=self.params["vocab_size"] + 1, #EOS_ID,
+        eos_id=self.params["vocab_size"] + 1,  # EOS_ID,
         padded_decode=self.params["padded_decode"],
         dtype=self.params["dtype"])
 

@@ -57,6 +57,8 @@ map <C-Q> :x<CR>
 imap <C-Q> <ESC><C-Q>
 
 " vim-plugins
+" To setup vi plugin manager for the first time, use command ':PlugInstall'
+"     refer https://github.com/junegunn/vim-plug for details
 call plug#begin('~/.vim/plugged')
 " vim statusline
 Plug 'itchyny/lightline.vim'

@@ -14,7 +14,7 @@ TAG ?=
 ARGS ?=
 VOCAB_FILE ?= vocab-v0307-cs-24gb-8192
 
-all: $(SPLIT_DIR)all-data-7z.md5
+all: $(SPLIT_DIR)all-data.md5
 	$(MAKE) -j$(CPUS) $(TAG)-meta.log
 
 #TODO: remove it

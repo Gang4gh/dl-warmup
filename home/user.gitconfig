@@ -10,3 +10,5 @@
 	co = checkout
 	d = diff
 	s = status
+[credential]
+	helper = store

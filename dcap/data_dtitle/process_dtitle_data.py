@@ -24,7 +24,7 @@ def _normalize_string(s, replace_tab=False):
 _tokenizer = None
 def _initialize_tokenizer(vocab_file):
 	global _tokenizer
-	_tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(vocab_file)
+	_tokenizer = tfds.deprecated.text.SubwordTextEncoder.load_from_file(vocab_file)
 	print(f'initilize tokenizer from vocab file [{vocab_file}].')
 
 def dtitle_reader(dtitle_file, input_schema, log_per_n_step=None):
@@ -73,7 +73,7 @@ def preprocess_raw_input(FLAGS):
 	total, valid, suppressed = 0, 0, 0
 	for row in dtitle_reader(FLAGS.input_file, FLAGS.input_schema):
 		total += 1
-		url, title, html = row.Url, row.AHtmlTitle, row.CleanedHtmlBody if hasattr(row, 'CleanedHtmlBody') else ''
+		url, title, html = row.Url if hasattr(row, 'Url') else row.DocumentUrl, row.AHtmlTitle, row.CleanedHtmlBody if hasattr(row, 'CleanedHtmlBody') else ''
 
 		is_twitter_handle_url = FLAGS.include_twitter_in_training and re.match('^https://twitter.com/[^/]+$', url)
 		if not url: continue
@@ -198,7 +198,7 @@ def build_vocab(FLAGS):
 	target_vocab_file = FLAGS.vocab_file
 	print('{}: start to build a subwords tokenizer({}) with max_subword_length={}, max_corpus_chars={}GB and target_vocab_size={}.'.format(time.asctime(), target_vocab_file, FLAGS.max_subword_length, FLAGS.max_corpus_chars, FLAGS.target_vocab_size))
 
-	tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(_get_vocab_corpus(),
+	tokenizer = tfds.deprecated.text.SubwordTextEncoder.build_from_corpus(_get_vocab_corpus(),
 			target_vocab_size = FLAGS.target_vocab_size,
 			max_subword_length = FLAGS.max_subword_length,
 			max_corpus_chars = int(FLAGS.max_corpus_chars*(2**30)),
