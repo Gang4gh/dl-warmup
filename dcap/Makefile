@@ -86,7 +86,7 @@ eval: $(DATA_FILES)
 #	python3 dtitle.py --mode=predict --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --prediction_details_file='#model_dir' --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
 
 predict:
-	python3 dtitle.py --mode=predict-express --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=2048 --dev_mode --prediction_details_file='#model_dir' --training_schema="$(TRAINING_SCHEMA)" $(ARGS)
+	python3 dtitle.py --mode=predict-express --data_dir=$(DATA_DIR)/$(DTAG)-test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --batch_size=64 --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --test_num_hashes=8 --max_predict_count=1024 --dev_mode --prediction_details_file='#model_dir' --training_schema="$(TRAINING_SCHEMA)" $(ARGS) --batch_size=16
 
 predict-cpu:
 	CUDA_VISIBLE_DEVICES= $(MAKE) predict
@@ -142,7 +142,7 @@ $(PRED_ABSPATH)/data.split.done: $(INPUT_DATA)
 $(PRED_ABSPATH)/%.predict: $(PRED_ABSPATH)/%.raw.gz
 	$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA) --html_token_limit=0' TAG=$(DTAG)
 	#$(MAKE) -C $(DATA_DIR) $(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz TEST_DATA=$(abspath $<) ARGS='--input_schema=$(PRED_SCHEMA) --dtitle_schema=$(PRED_SCHEMA),TargetTitle --use_lower_case=0' TAG=$(DTAG)
-	python3 dtitle.py --mode=predict-express --data_dir=$(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$@ --dtitle_data_schema=$(PRED_SCHEMA) $(ARGS) --batch_size=256
+	python3 dtitle.py --mode=predict-express --data_dir=$(PRED_ABSPATH)/$*.test.dtitle.tokenized.gz --model_dir=$(MDIR) --vocab_file=$(DATA_DIR)/$(DTAG)-vocab --param_set=$(MODEL_SIZE) --num_gpus=-1 --use_reformer=0 --calc_rouge_scores=0 --dev_mode --attention_padding_strategy=nopadding --training_schema="$(TRAINING_SCHEMA)" --prediction_compact_file=$@ --dtitle_data_schema=$(PRED_SCHEMA) $(ARGS) --batch_size=16 --max_predict_count=0
 
 batch0:
 	CUDA_VISIBLE_DEVICES=0 $(MAKE) batch
